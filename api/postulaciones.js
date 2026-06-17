@@ -3,6 +3,7 @@ import { createClient }     from '@supabase/supabase-js';
 import { readFileSync }     from 'fs';
 import { fileURLToPath }    from 'url';
 import { dirname, join }    from 'path';
+import { waitUntil }        from '@vercel/functions';
 import {
   containsUrl,
   cleanPhoneNumber,
@@ -158,38 +159,10 @@ async function sendWhatsApp({ candidateFirstName, candidatePhone, candidateId, j
 }
 
 // ============================================================================
-// HANDLER PRINCIPAL
+// PROCESAMIENTO EN BACKGROUND
 // ============================================================================
-export default async function handler(req, res) {
-  if (req.method !== 'POST')
-    return res.status(405).json({ error: 'Método no permitido, usa POST' });
-
-  const apiKey = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
-  if (process.env.POWERBELL_API_KEY && apiKey !== process.env.POWERBELL_API_KEY)
-    return res.status(401).json({ error: 'Unauthorized' });
-
-  const { postulacion: postulacionId } = req.body ?? {};
-  if (!postulacionId)
-    return res.status(400).json({ error: 'Missing postulacion field' });
-
-  console.log(JSON.stringify({ etapa: 'inicio', postulacion_id: postulacionId }));
-
-  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-
-  // PASO 1: Obtener registro de postulación
-  const { data: postulacion, error: fetchError } = await supabase
-    .from('postulaciones').select('*').eq('postulacion_id', postulacionId).single();
-
-  if (fetchError || !postulacion)
-    return res.status(404).json({ error: 'Postulacion not found', detail: fetchError?.message });
-
+async function procesarEvaluacion(postulacionId, postulacion, supabase) {
   const { vacante_id: vacanteId, candidato_nombre: candidatoNombre, candidato_telefono: candidatoTelefono } = postulacion;
-
-  if (!vacanteId)
-    return res.status(400).json({ error: 'Missing vacante_id in record' });
-
-  // PASO 2: Marcar como en proceso
-  await supabase.from('postulaciones').update({ evaluacion_agendada: true }).eq('postulacion_id', postulacionId);
 
   try {
     // PASO 3: Obtener datos de la vacante
@@ -224,11 +197,11 @@ export default async function handler(req, res) {
     if (!resumeUrl?.trim()) {
       console.log(JSON.stringify({ etapa: 'no_resume', candidato: candidatoNombre, accion: 'registro_eliminado' }));
       await supabase.from('postulaciones').delete().eq('postulacion_id', postulacionId);
-      return res.status(200).json({ status: 'deleted', message: 'No resume found — record deleted' });
+      return;
     }
 
     // PASO 6: Obtener y procesar respuestas del candidato
-    const answersRaw        = await ttGet(`/candidates/${candidateId}/answers?include=question`, true);
+    const answersRaw          = await ttGet(`/candidates/${candidateId}/answers?include=question`, true);
     const candidatoRespuestas = parseAnswers(answersRaw.data ?? [], answersRaw.included ?? []);
 
     // PASO 7: Guardar datos de TeamTailor en Supabase
@@ -281,17 +254,16 @@ export default async function handler(req, res) {
             cache_creation_input_tokens: cacheCreationInputTokens = 0,
             cache_read_input_tokens: cacheReadInputTokens = 0 } = claudeData.usage ?? {};
 
-    if (!evaluationResult)
-      return res.status(500).json({ error: 'Claude returned no text content' });
+    if (!evaluationResult) throw new Error('Claude returned no text content');
 
     console.log(JSON.stringify({ etapa: 'claude_api', caracteres: evaluationResult.length, tokens_input: inputTokens, tokens_output: outputTokens, cache_read: cacheReadInputTokens, cache_creation: cacheCreationInputTokens }));
 
     // PASO 11: Extraer calificación y preguntas
     const globalScore = extractScore(evaluationResult);
 
-    let extractedQuestions          = [];
+    let extractedQuestions             = [];
     let questionsExtractedSuccessfully = false;
-    let evaluacionPreguntas         = null;
+    let evaluacionPreguntas            = null;
 
     if (evaluationResult.includes('#PREGUNTAS#')) {
       try {
@@ -312,7 +284,7 @@ export default async function handler(req, res) {
     }
 
     // PASO 12: Guardar resultados de la evaluación
-    const updateData = {
+    const { error: saveError } = await supabase.from('postulaciones').update({
       evaluacion_pensamiento:  thinkingContent,
       evaluacion_calificacion: globalScore,
       evaluacion_resultado:    evaluationResult,
@@ -321,24 +293,19 @@ export default async function handler(req, res) {
       tokens_input:            inputTokens,
       tokens_output:           outputTokens,
       ...(evaluacionPreguntas && { evaluacion_preguntas: evaluacionPreguntas }),
-    };
-
-    const { error: saveError } = await supabase.from('postulaciones').update(updateData).eq('postulacion_id', postulacionId);
+    }).eq('postulacion_id', postulacionId);
     if (saveError) throw saveError;
 
     console.log(JSON.stringify({ etapa: 'guardado_evaluacion', calificacion: globalScore, preguntas_extraidas: questionsExtractedSuccessfully }));
 
     // PASO 13: Actualizar foto del candidato en TeamTailor
-    let candidateUpdateNote = 'Picture update skipped: score extraction failed';
     if (globalScore !== null) {
       try {
         await ttPatch(`/candidates/${candidateId}`, {
           data: { id: candidateId.toString(), type: 'candidates', attributes: { picture: getScorePictureUrl(globalScore) } },
         }, true);
-        candidateUpdateNote = `Picture updated to "${getScoreCategoryName(globalScore)}" (${globalScore}/20)`;
         console.log(JSON.stringify({ etapa: 'actualizar_foto_candidato', estado: 'exito', categoria: getScoreCategoryName(globalScore), calificacion: globalScore }));
       } catch (e) {
-        candidateUpdateNote = `Picture update failed: ${e.message}`;
         console.log(JSON.stringify({ etapa: 'actualizar_foto_candidato', estado: 'error', mensaje: e.message }));
       }
     }
@@ -374,26 +341,10 @@ export default async function handler(req, res) {
       console.log(JSON.stringify({ etapa: 'whatsapp_integracion', estado: 'saltado', razon: 'sin_preguntas' }));
     }
 
-    // PASO 16: Guardar estado de WhatsApp y responder
+    // PASO 16: Guardar estado de WhatsApp
     await supabase.from('postulaciones').update({ whatsapp_enviado: whatsappEnviado, whatsapp_error: whatsappError }).eq('postulacion_id', postulacionId);
 
     console.log(JSON.stringify({ etapa: 'completado', candidato: candidateFirstName, vacante: jobTitle, calificacion: globalScore, whatsapp: whatsappEnviado }));
-
-    return res.status(200).json({
-      status:                'success',
-      postulacion_id:        postulacionId,
-      candidate_name:        candidatoNombre,
-      job_title:             jobTitle,
-      job_location:          jobLocation,
-      global_score:          globalScore,
-      score_category:        getScoreCategoryName(globalScore),
-      score_rating:          evaluationRating,
-      whatsapp_enviado:      whatsappEnviado,
-      whatsapp_error:        whatsappError,
-      questions_extracted:   questionsExtractedSuccessfully,
-      candidate_update_note: candidateUpdateNote,
-      tokens: { input: inputTokens, output: outputTokens, cache_read: cacheReadInputTokens, cache_creation: cacheCreationInputTokens },
-    });
 
   } catch (error) {
     console.log(JSON.stringify({ etapa: 'error', postulacion_id: postulacionId, mensaje: error.message }));
@@ -405,7 +356,41 @@ export default async function handler(req, res) {
         evaluacion_error:      error.message,
       }).eq('postulacion_id', postulacionId);
     } catch (_) {}
-
-    return res.status(500).json({ status: 'error', message: error.message || 'Unknown error', postulacion_id: postulacionId });
   }
+}
+
+// ============================================================================
+// HANDLER PRINCIPAL
+// ============================================================================
+export default async function handler(req, res) {
+  if (req.method !== 'POST')
+    return res.status(405).json({ error: 'Método no permitido, usa POST' });
+
+  const apiKey = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
+  if (process.env.POWERBELL_API_KEY && apiKey !== process.env.POWERBELL_API_KEY)
+    return res.status(401).json({ error: 'Unauthorized' });
+
+  const { postulacion: postulacionId } = req.body ?? {};
+  if (!postulacionId)
+    return res.status(400).json({ error: 'Missing postulacion field' });
+
+  console.log(JSON.stringify({ etapa: 'inicio', postulacion_id: postulacionId }));
+
+  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+  // PASO 1: Obtener registro de postulación
+  const { data: postulacion, error: fetchError } = await supabase
+    .from('postulaciones').select('*').eq('postulacion_id', postulacionId).single();
+
+  if (fetchError || !postulacion)
+    return res.status(404).json({ error: 'Postulacion not found', detail: fetchError?.message });
+
+  if (!postulacion.vacante_id)
+    return res.status(400).json({ error: 'Missing vacante_id in record' });
+
+  // PASO 2: Marcar como en proceso y disparar trabajo en background
+  await supabase.from('postulaciones').update({ evaluacion_agendada: true }).eq('postulacion_id', postulacionId);
+  waitUntil(procesarEvaluacion(postulacionId, postulacion, supabase));
+
+  return res.status(202).json({ status: 'processing', postulacion_id: postulacionId });
 }
