@@ -4,7 +4,6 @@
   ],
   "functions": {
     "api/estudios.js": {
-      "maxDuration": 300 //segundos máximos para la ejecución de la función para el plan gratuito de Vercel, se puede aumentar para planes de pago
-    }
+      "maxDuration": 300
   }
 }
