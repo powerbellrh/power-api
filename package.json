@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.104.2"
+    "@anthropic-ai/sdk": "^0.104.2",
+    "@supabase/supabase-js": "^2.49.8",
+    "@vercel/functions": "^3.7.1"
   }
 }

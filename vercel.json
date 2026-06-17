@@ -1,9 +1,13 @@
 {
   "rewrites": [
-    { "source": "/estudios", "destination": "/api/estudios" }
+    { "source": "/estudios",      "destination": "/api/estudios"      },
+    { "source": "/postulaciones", "destination": "/api/postulaciones" }
   ],
   "functions": {
     "api/estudios.js": {
+      "maxDuration": 300
+    },
+    "api/postulaciones.js": {
       "maxDuration": 300
     }
   }
