@@ -1,0 +1,10 @@
+{
+  "rewrites": [
+    { "source": "/estudios", "destination": "/api/estudios" }
+  ],
+  "functions": {
+    "api/estudios.js": {
+      "maxDuration": 800
+    }
+  }
+}
