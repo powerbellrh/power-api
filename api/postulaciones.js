@@ -209,7 +209,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
       messages: [{
         role: 'user',
         content: [
-          { type: 'text', text: buildVacanteInfoBlock(jobTitle, cleanJobDescription, jobLocation, customFieldContext, jobSalaryText), cache_control: { type: 'ephemeral' } },
+          { type: 'text', text: buildVacanteInfoBlock(jobTitle, cleanJobDescription, jobLocation, customFieldContext, jobSalaryText) },
           { type: 'text', text: buildCandidatoInfoBlock(candidatoNombre, candidateLocation, candidatoRespuestas) },
           ...(imageUrlFromAnswers
             ? [{ type: 'image', source: { type: 'url', url: imageUrlFromAnswers } }]
