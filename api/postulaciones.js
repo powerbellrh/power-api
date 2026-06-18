@@ -16,23 +16,24 @@ import {
   formatSalary,
   buildVacanteInfoBlock,
   buildCandidatoInfoBlock,
+  extractScore,
+  parseAnswers,
 } from '../lib/postulacion_utils.js';
 import { ttGet, ttPatch, ttPost, mcPost } from '../lib/api_clients.js';
 
 const __dirname     = dirname(fileURLToPath(import.meta.url));
 const SYSTEM_PROMPT = readFileSync(join(__dirname, '../prompts/evaluacion_administrativa.txt'), 'utf-8');
-const claude        = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const claude        = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY_POSTULACIONES });
 
 const AI_CONFIG = {
-  model:                  'claude-haiku-4-5-20251001',
+  model:                  'claude-sonnet-4-6',
   max_tokens:             20000,
   thinking_budget_tokens: 16000,
 };
 
-const TEAMTAILOR_BOT_USER_ID = 43720;
-const CUSTOM_FIELD_ID        = '8036';
-const MANYCHAT_FLOW_NS       = 'content20250922221605_634333';
-const FEATURES               = { send_whatsapp: true };
+const TEAMTAILOR_BOT_USER_ID = 43720; // ID del usuario bot en Teamtailor que hace las notas de evaluación
+const CUSTOM_FIELD_ID        = '8036'; // ID del campo personalizado en TeamTailor donde se guarda el contexto adicional de la vacante para la evaluación
+const MANYCHAT_FLOW_NS       = 'content20250922221605_634333'; // Namespace del flow de ManyChat que se dispara al enviar el WhatsApp con la evaluación y preguntas al candidato
 
 const MANYCHAT_FIELDS = {
   job_title:    12975347,
@@ -47,51 +48,6 @@ const MANYCHAT_FIELDS = {
 // ============================================================================
 // FUNCIONES AUXILIARES
 // ============================================================================
-
-function extractScore(text) {
-  const patterns = [
-    /calificaci[oó]n\s+global:\s*[^\d\n-]*?[-–—]\s*(\d+)\s*\/\s*20/i,
-    /calificaci[oó]n\s+global:\s*[a-záéíóúñ\s]+[-–—]\s*(\d+)\s*\/\s*20/i,
-    /calificaci[oó]n\s+global[:\s]+(\d+)\s*\/\s*20/i,
-    /calificaci[oó]n\s+global.*?\((\d+)(?:\s*[\/]\s*\d+)?\s*(?:puntos?|pts?)\)/i,
-    /calificaci[oó]n\s+global[:\s]*[^\d\n]*?(\d+)\s*(?:puntos?|pts?)/i,
-  ];
-  for (const p of patterns) {
-    const m = text.match(p);
-    if (m?.[1]) {
-      const s = parseInt(m[1], 10);
-      if (s >= 0 && s <= 20) return s;
-    }
-  }
-  return null;
-}
-
-function parseAnswers(answers, questions) {
-  if (!answers.length) return null;
-
-  const result = {};
-  let skipped = 0;
-
-  for (const answer of answers) {
-    const q     = questions.find(q => q.id === answer.relationships.question?.data?.id);
-    const title = q?.attributes?.title || 'Pregunta sin título';
-    const attrs = answer.attributes;
-    const qt    = attrs['question-type']?.toLowerCase();
-
-    let value = '';
-    if      (qt === 'text')    value = attrs.text    || attrs.answer || '';
-    else if (qt === 'number')  value = attrs.number?.toString()  || attrs.answer?.toString() || '';
-    else if (qt === 'boolean') value = attrs.boolean === true ? 'Sí' : attrs.boolean === false ? 'No' : '';
-    else if (qt === 'date')    value = attrs.date    || '';
-    else                       value = attrs.answer?.toString() || '';
-
-    if (containsUrl(value)) { skipped++; continue; }
-    result[title] = value;
-  }
-
-  console.log(JSON.stringify({ etapa: 'respuestas_candidato', incluidas: answers.length - skipped, saltadas_por_url: skipped }));
-  return Object.keys(result).length ? result : null;
-}
 
 async function fetchCustomFieldContext(vacanteId) {
   try {
@@ -216,13 +172,16 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     }).eq('postulacion_id', postulacionId);
 
     // PASO 8: Construir solicitud a Claude
+    const fechaActual = new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Mexico_City' });
+    const systemPromptWithDate = SYSTEM_PROMPT.replace('{{fecha_actual}}', fechaActual);
+
     const claudeRequest = {
       model:       AI_CONFIG.model,
       max_tokens:  AI_CONFIG.max_tokens,
       temperature: 1,
       thinking:    { type: 'enabled', budget_tokens: AI_CONFIG.thinking_budget_tokens },
       system: [{
-        type: 'text', text: SYSTEM_PROMPT,
+        type: 'text', text: systemPromptWithDate,
         cache_control: { type: 'ephemeral', ttl: '1h' },
       }],
       messages: [{
@@ -238,7 +197,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     // PASO 9: Registrar solicitud en Supabase
     await supabase.from('postulaciones').update({
       evaluacion_peticion: JSON.stringify(claudeRequest),
-      evaluacion_prompt:   SYSTEM_PROMPT,
+      evaluacion_prompt:   systemPromptWithDate,
       evaluacion_modelo:   AI_CONFIG.model,
     }).eq('postulacion_id', postulacionId);
 
@@ -332,7 +291,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     let whatsappEnviado = false;
     let whatsappError   = null;
 
-    if (FEATURES.send_whatsapp && questionsExtractedSuccessfully) {
+    if (questionsExtractedSuccessfully) {
       const result = await sendWhatsApp({ candidateFirstName, candidatePhone, candidateId, jobTitle, questions: extractedQuestions });
       whatsappEnviado = result.enviado;
       whatsappError   = result.error;
