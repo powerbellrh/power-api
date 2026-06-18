@@ -9,6 +9,7 @@ import {
   cleanPhoneNumber,
   stripHtml,
   extractFirstFiveQuestions,
+  extractFirstThreeQuestions,
   getScorePictureUrl,
   getScoreCategoryName,
   getScoreRating,
@@ -234,7 +235,9 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
 
     if (evaluationResult.includes('#PREGUNTAS#')) {
       try {
-        extractedQuestions             = extractFirstFiveQuestions(evaluationResult);
+        extractedQuestions             = isAdministrativa
+          ? extractFirstFiveQuestions(evaluationResult)
+          : extractFirstThreeQuestions(evaluationResult);
         questionsExtractedSuccessfully = true;
         evaluacionPreguntas = {
           pregunta_1: extractedQuestions[0] ?? null,
