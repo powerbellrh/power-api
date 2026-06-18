@@ -21,28 +21,32 @@ import {
 } from '../lib/postulacion_utils.js';
 import { ttGet, ttPatch, ttPost, mcPost } from '../lib/api_clients.js';
 
-const __dirname     = dirname(fileURLToPath(import.meta.url));
-const SYSTEM_PROMPT = readFileSync(join(__dirname, '../prompts/evaluacion_administrativa.txt'), 'utf-8');
-const claude        = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY_POSTULACIONES });
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const AI_CONFIG = {
-  model:                  'claude-sonnet-4-6',
-  max_tokens:             20000,
-  thinking_budget_tokens: 16000,
+const PROMPTS = {
+  AD: readFileSync(join(__dirname, '../prompts/evaluacion_administrativa.txt'), 'utf-8'),
+  OP: readFileSync(join(__dirname, '../prompts/evaluacion_operativa.txt'),      'utf-8'),
 };
 
-const TEAMTAILOR_BOT_USER_ID = 43720; // ID del usuario bot en Teamtailor que hace las notas de evaluación
-const CUSTOM_FIELD_ID        = '8036'; // ID del campo personalizado en TeamTailor donde se guarda el contexto adicional de la vacante para la evaluación
-const MANYCHAT_FLOW_NS       = 'content20250922221605_634333'; // Namespace del flow de ManyChat que se dispara al enviar el WhatsApp con la evaluación y preguntas al candidato
+const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY_POSTULACIONES });
+
+const AI_CONFIG = {
+  AD: { model: 'claude-sonnet-4-6', max_tokens: 20000, thinking_budget_tokens: 16000 },
+  OP: { model: 'claude-haiku-4-5',  max_tokens: 4096  },
+};
+
+const TEAMTAILOR_BOT_USER_ID = +process.env.AD_TEAMTAILOR_BOT_USER_ID;
+const CUSTOM_FIELD_ID        =  process.env.AD_TEAMTAILOR_CUSTOM_FIELD_ID;
+const MANYCHAT_FLOW_NS       =  process.env.AD_MANYCHAT_FLOW_NS;
 
 const MANYCHAT_FIELDS = {
-  job_title:    12975347,
-  candidate_id: 12918496,
-  question_1:   13349290,
-  question_2:   13349291,
-  question_3:   13349293,
-  question_4:   13349294,
-  question_5:   13349295,
+  job_title:    +process.env.AD_MANYCHAT_FIELD_JOB_TITLE,
+  candidate_id: +process.env.AD_MANYCHAT_FIELD_CANDIDATE_ID,
+  question_1:   +process.env.AD_MANYCHAT_FIELD_Q1,
+  question_2:   +process.env.AD_MANYCHAT_FIELD_Q2,
+  question_3:   +process.env.AD_MANYCHAT_FIELD_Q3,
+  question_4:   +process.env.AD_MANYCHAT_FIELD_Q4,
+  question_5:   +process.env.AD_MANYCHAT_FIELD_Q5,
 };
 
 // ============================================================================
@@ -118,7 +122,10 @@ async function sendWhatsApp({ candidateFirstName, candidatePhone, candidateId, j
 // PROCESAMIENTO EN BACKGROUND
 // ============================================================================
 async function procesarEvaluacion(postulacionId, postulacion, supabase) {
-  const { vacante_id: vacanteId, candidato_nombre: candidatoNombre, candidato_telefono: candidatoTelefono } = postulacion;
+  const { vacante_id: vacanteId, candidato_nombre: candidatoNombre, candidato_telefono: candidatoTelefono, vacante_tipo: vacanteTipo } = postulacion;
+
+  const tipoConfig   = AI_CONFIG[vacanteTipo] ?? AI_CONFIG.AD;
+  const systemPrompt = PROMPTS[vacanteTipo]   ?? PROMPTS.AD;
 
   try {
     // PASO 3: Obtener datos de la vacante
@@ -172,14 +179,16 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     }).eq('postulacion_id', postulacionId);
 
     // PASO 8: Construir solicitud a Claude
-    const fechaActual = new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Mexico_City' });
-    const systemPromptWithDate = SYSTEM_PROMPT.replace('{{fecha_actual}}', fechaActual);
+    const fechaActual          = new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Mexico_City' });
+    const systemPromptWithDate = systemPrompt.replace('{{fecha_actual}}', fechaActual);
+
+    const isAdministrativa = vacanteTipo === 'AD' || !vacanteTipo;
 
     const claudeRequest = {
-      model:       AI_CONFIG.model,
-      max_tokens:  AI_CONFIG.max_tokens,
+      model:      tipoConfig.model,
+      max_tokens: tipoConfig.max_tokens,
       temperature: 1,
-      thinking:    { type: 'enabled', budget_tokens: AI_CONFIG.thinking_budget_tokens },
+      ...(isAdministrativa && { thinking: { type: 'enabled', budget_tokens: tipoConfig.thinking_budget_tokens } }),
       system: [{
         type: 'text', text: systemPromptWithDate,
         cache_control: { type: 'ephemeral', ttl: '1h' },
@@ -198,14 +207,13 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     await supabase.from('postulaciones').update({
       evaluacion_peticion: JSON.stringify(claudeRequest),
       evaluacion_prompt:   systemPromptWithDate,
-      evaluacion_modelo:   AI_CONFIG.model,
+      evaluacion_modelo:   tipoConfig.model,
     }).eq('postulacion_id', postulacionId);
 
     // PASO 10: Llamar a la API de Claude
-    const claudeData = await claude.beta.messages.create({
-      betas: ['interleaved-thinking-2025-05-14', 'prompt-caching-2024-07-31'],
-      ...claudeRequest,
-    });
+    const claudeData = isAdministrativa
+      ? await claude.beta.messages.create({ betas: ['interleaved-thinking-2025-05-14', 'prompt-caching-2024-07-31'], ...claudeRequest })
+      : await claude.beta.messages.create({ betas: ['prompt-caching-2024-07-31'], ...claudeRequest });
 
     const evaluationResult = claudeData.content?.find(b => b.type === 'text')?.text;
     const thinkingContent  = claudeData.content?.find(b => b.type === 'thinking')?.thinking ?? null;

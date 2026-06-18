@@ -8,7 +8,7 @@ import { extraerSalariosConIA }                     from '../lib/extraccion_sala
 
 const __dirname           = dirname(fileURLToPath(import.meta.url));
 const PROMPT_CONCLUSIONES = readFileSync(join(__dirname, '../prompts/conclusiones_ia.txt'), 'utf-8');
-const client              = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const client              = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY_ESTUDIOS });
 
 const costo = (ti, to) => +((ti / 1_000_000) + (to / 1_000_000 * 5)).toFixed(6);
 
