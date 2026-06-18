@@ -19,6 +19,10 @@ import {
   buildCandidatoInfoBlock,
   extractScore,
   parseAnswers,
+  extractImageUrlFromAnswers,
+  extractEvaluationStatus,
+  evaluationStatusToScore,
+  getEvaluationStatusRating,
 } from '../lib/postulacion_utils.js';
 import { ttGet, ttPatch, ttPost, mcPost } from '../lib/api_clients.js';
 
@@ -33,7 +37,7 @@ const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY_POSTULACION
 
 const AI_CONFIG = {
   AD: { model: 'claude-sonnet-4-6', max_tokens: 20000, thinking_budget_tokens: 16000 },
-  OP: { model: 'claude-haiku-4-5',  max_tokens: 4096  },
+  OP: { model: 'claude-haiku-4-5',  max_tokens: 20000, thinking_budget_tokens: 16000 },
 };
 
 const TEAMTAILOR_BOT_USER_ID = +process.env.AD_TEAMTAILOR_BOT_USER_ID;
@@ -159,14 +163,22 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     console.log(JSON.stringify({ etapa: 'datos_candidato', candidato_id: candidateId, resume: resumeUrl ? 'encontrado' : 'no_encontrado' }));
 
     if (!resumeUrl?.trim()) {
-      console.log(JSON.stringify({ etapa: 'no_resume', candidato: candidatoNombre, accion: 'registro_eliminado' }));
-      await supabase.from('postulaciones').delete().eq('postulacion_id', postulacionId);
-      return;
+      if (vacanteTipo !== 'OP') {
+        console.log(JSON.stringify({ etapa: 'no_resume', candidato: candidatoNombre, accion: 'registro_eliminado' }));
+        await supabase.from('postulaciones').delete().eq('postulacion_id', postulacionId);
+        return;
+      }
+      console.log(JSON.stringify({ etapa: 'no_resume', candidato: candidatoNombre, accion: 'continuar_sin_cv', tipo: 'OP' }));
     }
 
     // PASO 6: Obtener y procesar respuestas del candidato
     const answersRaw          = await ttGet(`/candidates/${candidateId}/answers?include=question`, true);
-    const candidatoRespuestas = parseAnswers(answersRaw.data ?? [], answersRaw.included ?? []);
+    const rawAnswers          = answersRaw.data ?? [];
+    const candidatoRespuestas = parseAnswers(rawAnswers, answersRaw.included ?? []);
+
+    // Para OP: buscar imagen de historial en respuestas (parseAnswers la descarta por ser URL)
+    const imageUrlFromAnswers = vacanteTipo === 'OP' ? extractImageUrlFromAnswers(rawAnswers) : null;
+    console.log(JSON.stringify({ etapa: 'fuentes_historial', cv: resumeUrl ? 'si' : 'no', imagen_respuestas: imageUrlFromAnswers ? 'si' : 'no' }));
 
     // PASO 7: Guardar datos de TeamTailor en Supabase
     await supabase.from('postulaciones').update({
@@ -189,7 +201,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
       model:      tipoConfig.model,
       max_tokens: tipoConfig.max_tokens,
       temperature: 1,
-      ...(isAdministrativa && { thinking: { type: 'enabled', budget_tokens: tipoConfig.thinking_budget_tokens } }),
+      thinking: { type: 'enabled', budget_tokens: tipoConfig.thinking_budget_tokens },
       system: [{
         type: 'text', text: systemPromptWithDate,
         cache_control: { type: 'ephemeral', ttl: '1h' },
@@ -199,7 +211,11 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
         content: [
           { type: 'text', text: buildVacanteInfoBlock(jobTitle, cleanJobDescription, jobLocation, customFieldContext, jobSalaryText), cache_control: { type: 'ephemeral' } },
           { type: 'text', text: buildCandidatoInfoBlock(candidatoNombre, candidateLocation, candidatoRespuestas) },
-          { type: 'document', source: { type: 'url', url: resumeUrl } },
+          ...(imageUrlFromAnswers
+            ? [{ type: 'image', source: { type: 'url', url: imageUrlFromAnswers } }]
+            : resumeUrl?.trim()
+              ? [{ type: 'document', source: { type: 'url', url: resumeUrl } }]
+              : []),
         ],
       }],
     };
@@ -212,9 +228,10 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     }).eq('postulacion_id', postulacionId);
 
     // PASO 10: Llamar a la API de Claude
-    const claudeData = isAdministrativa
-      ? await claude.beta.messages.create({ betas: ['interleaved-thinking-2025-05-14', 'prompt-caching-2024-07-31'], ...claudeRequest })
-      : await claude.beta.messages.create({ betas: ['prompt-caching-2024-07-31'], ...claudeRequest });
+    const claudeData = await claude.beta.messages.create({
+      betas: ['interleaved-thinking-2025-05-14', 'prompt-caching-2024-07-31'],
+      ...claudeRequest,
+    });
 
     const evaluationResult = claudeData.content?.find(b => b.type === 'text')?.text;
     const thinkingContent  = claudeData.content?.find(b => b.type === 'thinking')?.thinking ?? null;
@@ -227,7 +244,9 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     console.log(JSON.stringify({ etapa: 'claude_api', caracteres: evaluationResult.length, tokens_input: inputTokens, tokens_output: outputTokens, cache_read: cacheReadInputTokens, cache_creation: cacheCreationInputTokens }));
 
     // PASO 11: Extraer calificación y preguntas
-    const globalScore = extractScore(evaluationResult);
+    const globalScore = isAdministrativa
+      ? extractScore(evaluationResult)
+      : evaluationStatusToScore(extractEvaluationStatus(evaluationResult));
 
     let extractedQuestions             = [];
     let questionsExtractedSuccessfully = false;
