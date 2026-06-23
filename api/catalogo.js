@@ -1,4 +1,5 @@
 import { ttGet, mcPost } from '../lib/api_clients.js';
+import { log } from '../lib/logger.js';
 
 const CAT_MANYCHAT_FIELDS = {
   info_vacante: +process.env.CAT_MANYCHAT_FIELD_INFO_VACANTE,
@@ -57,6 +58,8 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  log('catalogo', 200);
+
   const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
 
   const subscriberId = body?.id;
@@ -65,12 +68,14 @@ export default async function handler(req, res) {
 
   if (!subscriberId) {
     console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'No subscriber ID' }));
+    log('catalogo', 400, 'missing subscriber id');
     return res.status(200).json({ ok: false, error: 'missing subscriber id' });
   }
 
   const match = mensaje.match(/#(\d+)/);
   if (!match) {
     console.log(JSON.stringify({ etapa: 'extraccion_id', estado: 'skip', mensaje: 'No job ID en mensaje' }));
+    log('catalogo', 400, 'no job id in message');
     return res.status(200).json({ ok: false, error: 'no job id in message' });
   }
 
@@ -86,8 +91,10 @@ export default async function handler(req, res) {
     const msg = e?.message ?? '';
     if (msg.includes('404')) {
       console.log(JSON.stringify({ etapa: 'teamtailor', estado: 'not_found', jobId }));
+      log('catalogo', 404, `TeamTailor: job ${jobId} not found`);
     } else {
       console.log(JSON.stringify({ etapa: 'teamtailor', estado: 'error', mensaje: msg }));
+      log('catalogo', 502, `TeamTailor error: ${msg}`);
     }
     return res.status(200).json({ ok: false, error: 'job not found' });
   }
