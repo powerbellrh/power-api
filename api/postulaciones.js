@@ -25,6 +25,7 @@ import {
   getEvaluationStatusRating,
 } from '../lib/postulacion_utils.js';
 import { ttGet, ttPatch, ttPost, mcPost } from '../lib/api_clients.js';
+import { log } from '../lib/logger.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -337,6 +338,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
 
   } catch (error) {
     console.log(JSON.stringify({ etapa: 'error', postulacion_id: postulacionId, mensaje: error.message }));
+    log('postulaciones', 500, `Error en procesarEvaluacion [${postulacionId}]: ${error.message}`);
     try {
       await supabase.from('postulaciones').update({
         evaluacion_agendada:   false,
@@ -363,6 +365,7 @@ export default async function handler(req, res) {
   if (!postulacionId)
     return res.status(400).json({ error: 'Missing postulacion field' });
 
+  log('postulaciones', 200);
   console.log(JSON.stringify({ etapa: 'inicio', postulacion_id: postulacionId }));
 
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -371,11 +374,15 @@ export default async function handler(req, res) {
   const { data: postulacion, error: fetchError } = await supabase
     .from('postulaciones').select('*').eq('postulacion_id', postulacionId).single();
 
-  if (fetchError || !postulacion)
+  if (fetchError || !postulacion) {
+    log('postulaciones', 404, `Postulacion not found: ${postulacionId}`);
     return res.status(404).json({ error: 'Postulacion not found', detail: fetchError?.message });
+  }
 
-  if (!postulacion.vacante_id)
+  if (!postulacion.vacante_id) {
+    log('postulaciones', 400, `Missing vacante_id for postulacion: ${postulacionId}`);
     return res.status(400).json({ error: 'Missing vacante_id in record' });
+  }
 
   // PASO 2: Marcar como en proceso y disparar trabajo en background
   await supabase.from('postulaciones').update({ evaluacion_agendada: true }).eq('postulacion_id', postulacionId);

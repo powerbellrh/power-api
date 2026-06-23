@@ -5,6 +5,7 @@ import { dirname, join }                            from 'path';
 import { extraerCampos, esMediotiempo, deduplicar } from '../lib/vacante.js';
 import { filtrarConIA }                             from '../lib/filtrado.js';
 import { extraerSalariosConIA }                     from '../lib/extraccion_salario_ia.js';
+import { log }                                      from '../lib/logger.js';
 
 const __dirname           = dirname(fileURLToPath(import.meta.url));
 const PROMPT_CONCLUSIONES = readFileSync(join(__dirname, '../prompts/conclusiones_ia.txt'), 'utf-8');
@@ -27,6 +28,8 @@ export default async function handler(req, res) {
   if (!vacante || !ubicacion)
     return res.status(400).json({ error: "Los campos 'vacante' y 'ubicacion' son requeridos" });
 
+  log('estudios', 200);
+
   const respApify = await fetch(
     `https://api.apify.com/v2/actors/borderline~indeed-scraper/run-sync-get-dataset-items?token=${process.env.APIFY_TOKEN}`,
     {
@@ -37,8 +40,10 @@ export default async function handler(req, res) {
   );
 
   const vacantes = await respApify.json();
-  if (!Array.isArray(vacantes))
+  if (!Array.isArray(vacantes)) {
+    log('estudios', 502, `Apify falló: ${JSON.stringify(vacantes).slice(0, 200)}`);
     return res.status(500).json({ error: 'Apify falló', detalle: vacantes });
+  }
 
   const dedup       = deduplicar(vacantes.map(v => extraerCampos(v)));
   const medioTiempo = dedup.filter(v =>  esMediotiempo(v));
