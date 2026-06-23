@@ -24,7 +24,7 @@ import {
   evaluationStatusToScore,
   getEvaluationStatusRating,
 } from '../lib/postulacion_utils.js';
-import { ttGet, ttPatch, ttPost, mcPost } from '../lib/api_clients.js';
+import { ttGet, ttPatch, ttPost, mcPost, mcGet } from '../lib/api_clients.js';
 import { log } from '../lib/logger.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -44,6 +44,8 @@ const AI_CONFIG = {
 const TEAMTAILOR_BOT_USER_ID = +process.env.AD_TEAMTAILOR_BOT_USER_ID;
 const CUSTOM_FIELD_ID        =  process.env.AD_TEAMTAILOR_CUSTOM_FIELD_ID;
 const MANYCHAT_FLOW_NS       =  process.env.AD_MANYCHAT_FLOW_NS;
+
+const MANYCHAT_PHONE_FIELD_ID = +process.env.MANYCHAT_FIELD_PHONE_ID;
 
 const MANYCHAT_FIELDS = {
   job_title:    +process.env.AD_MANYCHAT_FIELD_JOB_TITLE,
@@ -84,18 +86,39 @@ async function sendWhatsApp({ candidateFirstName, candidatePhone, candidateId, j
   }
 
   try {
-    const subResp = await mcPost('/fb/subscriber/createSubscriber', {
-      first_name:     candidateFirstName,
-      whatsapp_phone: phone,
-      consent_phrase: 'Consiento a que mi contacto sea usado para enviarme actualizaciones de las vacantes disponibles',
-    });
+    let mcUserId;
 
-    if (subResp.status !== 'success' || !subResp.data)
-      return { enviado: false, error: 'createSubscriber did not return success' };
+    try {
+      const subResp = await mcPost('/fb/subscriber/createSubscriber', {
+        first_name:     candidateFirstName,
+        whatsapp_phone: phone,
+        consent_phrase: 'Consiento a que mi contacto sea usado para enviarme actualizaciones de las vacantes disponibles',
+      });
 
-    const mcUserId = parseInt(subResp.data.id, 10);
-    if (isNaN(mcUserId))
-      return { enviado: false, error: `Invalid subscriber ID: ${subResp.data.id}` };
+      if (subResp.status !== 'success' || !subResp.data)
+        return { enviado: false, error: 'createSubscriber did not return success' };
+
+      mcUserId = parseInt(subResp.data.id, 10);
+      if (isNaN(mcUserId))
+        return { enviado: false, error: `Invalid subscriber ID: ${subResp.data.id}` };
+
+      console.log(JSON.stringify({ etapa: 'whatsapp_suscriptor', estado: 'creado', mcUserId }));
+    } catch (createErr) {
+      if (createErr.message.includes('wa_id') && createErr.message.includes('already exists')) {
+        console.log(JSON.stringify({ etapa: 'whatsapp_suscriptor', estado: 'ya_existe', razon: 'buscando_por_telefono', phone }));
+        const found = await mcGet('/fb/subscriber/findByCustomField', {
+          field_id:    MANYCHAT_PHONE_FIELD_ID,
+          field_value: phone,
+        });
+        const existing = found?.data?.[0];
+        if (!existing?.id)
+          return { enviado: false, error: `createSubscriber failed (already exists) and findByCustomField returned no results for phone ${phone}` };
+        mcUserId = existing.id;
+        console.log(JSON.stringify({ etapa: 'whatsapp_suscriptor', estado: 'encontrado_por_telefono', mcUserId }));
+      } else {
+        throw createErr;
+      }
+    }
 
     try {
       await mcPost('/fb/subscriber/setCustomFields', {

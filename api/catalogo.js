@@ -55,12 +55,15 @@ function cleanHtmlForWhatsApp(html) {
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
+    console.log(JSON.stringify({ etapa: 'request', estado: 'error', mensaje: `method not allowed: ${req.method}` }));
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   const apiKey = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
-  if (process.env.POWERBELL_API_KEY && apiKey !== process.env.POWERBELL_API_KEY)
+  if (process.env.POWERBELL_API_KEY && apiKey !== process.env.POWERBELL_API_KEY) {
+    console.log(JSON.stringify({ etapa: 'auth', estado: 'error', mensaje: 'unauthorized' }));
     return res.status(401).json({ error: 'Unauthorized' });
+  }
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
 
@@ -70,6 +73,7 @@ export default async function handler(req, res) {
 
   if (!subscriberId) {
     const respuesta = { httpStatus: 200, logStatus: 400, body: { ok: false, error: 'missing subscriber id' } };
+    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing subscriber id' }));
     log('catalogo', respuesta.logStatus, 'missing subscriber id');
     return res.status(respuesta.httpStatus).json(respuesta.body);
   }
@@ -77,6 +81,7 @@ export default async function handler(req, res) {
   const match = mensaje.match(/#(\d+)/);
   if (!match) {
     const respuesta = { httpStatus: 200, logStatus: 200, body: { ok: false, error: 'no job id in message' } };
+    console.log(JSON.stringify({ etapa: 'validacion', estado: 'sin_vacante', subscriberId, mensaje }));
     log('catalogo', respuesta.logStatus, 'no job id in message');
     return res.status(respuesta.httpStatus).json(respuesta.body);
   }
