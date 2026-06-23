@@ -58,8 +58,6 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  log('catalogo', 200);
-
   const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
 
   const subscriberId = body?.id;
@@ -137,5 +135,6 @@ export default async function handler(req, res) {
     console.log(JSON.stringify({ etapa: 'manychat_flow', estado: 'omitido', razon: 'inicio=true' }));
   }
 
+  log('catalogo', 200);
   return res.status(200).json({ ok: true });
 }

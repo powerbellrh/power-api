@@ -24,8 +24,6 @@ export default async function handler(req, res) {
   if (req.method !== 'POST')
     return res.status(405).json({ error: 'Método no permitido, usa POST' });
 
-  log('estudios', 200);
-
   const { vacante, ubicacion } = req.body;
   if (!vacante || !ubicacion) {
     log('estudios', 400, "missing vacante or ubicacion");
@@ -145,6 +143,7 @@ export default async function handler(req, res) {
   const strip        = ({ salario_valido, ...v }) => v;
   const aprobadasSet = new Set(aprobadas);
 
+  log('estudios', 200);
   return res.status(200).json({
     conclusiones: {
       vacante,

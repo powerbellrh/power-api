@@ -382,8 +382,6 @@ export default async function handler(req, res) {
   if (process.env.POWERBELL_API_KEY && apiKey !== process.env.POWERBELL_API_KEY)
     return res.status(401).json({ error: 'Unauthorized' });
 
-  log('postulaciones', 200);
-
   const { postulacion: postulacionId } = req.body ?? {};
   if (!postulacionId) {
     log('postulaciones', 400, 'missing postulacion field');
@@ -411,5 +409,6 @@ export default async function handler(req, res) {
   await supabase.from('postulaciones').update({ evaluacion_agendada: true }).eq('postulacion_id', postulacionId);
   waitUntil(procesarEvaluacion(postulacionId, postulacion, supabase));
 
+  log('postulaciones', 202);
   return res.status(202).json({ status: 'processing', postulacion_id: postulacionId });
 }
