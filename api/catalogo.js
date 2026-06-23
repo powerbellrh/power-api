@@ -67,14 +67,12 @@ export default async function handler(req, res) {
   const isInicio     = body?.inicio === true || body?.inicio === 'true';
 
   if (!subscriberId) {
-    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'No subscriber ID' }));
     log('catalogo', 400, 'missing subscriber id');
     return res.status(200).json({ ok: false, error: 'missing subscriber id' });
   }
 
   const match = mensaje.match(/#(\d+)/);
   if (!match) {
-    console.log(JSON.stringify({ etapa: 'extraccion_id', estado: 'skip', mensaje: 'No job ID en mensaje' }));
     log('catalogo', 400, 'no job id in message');
     return res.status(200).json({ ok: false, error: 'no job id in message' });
   }
