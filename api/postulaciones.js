@@ -119,6 +119,7 @@ async function sendWhatsApp({ candidateFirstName, candidatePhone, candidateId, j
     return { enviado: true, error: null };
 
   } catch (e) {
+    log('postulaciones', 200, `whatsapp_integracion error: ${e.message}`);
     console.log(JSON.stringify({ etapa: 'whatsapp_integracion', estado: 'error', mensaje: e.message }));
     return { enviado: false, error: e.message };
   }
@@ -331,7 +332,27 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
       console.log(JSON.stringify({ etapa: 'whatsapp_integracion', estado: 'saltado', razon: 'sin_preguntas' }));
     }
 
-    // PASO 16: Guardar estado de WhatsApp
+    // PASO 16: Nota en TeamTailor si WhatsApp falló
+    if (!whatsappEnviado && whatsappError) {
+      try {
+        await ttPost('/notes', {
+          data: {
+            type: 'notes',
+            attributes: { note: `❌ Fallo el envio de mensaje de WhatsApp: ${whatsappError}` },
+            relationships: {
+              candidate:         { data: { id: candidateId,             type: 'candidates'       } },
+              user:              { data: { id: TEAMTAILOR_BOT_USER_ID,  type: 'users'            } },
+              'job-application': { data: { id: postulacionId.toString(), type: 'job-applications' } },
+            },
+          },
+        }, true);
+        console.log(JSON.stringify({ etapa: 'nota_whatsapp_error', estado: 'creada' }));
+      } catch (e) {
+        console.log(JSON.stringify({ etapa: 'nota_whatsapp_error', estado: 'error', mensaje: e.message }));
+      }
+    }
+
+    // PASO 17: Guardar estado de WhatsApp
     await supabase.from('postulaciones').update({ whatsapp_enviado: whatsappEnviado, whatsapp_error: whatsappError }).eq('postulacion_id', postulacionId);
 
     console.log(JSON.stringify({ etapa: 'completado', candidato: candidateFirstName, vacante: jobTitle, calificacion: globalScore, whatsapp: whatsappEnviado }));
@@ -361,11 +382,13 @@ export default async function handler(req, res) {
   if (process.env.POWERBELL_API_KEY && apiKey !== process.env.POWERBELL_API_KEY)
     return res.status(401).json({ error: 'Unauthorized' });
 
-  const { postulacion: postulacionId } = req.body ?? {};
-  if (!postulacionId)
-    return res.status(400).json({ error: 'Missing postulacion field' });
-
   log('postulaciones', 200);
+
+  const { postulacion: postulacionId } = req.body ?? {};
+  if (!postulacionId) {
+    log('postulaciones', 400, 'missing postulacion field');
+    return res.status(400).json({ error: 'Missing postulacion field' });
+  }
   console.log(JSON.stringify({ etapa: 'inicio', postulacion_id: postulacionId }));
 
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);

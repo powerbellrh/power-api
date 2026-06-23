@@ -24,11 +24,13 @@ export default async function handler(req, res) {
   if (req.method !== 'POST')
     return res.status(405).json({ error: 'Método no permitido, usa POST' });
 
-  const { vacante, ubicacion } = req.body;
-  if (!vacante || !ubicacion)
-    return res.status(400).json({ error: "Los campos 'vacante' y 'ubicacion' son requeridos" });
-
   log('estudios', 200);
+
+  const { vacante, ubicacion } = req.body;
+  if (!vacante || !ubicacion) {
+    log('estudios', 400, "missing vacante or ubicacion");
+    return res.status(400).json({ error: "Los campos 'vacante' y 'ubicacion' son requeridos" });
+  }
 
   const respApify = await fetch(
     `https://api.apify.com/v2/actors/borderline~indeed-scraper/run-sync-get-dataset-items?token=${process.env.APIFY_TOKEN}`,
