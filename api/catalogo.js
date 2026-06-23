@@ -58,6 +58,10 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  const apiKey = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
+  if (process.env.POWERBELL_API_KEY && apiKey !== process.env.POWERBELL_API_KEY)
+    return res.status(401).json({ error: 'Unauthorized' });
+
   const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
 
   const subscriberId = body?.id;
@@ -65,14 +69,16 @@ export default async function handler(req, res) {
   const isInicio     = body?.inicio === true || body?.inicio === 'true';
 
   if (!subscriberId) {
-    log('catalogo', 400, 'missing subscriber id');
-    return res.status(200).json({ ok: false, error: 'missing subscriber id' });
+    const respuesta = { httpStatus: 200, logStatus: 400, body: { ok: false, error: 'missing subscriber id' } };
+    log('catalogo', respuesta.logStatus, 'missing subscriber id');
+    return res.status(respuesta.httpStatus).json(respuesta.body);
   }
 
   const match = mensaje.match(/#(\d+)/);
   if (!match) {
-    log('catalogo', 400, 'no job id in message');
-    return res.status(200).json({ ok: false, error: 'no job id in message' });
+    const respuesta = { httpStatus: 200, logStatus: 200, body: { ok: false, error: 'no job id in message' } };
+    log('catalogo', respuesta.logStatus, 'no job id in message');
+    return res.status(respuesta.httpStatus).json(respuesta.body);
   }
 
   const jobId = match[1];
@@ -85,14 +91,15 @@ export default async function handler(req, res) {
     jobData = ttResponse.data.attributes;
   } catch (e) {
     const msg = e?.message ?? '';
+    const respuesta = { httpStatus: 200, logStatus: 500, body: { ok: false, error: 'job not found' } };
     if (msg.includes('404')) {
       console.log(JSON.stringify({ etapa: 'teamtailor', estado: 'not_found', jobId }));
-      log('catalogo', 404, `TeamTailor: job ${jobId} not found`);
+      log('catalogo', respuesta.logStatus, `TeamTailor: job ${jobId} not found`);
     } else {
       console.log(JSON.stringify({ etapa: 'teamtailor', estado: 'error', mensaje: msg }));
-      log('catalogo', 502, `TeamTailor error: ${msg}`);
+      log('catalogo', respuesta.logStatus, `TeamTailor error: ${msg}`);
     }
-    return res.status(200).json({ ok: false, error: 'job not found' });
+    return res.status(respuesta.httpStatus).json(respuesta.body);
   }
 
   const informacionVacante = cleanHtmlForWhatsApp(jobData.body);
@@ -135,6 +142,7 @@ export default async function handler(req, res) {
     console.log(JSON.stringify({ etapa: 'manychat_flow', estado: 'omitido', razon: 'inicio=true' }));
   }
 
-  log('catalogo', 200);
-  return res.status(200).json({ ok: true });
+  const respuesta = { httpStatus: 200, logStatus: 200, body: { ok: true } };
+  log('catalogo', respuesta.logStatus);
+  return res.status(respuesta.httpStatus).json(respuesta.body);
 }

@@ -384,8 +384,9 @@ export default async function handler(req, res) {
 
   const { postulacion: postulacionId } = req.body ?? {};
   if (!postulacionId) {
-    log('postulaciones', 400, 'missing postulacion field');
-    return res.status(400).json({ error: 'Missing postulacion field' });
+    const respuesta = { status: 400, body: { error: 'Missing postulacion field' } };
+    log('postulaciones', respuesta.status, 'missing postulacion field');
+    return res.status(respuesta.status).json(respuesta.body);
   }
   console.log(JSON.stringify({ etapa: 'inicio', postulacion_id: postulacionId }));
 
@@ -396,19 +397,22 @@ export default async function handler(req, res) {
     .from('postulaciones').select('*').eq('postulacion_id', postulacionId).single();
 
   if (fetchError || !postulacion) {
-    log('postulaciones', 404, `Postulacion not found: ${postulacionId}`);
-    return res.status(404).json({ error: 'Postulacion not found', detail: fetchError?.message });
+    const respuesta = { status: 404, body: { error: 'Postulacion not found', detail: fetchError?.message } };
+    log('postulaciones', respuesta.status, `Postulacion not found: ${postulacionId}`);
+    return res.status(respuesta.status).json(respuesta.body);
   }
 
   if (!postulacion.vacante_id) {
-    log('postulaciones', 400, `Missing vacante_id for postulacion: ${postulacionId}`);
-    return res.status(400).json({ error: 'Missing vacante_id in record' });
+    const respuesta = { status: 400, body: { error: 'Missing vacante_id in record' } };
+    log('postulaciones', respuesta.status, `Missing vacante_id for postulacion: ${postulacionId}`);
+    return res.status(respuesta.status).json(respuesta.body);
   }
 
   // PASO 2: Marcar como en proceso y disparar trabajo en background
   await supabase.from('postulaciones').update({ evaluacion_agendada: true }).eq('postulacion_id', postulacionId);
   waitUntil(procesarEvaluacion(postulacionId, postulacion, supabase));
 
-  log('postulaciones', 202);
-  return res.status(202).json({ status: 'processing', postulacion_id: postulacionId });
+  const respuesta = { status: 202, body: { status: 'processing', postulacion_id: postulacionId } };
+  log('postulaciones', respuesta.status);
+  return res.status(respuesta.status).json(respuesta.body);
 }

@@ -24,10 +24,15 @@ export default async function handler(req, res) {
   if (req.method !== 'POST')
     return res.status(405).json({ error: 'Método no permitido, usa POST' });
 
+  const apiKey = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
+  if (process.env.POWERBELL_API_KEY && apiKey !== process.env.POWERBELL_API_KEY)
+    return res.status(401).json({ error: 'Unauthorized' });
+
   const { vacante, ubicacion } = req.body;
   if (!vacante || !ubicacion) {
-    log('estudios', 400, "missing vacante or ubicacion");
-    return res.status(400).json({ error: "Los campos 'vacante' y 'ubicacion' son requeridos" });
+    const respuesta = { status: 400, body: { error: "Los campos 'vacante' y 'ubicacion' son requeridos" } };
+    log('estudios', respuesta.status, "missing vacante or ubicacion");
+    return res.status(respuesta.status).json(respuesta.body);
   }
 
   const respApify = await fetch(
@@ -41,8 +46,9 @@ export default async function handler(req, res) {
 
   const vacantes = await respApify.json();
   if (!Array.isArray(vacantes)) {
-    log('estudios', 502, `Apify falló: ${JSON.stringify(vacantes).slice(0, 200)}`);
-    return res.status(500).json({ error: 'Apify falló', detalle: vacantes });
+    const respuesta = { status: 500, body: { error: 'Apify falló', detalle: vacantes } };
+    log('estudios', respuesta.status, `Apify falló: ${JSON.stringify(vacantes).slice(0, 200)}`);
+    return res.status(respuesta.status).json(respuesta.body);
   }
 
   const dedup       = deduplicar(vacantes.map(v => extraerCampos(v)));
@@ -143,8 +149,7 @@ export default async function handler(req, res) {
   const strip        = ({ salario_valido, ...v }) => v;
   const aprobadasSet = new Set(aprobadas);
 
-  log('estudios', 200);
-  return res.status(200).json({
+  const respuesta = { status: 200, body: {
     conclusiones: {
       vacante,
       ubicacion,
@@ -160,5 +165,7 @@ export default async function handler(req, res) {
       ...bajoMinimo.map(v                                       => ({ ...strip(v), validez: 'invalida', razon_invalidez: 'bajo_minimo'  })),
       ...medioTiempo.map(v                                      => ({ ...strip(v), validez: 'invalida', razon_invalidez: 'medio_tiempo' })),
     ],
-  });
+  } };
+  log('estudios', respuesta.status);
+  return res.status(respuesta.status).json(respuesta.body);
 }
