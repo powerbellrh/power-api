@@ -44,7 +44,6 @@ async function buscarGlassdoorIC(ubicacion) {
       role:    'user',
       content: `Busca en glassdoor.com.mx sueldos para la ciudad "${ubicacion}" México. Necesito el parámetro _IC seguido de un número en la URL de resultados. Por ejemplo: _IC3486357. Devuelve ÚNICAMENTE el número del IC, sin texto adicional.`,
     }],
-    betas: ['web-search-2025-03-05'],
   });
 
   const texto = resp.content.find(b => b.type === 'text')?.text ?? '';
