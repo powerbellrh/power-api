@@ -113,7 +113,8 @@ async function handleGlassdoor(vacante, ubicacion, muestra, res) {
     return res.status(respuesta.status).json(respuesta.body);
   }
 
-  const results = rawData[0]?.aggregateSalaryResponse?.results ?? [];
+  const results = rawData.flatMap(page => page?.aggregateSalaryResponse?.results ?? []);
+  console.log(JSON.stringify({ etapa: 'debug_apify_glassdoor', rawData_length: rawData.length, results_length: results.length, resultCount_p0: rawData[0]?.aggregateSalaryResponse?.resultCount ?? null }));
   if (results.length === 0) {
     const respuesta = { status: 500, body: { error: 'Glassdoor no devolvió resultados salariales' } };
     log('estudios', respuesta.status, 'Glassdoor sin resultados');
@@ -168,7 +169,7 @@ async function handleGlassdoor(vacante, ubicacion, muestra, res) {
   const promptConclusion = PROMPT_CONCLUSIONES_GLASSDOOR
     .replace('{{vacante}}',     vacante)
     .replace('{{ubicacion}}',   ubicacion)
-    .replace('{{n_vacantes}}',  aprobadas.length)
+    .replace('{{n_vacantes}}',  aprobadas.reduce((sum, e) => sum + (e.n_reportes ?? 1), 0))
     .replace('{{salario_min}}', salarios[0]                   ?? 'N/A')
     .replace('{{p25}}',         estadisticos.p25)
     .replace('{{p50}}',         estadisticos.p50)
@@ -201,7 +202,7 @@ async function handleGlassdoor(vacante, ubicacion, muestra, res) {
       vacante,
       ubicacion,
       fuente:                'glassdoor',
-      n_vacantes_analizadas: aprobadas.length,
+      n_vacantes_analizadas: aprobadas.reduce((sum, e) => sum + (e.n_reportes ?? 1), 0),
       estadisticos,
       top_prestaciones:      [],
       comentario_ia:         respConclusion.content.find(b => b.type === 'text')?.text ?? null,
