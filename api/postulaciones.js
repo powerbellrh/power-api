@@ -142,7 +142,7 @@ async function sendWhatsApp({ candidateFirstName, candidatePhone, candidateId, j
     return { enviado: true, error: null };
 
   } catch (e) {
-    log('postulaciones', 200, `whatsapp_integracion error: ${e.message}`);
+    log('postulaciones', 500, `whatsapp: ${e.message}`);
     console.log(JSON.stringify({ etapa: 'whatsapp_integracion', estado: 'error', mensaje: e.message }));
     return { enviado: false, error: e.message };
   }
@@ -190,6 +190,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     if (!resumeUrl?.trim()) {
       if (vacanteTipo !== 'OP') {
         console.log(JSON.stringify({ etapa: 'no_resume', candidato: candidatoNombre, accion: 'registro_eliminado' }));
+        log('postulaciones', 200, `no_resume: ${candidatoNombre} eliminado`);
         await supabase.from('postulaciones').delete().eq('postulacion_id', postulacionId);
         return;
       }

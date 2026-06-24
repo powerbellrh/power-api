@@ -128,6 +128,7 @@ export default async function handler(req, res) {
   fieldResults.forEach((r, i) => {
     if (r.status === 'rejected') {
       console.log(JSON.stringify({ etapa: 'manychat_field', indice: i, estado: 'error', mensaje: r.reason?.message }));
+      log('catalogo', 500, `manychat_field[${i}]: ${r.reason?.message}`);
     }
   });
   console.log(JSON.stringify({ etapa: 'manychat_fields', estado: 'ok' }));
@@ -142,12 +143,13 @@ export default async function handler(req, res) {
       console.log(JSON.stringify({ etapa: 'manychat_flow', estado: 'enviado' }));
     } catch (e) {
       console.log(JSON.stringify({ etapa: 'manychat_flow', estado: 'error', mensaje: e.message }));
+      log('catalogo', 500, `manychat_flow: ${e.message}`);
     }
   } else {
     console.log(JSON.stringify({ etapa: 'manychat_flow', estado: 'omitido', razon: 'inicio=true' }));
   }
 
   const respuesta = { httpStatus: 200, logStatus: 200, body: { ok: true } };
-  log('catalogo', respuesta.logStatus);
+  log('catalogo', respuesta.logStatus, `job ${jobId} | ${jobData.title}`);
   return res.status(respuesta.httpStatus).json(respuesta.body);
 }
