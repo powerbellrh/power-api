@@ -86,7 +86,7 @@ async function handleGlassdoor(vacante, ubicacion, muestra, res) {
         command:                      'salaries',
         enrichEmails:                 false,
         includeAllReviews:            false,
-        includeAllSalaries:           false,
+        includeAllSalaries:           true,
         includeCompanyBenefitsStats:  false,
         includeCompanyInterviewStats: false,
         includeCompanyReviewStats:    false,
