@@ -379,10 +379,11 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     await supabase.from('postulaciones').update({ whatsapp_enviado: whatsappEnviado, whatsapp_error: whatsappError }).eq('postulacion_id', postulacionId);
 
     console.log(JSON.stringify({ etapa: 'completado', candidato: candidateFirstName, vacante: jobTitle, calificacion: globalScore, whatsapp: whatsappEnviado }));
+    log('postulaciones', 200, `${candidateFirstName} | ${jobTitle} | cal:${globalScore} | wa:${whatsappEnviado ? 'ok' : whatsappError}`);
 
   } catch (error) {
     console.log(JSON.stringify({ etapa: 'error', postulacion_id: postulacionId, mensaje: error.message }));
-    log('postulaciones', 500, `Error en procesarEvaluacion [${postulacionId}]: ${error.message}`);
+    log('postulaciones', 500, `[${postulacionId}] ${error.message}`);
     try {
       await supabase.from('postulaciones').update({
         evaluacion_agendada:   false,
@@ -436,6 +437,5 @@ export default async function handler(req, res) {
   waitUntil(procesarEvaluacion(postulacionId, postulacion, supabase));
 
   const respuesta = { status: 202, body: { status: 'processing', postulacion_id: postulacionId } };
-  log('postulaciones', respuesta.status);
   return res.status(respuesta.status).json(respuesta.body);
 }
