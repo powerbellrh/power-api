@@ -8,9 +8,11 @@ import { extraerSalariosConIA }                     from '../lib/extraccion_sala
 import { log }                                      from '../lib/logger.js';
 import { GLASSDOOR_IC }                             from '../lib/glassdoor_ic.js';
 
-const __dirname           = dirname(fileURLToPath(import.meta.url));
-const PROMPT_CONCLUSIONES = readFileSync(join(__dirname, '../prompts/conclusiones_ia.txt'), 'utf-8');
-const client              = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY_ESTUDIOS });
+const SALARIO_MINIMO_MENSUAL        = parseFloat(process.env.SALARIO_MINIMO_MENSUAL);
+const __dirname                     = dirname(fileURLToPath(import.meta.url));
+const PROMPT_CONCLUSIONES           = readFileSync(join(__dirname, '../prompts/conclusiones_ia.txt'), 'utf-8');
+const PROMPT_CONCLUSIONES_GLASSDOOR = readFileSync(join(__dirname, '../prompts/conclusiones_ia_glassdoor.txt'), 'utf-8');
+const client                        = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY_ESTUDIOS });
 
 const costo = (ti, to) => +((ti / 1_000_000) + (to / 1_000_000 * 5)).toFixed(6);
 
@@ -67,7 +69,7 @@ function buildGlassdoorUrl(citySlug, jobSlug, locationId) {
 
 // ── Handler Glassdoor ──────────────────────────────────────────────────────
 
-async function handleGlassdoor(vacante, ubicacion, res) {
+async function handleGlassdoor(vacante, ubicacion, muestra, res) {
   const locationId = await resolverGlassdoorIC(ubicacion);
   const citySlug   = slugify(ubicacion);
   const jobSlug    = slugify(vacante);
@@ -88,7 +90,7 @@ async function handleGlassdoor(vacante, ubicacion, res) {
         includeCompanyBenefitsStats:  false,
         includeCompanyInterviewStats: false,
         includeCompanyReviewStats:    false,
-        maxItems:                     100,
+        maxItems:                     muestra ?? 100,
         monitoringModeForReviews:     false,
         proxy: {
           useApifyProxy:      true,
@@ -118,9 +120,9 @@ async function handleGlassdoor(vacante, ubicacion, res) {
     return res.status(respuesta.status).json(respuesta.body);
   }
 
-  // Normalizar entradas: solo registros con salario mensual
+  // Normalizar entradas: solo registros con salario mensual por encima del mínimo legal
   const entradas = results
-    .filter(r => r.payPeriod === 'MONTHLY' && r.totalPayStatistics?.mean != null)
+    .filter(r => r.payPeriod === 'MONTHLY' && r.totalPayStatistics?.mean != null && Math.round(r.totalPayStatistics.mean) >= SALARIO_MINIMO_MENSUAL)
     .map(r => {
       const pcts = {};
       for (const { ident, value } of (r.totalPayStatistics.percentiles ?? [])) {
@@ -138,7 +140,13 @@ async function handleGlassdoor(vacante, ubicacion, res) {
       };
     });
 
-  const salarios     = entradas.map(e => e.salario_mensual).sort((a, b) => a - b);
+  // Filtrado IA: valida título vs vacante buscada y descarta staffing
+  const { aprobadas, n_rechazadas_ia, metricas: m_fil } = await filtrarConIA(entradas, vacante);
+  const aprobadasSet = new Set(aprobadas);
+
+  console.log(JSON.stringify({ etapa: 'filtrado_ia', rechazadas: n_rechazadas_ia, costo_usd: costo(m_fil.tokens_input + m_fil.cache_creados + m_fil.cache_leidos, m_fil.tokens_output) }));
+
+  const salarios     = aprobadas.map(e => e.salario_mensual).sort((a, b) => a - b);
   const estadisticos = {
     p10: percentil(salarios, 10),
     p25: percentil(salarios, 25),
@@ -147,30 +155,29 @@ async function handleGlassdoor(vacante, ubicacion, res) {
     p90: percentil(salarios, 90),
   };
 
-  for (const e of entradas) {
+  for (const e of aprobadas) {
     if      (e.salario_mensual <  estadisticos.p25) e.banda_salarial = 'Baja';
     else if (e.salario_mensual <= estadisticos.p75) e.banda_salarial = 'Media';
     else                                            e.banda_salarial = 'Alta';
   }
 
-  const n_baja  = entradas.filter(e => e.banda_salarial === 'Baja').length;
-  const n_media = entradas.filter(e => e.banda_salarial === 'Media').length;
-  const n_alta  = entradas.filter(e => e.banda_salarial === 'Alta').length;
+  const n_baja  = aprobadas.filter(e => e.banda_salarial === 'Baja').length;
+  const n_media = aprobadas.filter(e => e.banda_salarial === 'Media').length;
+  const n_alta  = aprobadas.filter(e => e.banda_salarial === 'Alta').length;
 
-  const promptConclusion = PROMPT_CONCLUSIONES
-    .replace('{{vacante}}',          vacante)
-    .replace('{{ubicacion}}',        ubicacion)
-    .replace('{{n_vacantes}}',       entradas.length)
-    .replace('{{salario_min}}',      salarios[0]                   ?? 'N/A')
-    .replace('{{p25}}',              estadisticos.p25)
-    .replace('{{p50}}',              estadisticos.p50)
-    .replace('{{p75}}',              estadisticos.p75)
-    .replace('{{salario_max}}',      salarios[salarios.length - 1] ?? 'N/A')
-    .replace('{{n_baja}}',           n_baja)
-    .replace('{{n_media}}',          n_media)
-    .replace('{{n_alta}}',           n_alta)
-    .replace('{{top_prestaciones}}', '  (información de prestaciones no disponible para esta fuente)')
-    .replace('{{titulos}}',          [...new Set(entradas.map(e => e.puesto).filter(Boolean))].join(', '));
+  const promptConclusion = PROMPT_CONCLUSIONES_GLASSDOOR
+    .replace('{{vacante}}',     vacante)
+    .replace('{{ubicacion}}',   ubicacion)
+    .replace('{{n_vacantes}}',  aprobadas.length)
+    .replace('{{salario_min}}', salarios[0]                   ?? 'N/A')
+    .replace('{{p25}}',         estadisticos.p25)
+    .replace('{{p50}}',         estadisticos.p50)
+    .replace('{{p75}}',         estadisticos.p75)
+    .replace('{{salario_max}}', salarios[salarios.length - 1] ?? 'N/A')
+    .replace('{{n_baja}}',      n_baja)
+    .replace('{{n_media}}',     n_media)
+    .replace('{{n_alta}}',      n_alta)
+    .replace('{{titulos}}',     [...new Set(aprobadas.map(e => e.titulo_vacante).filter(Boolean))].join(', '));
 
   const respConclusion = await client.messages.create({
     model:      'claude-haiku-4-5',
@@ -179,26 +186,32 @@ async function handleGlassdoor(vacante, ubicacion, res) {
   });
 
   const { input_tokens: ti_c, output_tokens: to_c } = respConclusion.usage;
-  const costo_ia    = costo(ti_c, to_c);
+  const costo_ia    = costo(
+    m_fil.tokens_input + m_fil.cache_creados + m_fil.cache_leidos + ti_c,
+    m_fil.tokens_output + to_c,
+  );
   const costo_apify = +((results.length / 1000) * 5).toFixed(6);
   const costo_total = +(costo_ia + costo_apify).toFixed(6);
 
   console.log(JSON.stringify({ etapa: 'conclusiones_ia', costo_usd: costo(ti_c, to_c) }));
-  console.log(JSON.stringify({ etapa: 'resumen_glassdoor', registros_apify: results.length, validos: entradas.length, costo_ia_usd: costo_ia, costo_apify_usd: costo_apify, costo_total_usd: costo_total }));
+  console.log(JSON.stringify({ etapa: 'resumen_glassdoor', registros_apify: results.length, validos: aprobadas.length, rechazadas_ia: n_rechazadas_ia, costo_ia_usd: costo_ia, costo_apify_usd: costo_apify, costo_total_usd: costo_total }));
 
   const respuesta = { status: 200, body: {
     conclusiones: {
       vacante,
       ubicacion,
       fuente:                'glassdoor',
-      n_vacantes_analizadas: entradas.length,
+      n_vacantes_analizadas: aprobadas.length,
       estadisticos,
       top_prestaciones:      [],
       comentario_ia:         respConclusion.content.find(b => b.type === 'text')?.text ?? null,
     },
-    vacantes: entradas.map(e => ({ ...e, banda_salarial: e.banda_salarial, validez: 'valida', razon_invalidez: null })),
+    vacantes: [
+      ...aprobadas.map(e                                          => ({ ...e, validez: 'valida',   razon_invalidez: null           })),
+      ...entradas.filter(e => !aprobadasSet.has(e)).map(e        => ({ ...e, validez: 'invalida', razon_invalidez: 'rechazada_ia' })),
+    ],
   } };
-  log('estudios', respuesta.status, `glassdoor: ${entradas.length} registros | costo: $${costo_total}`);
+  log('estudios', respuesta.status, `glassdoor: ${aprobadas.length} registros válidos | rechazadas_ia: ${n_rechazadas_ia} | costo: $${costo_total}`);
   return res.status(respuesta.status).json(respuesta.body);
 }
 
@@ -212,7 +225,7 @@ export default async function handler(req, res) {
   if (process.env.POWERBELL_API_KEY && apiKey !== process.env.POWERBELL_API_KEY)
     return res.status(401).json({ error: 'Unauthorized' });
 
-  const { vacante, ubicacion, fuente } = req.body;
+  const { vacante, ubicacion, fuente, muestra } = req.body;
   if (!vacante || !ubicacion || !fuente) {
     const respuesta = { status: 400, body: { error: "Los campos 'vacante', 'ubicacion' y 'fuente' son requeridos" } };
     log('estudios', respuesta.status, "missing vacante, ubicacion or fuente");
@@ -224,7 +237,7 @@ export default async function handler(req, res) {
     return res.status(respuesta.status).json(respuesta.body);
   }
 
-  if (fuente === 'glassdoor') return handleGlassdoor(vacante, ubicacion, res);
+  if (fuente === 'glassdoor') return handleGlassdoor(vacante, ubicacion, muestra, res);
 
   // ── Indeed ────────────────────────────────────────────────────────────────
 
@@ -233,7 +246,7 @@ export default async function handler(req, res) {
     {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ country: 'mx', fromDays: '14', location: ubicacion, query: vacante, maxRows: 50, sort: 'relevance' }),
+      body:    JSON.stringify({ country: 'mx', fromDays: '14', location: ubicacion, query: vacante, maxRows: muestra ?? 100, sort: 'relevance' }),
     }
   );
 
