@@ -78,7 +78,7 @@ async function fetchCustomFieldContext(vacanteId) {
   }
 }
 
-async function sendWhatsApp({ candidateFirstName, candidatePhone, candidateId, jobTitle, questions }) {
+async function sendWhatsApp({ candidateFirstName, candidatePhone, candidateId, jobTitle, questions, vacanteTipo }) {
   const phone = cleanPhoneNumber(candidatePhone);
   if (!phone) {
     console.log(JSON.stringify({ etapa: 'whatsapp_integracion', estado: 'saltado', razon: 'sin_telefono' }));
@@ -121,16 +121,26 @@ async function sendWhatsApp({ candidateFirstName, candidatePhone, candidateId, j
     }
 
     try {
+      const questionFields = vacanteTipo === 'OP'
+        ? [
+            { field_id: MANYCHAT_FIELDS.question_1, field_value: questions[0] || 'error' },
+            { field_id: MANYCHAT_FIELDS.question_2, field_value: questions[1] || 'error' },
+            { field_id: MANYCHAT_FIELDS.question_3, field_value: questions[2] || 'error' },
+          ]
+        : [
+            { field_id: MANYCHAT_FIELDS.question_1, field_value: questions[0] || 'error' },
+            { field_id: MANYCHAT_FIELDS.question_2, field_value: questions[1] || 'error' },
+            { field_id: MANYCHAT_FIELDS.question_3, field_value: questions[2] || 'error' },
+            { field_id: MANYCHAT_FIELDS.question_4, field_value: questions[3] || 'error' },
+            { field_id: MANYCHAT_FIELDS.question_5, field_value: questions[4] || 'error' },
+          ];
+
       await mcPost('/fb/subscriber/setCustomFields', {
         subscriber_id: mcUserId,
         fields: [
-          { field_id: MANYCHAT_FIELDS.job_title,    field_value: jobTitle || 'error'         },
-          { field_id: MANYCHAT_FIELDS.candidate_id, field_value: candidateId.toString()       },
-          { field_id: MANYCHAT_FIELDS.question_1,   field_value: questions[0] || 'error'     },
-          { field_id: MANYCHAT_FIELDS.question_2,   field_value: questions[1] || 'error'     },
-          { field_id: MANYCHAT_FIELDS.question_3,   field_value: questions[2] || 'error'     },
-          { field_id: MANYCHAT_FIELDS.question_4,   field_value: questions[3] || 'error'     },
-          { field_id: MANYCHAT_FIELDS.question_5,   field_value: questions[4] || 'error'     },
+          { field_id: MANYCHAT_FIELDS.job_title,    field_value: jobTitle || 'error'   },
+          { field_id: MANYCHAT_FIELDS.candidate_id, field_value: candidateId.toString() },
+          ...questionFields,
         ],
       });
     } catch (e) {
@@ -314,7 +324,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     console.log(JSON.stringify({ etapa: 'guardado_evaluacion', calificacion: globalScore, preguntas_extraidas: questionsExtractedSuccessfully }));
 
     // PASO 13: Actualizar foto del candidato en TeamTailor
-    if (globalScore !== null) {
+    if (globalScore !== null && isAdministrativa) {
       try {
         await ttPatch(`/candidates/${candidateId}`, {
           data: { id: candidateId.toString(), type: 'candidates', attributes: { picture: getScorePictureUrl(globalScore) } },
@@ -348,7 +358,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     let whatsappError   = null;
 
     if (questionsExtractedSuccessfully) {
-      const result = await sendWhatsApp({ candidateFirstName, candidatePhone, candidateId, jobTitle, questions: extractedQuestions });
+      const result = await sendWhatsApp({ candidateFirstName, candidatePhone, candidateId, jobTitle, questions: extractedQuestions, vacanteTipo });
       whatsappEnviado = result.enviado;
       whatsappError   = result.error;
     } else if (!questionsExtractedSuccessfully) {
