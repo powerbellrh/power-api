@@ -152,8 +152,8 @@ async function sendWhatsApp({ candidateFirstName, candidatePhone, candidateId, j
     return { enviado: true, error: null };
 
   } catch (e) {
-    log('postulaciones', 500, `whatsapp: ${e.message}`);
-    console.log(JSON.stringify({ etapa: 'whatsapp_integracion', estado: 'error', mensaje: e.message }));
+    log('postulaciones', 500, `whatsapp [${candidateFirstName} | ${candidateId}]: ${e.message}`);
+    console.log(JSON.stringify({ etapa: 'whatsapp_integracion', estado: 'error', candidato: candidateFirstName, candidato_id: candidateId, mensaje: e.message }));
     return { enviado: false, error: e.message };
   }
 }
@@ -167,8 +167,12 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
   const tipoConfig   = AI_CONFIG[vacanteTipo] ?? AI_CONFIG.AD;
   const systemPrompt = PROMPTS[vacanteTipo]   ?? PROMPTS.AD;
 
+  let etapaActual = 'init';
+  let candidateId = null;
+
   try {
     // PASO 3: Obtener datos de la vacante
+    etapaActual    = 'datos_job';
     const jobData  = await ttGet(`/jobs/${vacanteId}?include=location`, true);
     const jobAttrs = jobData.data.attributes;
 
@@ -184,12 +188,14 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     console.log(JSON.stringify({ etapa: 'datos_job', titulo: jobTitle, ubicacion: jobLocation, salario: jobSalaryText }));
 
     // PASO 4: Obtener campo personalizado de contexto
+    etapaActual              = 'custom_field';
     const customFieldContext = await fetchCustomFieldContext(vacanteId);
 
     // PASO 5: Obtener datos del candidato
-    const candidateRaw       = await ttGet(`/job-applications/${postulacionId}/candidate`, true);
-    const candidateData      = candidateRaw.data;
-    const candidateId        = candidateData.id;
+    etapaActual          = 'datos_candidato';
+    const candidateRaw   = await ttGet(`/job-applications/${postulacionId}/candidate`, true);
+    const candidateData  = candidateRaw.data;
+    candidateId          = candidateData.id;
     const resumeUrl          = candidateData.attributes.resume;
     const candidatePhone     = candidateData.attributes.phone || candidatoTelefono;
     const candidateFirstName = candidateData.attributes['first-name'] || candidatoNombre.split(' ')[0];
@@ -200,7 +206,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     if (!resumeUrl?.trim()) {
       if (vacanteTipo !== 'OP') {
         console.log(JSON.stringify({ etapa: 'no_resume', candidato: candidatoNombre, accion: 'registro_eliminado' }));
-        log('postulaciones', 200, `no_resume: ${candidatoNombre} eliminado`);
+        log('postulaciones', 200, `[${postulacionId}] no_resume: ${candidatoNombre} eliminado`);
         await supabase.from('postulaciones').delete().eq('postulacion_id', postulacionId);
         return;
       }
@@ -208,6 +214,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     }
 
     // PASO 6: Obtener y procesar respuestas del candidato
+    etapaActual               = 'respuestas_candidato';
     const answersRaw          = await ttGet(`/candidates/${candidateId}/answers?include=question`, true);
     const rawAnswers          = answersRaw.data ?? [];
     const candidatoRespuestas = parseAnswers(rawAnswers, answersRaw.included ?? []);
@@ -217,6 +224,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     console.log(JSON.stringify({ etapa: 'fuentes_historial', cv: resumeUrl ? 'si' : 'no', imagen_respuestas: imageUrlFromAnswers ? 'si' : 'no' }));
 
     // PASO 7: Guardar datos de TeamTailor en Supabase
+    etapaActual = 'guardar_datos_tt';
     await supabase.from('postulaciones').update({
       vacante_nombre:       jobTitle,
       vacante_descripcion:  cleanJobDescription,
@@ -257,6 +265,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     };
 
     // PASO 9: Registrar solicitud en Supabase
+    etapaActual = 'guardar_peticion_claude';
     await supabase.from('postulaciones').update({
       evaluacion_peticion: JSON.stringify(claudeRequest),
       evaluacion_prompt:   systemPromptWithDate,
@@ -264,6 +273,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     }).eq('postulacion_id', postulacionId);
 
     // PASO 10: Llamar a la API de Claude
+    etapaActual      = 'claude_api';
     const claudeData = await claude.beta.messages.create({
       betas: ['interleaved-thinking-2025-05-14', 'prompt-caching-2024-07-31'],
       ...claudeRequest,
@@ -280,9 +290,15 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     console.log(JSON.stringify({ etapa: 'claude_api', caracteres: evaluationResult.length, tokens_input: inputTokens, tokens_output: outputTokens, cache_read: cacheReadInputTokens, cache_creation: cacheCreationInputTokens }));
 
     // PASO 11: Extraer calificación y preguntas
+    etapaActual       = 'extraccion_resultados';
     const globalScore = isAdministrativa
       ? extractScore(evaluationResult)
       : evaluationStatusToScore(extractEvaluationStatus(evaluationResult));
+
+    if (globalScore === null) {
+      log('postulaciones', 200, `[${postulacionId}] score_no_parseable: Claude no devolvió calificación en formato esperado (${candidatoNombre} | ${jobTitle})`);
+      console.log(JSON.stringify({ etapa: 'extraccion_score', estado: 'null', candidato: candidatoNombre }));
+    }
 
     let extractedQuestions             = [];
     let questionsExtractedSuccessfully = false;
@@ -302,13 +318,16 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
           pregunta_5: extractedQuestions[4] ?? null,
         };
       } catch (e) {
+        log('postulaciones', 200, `[${postulacionId}] preguntas_malformadas: ${e.message} (${candidatoNombre} | ${jobTitle})`);
         console.log(JSON.stringify({ etapa: 'extraccion_preguntas', estado: 'error', mensaje: e.message }));
       }
     } else {
+      log('postulaciones', 200, `[${postulacionId}] sin_seccion_preguntas: Claude no incluyó #PREGUNTAS# (${candidatoNombre} | ${jobTitle})`);
       console.log(JSON.stringify({ etapa: 'extraccion_preguntas', estado: 'no_encontrada', razon: 'sin_seccion_preguntas' }));
     }
 
     // PASO 12: Guardar resultados de la evaluación
+    etapaActual = 'guardar_evaluacion';
     const { error: saveError } = await supabase.from('postulaciones').update({
       evaluacion_pensamiento:  thinkingContent,
       evaluacion_calificacion: globalScore,
@@ -324,6 +343,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     console.log(JSON.stringify({ etapa: 'guardado_evaluacion', calificacion: globalScore, preguntas_extraidas: questionsExtractedSuccessfully }));
 
     // PASO 13: Actualizar foto del candidato en TeamTailor
+    etapaActual = 'actualizar_foto';
     if (globalScore !== null && isAdministrativa) {
       try {
         await ttPatch(`/candidates/${candidateId}`, {
@@ -331,29 +351,37 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
         }, true);
         console.log(JSON.stringify({ etapa: 'actualizar_foto_candidato', estado: 'exito', categoria: getScoreCategoryName(globalScore), calificacion: globalScore }));
       } catch (e) {
+        log('postulaciones', 200, `[${postulacionId}] fallo_foto_candidato: ${e.message}`);
         console.log(JSON.stringify({ etapa: 'actualizar_foto_candidato', estado: 'error', mensaje: e.message }));
       }
     }
 
     // PASO 14: Crear nota de evaluación en TeamTailor
+    etapaActual = 'crear_nota_tt';
     const evaluationRating = getScoreRating(globalScore);
-    await ttPost('/notes', {
-      data: {
-        type: 'notes',
-        attributes: {
-          note: evaluationResult,
-          ...(evaluationRating != null && { rating: evaluationRating }),
+    try {
+      await ttPost('/notes', {
+        data: {
+          type: 'notes',
+          attributes: {
+            note: evaluationResult,
+            ...(evaluationRating != null && { rating: evaluationRating }),
+          },
+          relationships: {
+            candidate:         { data: { id: candidateId,             type: 'candidates'       } },
+            user:              { data: { id: TEAMTAILOR_BOT_USER_ID,  type: 'users'            } },
+            'job-application': { data: { id: postulacionId.toString(), type: 'job-applications' } },
+          },
         },
-        relationships: {
-          candidate:         { data: { id: candidateId,             type: 'candidates'       } },
-          user:              { data: { id: TEAMTAILOR_BOT_USER_ID,  type: 'users'            } },
-          'job-application': { data: { id: postulacionId.toString(), type: 'job-applications' } },
-        },
-      },
-    }, true);
-    console.log(JSON.stringify({ etapa: 'crear_nota_teamtailor', calificacion_nota: evaluationRating }));
+      }, true);
+      console.log(JSON.stringify({ etapa: 'crear_nota_teamtailor', calificacion_nota: evaluationRating }));
+    } catch (e) {
+      log('postulaciones', 500, `[${postulacionId}] fallo_nota_tt: ${e.message} (${candidatoNombre} | ${jobTitle})`);
+      console.log(JSON.stringify({ etapa: 'crear_nota_teamtailor', estado: 'error', mensaje: e.message }));
+    }
 
     // PASO 15: Integración WhatsApp via ManyChat
+    etapaActual         = 'whatsapp';
     let whatsappEnviado = false;
     let whatsappError   = null;
 
@@ -368,11 +396,14 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
 
     // PASO 16: Nota en TeamTailor si WhatsApp falló
     if (!whatsappEnviado && whatsappError) {
+      const notaWa = questionsExtractedSuccessfully
+        ? `❌ Fallo el envío de mensaje de WhatsApp (error ManyChat): ${whatsappError}`
+        : `❌ No se envió mensaje de WhatsApp: Claude no generó preguntas válidas. Detalle: ${whatsappError}`;
       try {
         await ttPost('/notes', {
           data: {
             type: 'notes',
-            attributes: { note: `❌ Fallo el envio de mensaje de WhatsApp: ${whatsappError}` },
+            attributes: { note: notaWa },
             relationships: {
               candidate:         { data: { id: candidateId,             type: 'candidates'       } },
               user:              { data: { id: TEAMTAILOR_BOT_USER_ID,  type: 'users'            } },
@@ -387,22 +418,38 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     }
 
     // PASO 17: Guardar estado de WhatsApp
+    etapaActual = 'guardar_estado_wa';
     await supabase.from('postulaciones').update({ whatsapp_enviado: whatsappEnviado, whatsapp_error: whatsappError }).eq('postulacion_id', postulacionId);
 
     console.log(JSON.stringify({ etapa: 'completado', candidato: candidateFirstName, vacante: jobTitle, calificacion: globalScore, whatsapp: whatsappEnviado }));
     log('postulaciones', 200, `${candidateFirstName} | ${jobTitle} | cal:${globalScore} | wa:${whatsappEnviado ? 'ok' : whatsappError}`);
 
   } catch (error) {
-    console.log(JSON.stringify({ etapa: 'error', postulacion_id: postulacionId, mensaje: error.message }));
-    log('postulaciones', 500, `[${postulacionId}] ${error.message}`);
+    console.log(JSON.stringify({ etapa: 'error', etapa_fallida: etapaActual, postulacion_id: postulacionId, mensaje: error.message }));
+    log('postulaciones', 500, `[${postulacionId}] fallo en "${etapaActual}": ${error.message}`);
     try {
       await supabase.from('postulaciones').update({
         evaluacion_agendada:   false,
         evaluacion_completada: false,
         evaluacion_fecha:      new Date().toISOString(),
-        evaluacion_error:      error.message,
+        evaluacion_error:      `[${etapaActual}] ${error.message}`,
       }).eq('postulacion_id', postulacionId);
     } catch (_) {}
+    if (candidateId) {
+      try {
+        await ttPost('/notes', {
+          data: {
+            type: 'notes',
+            attributes: { note: `❌ Error en evaluación automática [${etapaActual}]: ${error.message}` },
+            relationships: {
+              candidate:         { data: { id: candidateId,                type: 'candidates'       } },
+              user:              { data: { id: TEAMTAILOR_BOT_USER_ID,     type: 'users'            } },
+              'job-application': { data: { id: postulacionId.toString(),   type: 'job-applications' } },
+            },
+          },
+        }, true);
+      } catch (_) {}
+    }
   }
 }
 
