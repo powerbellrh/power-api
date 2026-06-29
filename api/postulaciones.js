@@ -121,24 +121,18 @@ async function sendWhatsApp({ candidateFirstName, candidatePhone, candidateId, j
     }
 
     try {
-      const questionFields = vacanteTipo === 'OP'
-        ? [
-            { field_id: MANYCHAT_FIELDS.question_1, field_value: questions[0] || 'error' },
-            { field_id: MANYCHAT_FIELDS.question_2, field_value: questions[1] || 'error' },
-            { field_id: MANYCHAT_FIELDS.question_3, field_value: questions[2] || 'error' },
-          ]
-        : [
-            { field_id: MANYCHAT_FIELDS.question_1, field_value: questions[0] || 'error' },
-            { field_id: MANYCHAT_FIELDS.question_2, field_value: questions[1] || 'error' },
-            { field_id: MANYCHAT_FIELDS.question_3, field_value: questions[2] || 'error' },
-            { field_id: MANYCHAT_FIELDS.question_4, field_value: questions[3] || 'error' },
-            { field_id: MANYCHAT_FIELDS.question_5, field_value: questions[4] || 'error' },
-          ];
+      const questionKeys = vacanteTipo === 'OP'
+        ? ['question_1', 'question_2', 'question_3']
+        : ['question_1', 'question_2', 'question_3', 'question_4', 'question_5'];
+
+      const questionFields = questionKeys
+        .map((key, i) => questions[i] ? { field_id: MANYCHAT_FIELDS[key], field_value: questions[i] } : null)
+        .filter(Boolean);
 
       await mcPost('/fb/subscriber/setCustomFields', {
         subscriber_id: mcUserId,
         fields: [
-          { field_id: MANYCHAT_FIELDS.job_title,    field_value: jobTitle || 'error'   },
+          { field_id: MANYCHAT_FIELDS.job_title,    field_value: jobTitle || '' },
           { field_id: MANYCHAT_FIELDS.candidate_id, field_value: candidateId.toString() },
           ...questionFields,
         ],
