@@ -37,8 +37,8 @@ const PROMPTS = {
 const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY_POSTULACIONES });
 
 const AI_CONFIG = {
-  AD: { model: 'claude-sonnet-4-6', max_tokens: 20000, thinking_budget_tokens: 16000 },
-  OP: { model: 'claude-haiku-4-5',  max_tokens: 20000, thinking_budget_tokens: 16000 },
+  AD: { model: 'claude-sonnet-5',  max_tokens: 20000, effort: 'medium' },
+  OP: { model: 'claude-haiku-4-5', max_tokens: 20000, thinking_budget_tokens: 16000 },
 };
 
 const TEAMTAILOR_BOT_USER_ID = +process.env.AD_TEAMTAILOR_BOT_USER_ID;
@@ -238,8 +238,15 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     const claudeRequest = {
       model:      tipoConfig.model,
       max_tokens: tipoConfig.max_tokens,
-      temperature: 1,
-      thinking: { type: 'enabled', budget_tokens: tipoConfig.thinking_budget_tokens },
+      ...(isAdministrativa
+        ? {
+            thinking:      { type: 'adaptive', display: 'summarized' },
+            output_config: { effort: tipoConfig.effort },
+          }
+        : {
+            temperature: 1,
+            thinking:    { type: 'enabled', budget_tokens: tipoConfig.thinking_budget_tokens },
+          }),
       system: [{
         type: 'text', text: systemPromptWithDate,
         cache_control: { type: 'ephemeral', ttl: '1h' },
@@ -268,10 +275,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
 
     // PASO 10: Llamar a la API de Claude
     etapaActual      = 'claude_api';
-    const claudeData = await claude.beta.messages.create({
-      betas: ['interleaved-thinking-2025-05-14', 'prompt-caching-2024-07-31'],
-      ...claudeRequest,
-    });
+    const claudeData = await claude.messages.create(claudeRequest);
 
     const evaluationResult = claudeData.content?.find(b => b.type === 'text')?.text;
     const thinkingContent  = claudeData.content?.find(b => b.type === 'thinking')?.thinking ?? null;
