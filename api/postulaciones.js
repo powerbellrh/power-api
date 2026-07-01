@@ -37,7 +37,7 @@ const PROMPTS = {
 const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY_POSTULACIONES });
 
 const AI_CONFIG = {
-  AD: { model: 'claude-sonnet-5',  max_tokens: 20000, effort: 'medium' },
+  AD: { model: 'claude-sonnet-5',  max_tokens: 20000, effort: 'high' },
   OP: { model: 'claude-haiku-4-5', max_tokens: 20000, thinking_budget_tokens: 16000 },
 };
 
