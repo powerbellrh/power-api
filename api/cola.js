@@ -22,7 +22,7 @@ export default async function handler(req, res) {
     .limit(TAMANO_LOTE);
 
   if (errorConsulta) {
-    registrar('procesador-cola', 500, `query falló: ${errorConsulta.message}`);
+    registrar('cola', 500, `query falló: ${errorConsulta.message}`);
     return res.status(500).json({ status: 'error', message: 'Database query failed', detail: errorConsulta.message });
   }
 
@@ -60,7 +60,7 @@ export default async function handler(req, res) {
     if (i < pendientes.length - 1) await dormir(RETRASO_MS);
   }
 
-  registrar('procesador-cola', 200, `encontrados:${pendientes.length} enviados:${procesados.length} fallidos:${fallidos.length}`);
+  registrar('cola', 200, `encontrados:${pendientes.length} enviados:${procesados.length} fallidos:${fallidos.length}`);
 
   return res.status(200).json({
     status: 'success',

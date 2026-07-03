@@ -29,7 +29,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ status: 'rejected', message: 'Invalid candidate name (appears to be phone number)' });
   }
 
-  // PASO 2: Encolar la postulación en Supabase (los datos de vacante y respuestas los completa procesador-cola)
+  // PASO 2: Encolar la postulación en Supabase (los datos de vacante y respuestas los completa cola)
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
   const { error: errorInsercion } = await supabase.from('postulaciones').insert([{
