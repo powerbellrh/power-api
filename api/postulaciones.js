@@ -108,7 +108,7 @@ async function enviarWhatsApp({ candidatoNombrePila, candidatoTelefono, candidat
         console.log(JSON.stringify({ etapa: 'whatsapp_suscriptor', estado: 'ya_existe', razon: 'buscando_por_telefono', telefono }));
         const encontrado = await mcObtener('/fb/subscriber/findByCustomField', {
           field_id:    MANYCHAT_PHONE_FIELD_ID,
-          field_value: telefono,
+          field_value: telefono.replace(/^\+/, ''),
         });
         const existente = encontrado?.data?.[0];
         if (!existente?.id)
