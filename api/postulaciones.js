@@ -5,27 +5,27 @@ import { fileURLToPath }    from 'url';
 import { dirname, join }    from 'path';
 import { waitUntil }        from '@vercel/functions';
 import {
-  containsUrl,
-  cleanPhoneNumber,
-  stripHtml,
-  extractFirstFiveQuestions,
-  extractFirstThreeQuestions,
-  getScorePictureUrl,
-  getScoreCategoryName,
-  getScoreRating,
-  buildSalaryJson,
-  formatSalary,
-  buildVacanteInfoBlock,
-  buildCandidatoInfoBlock,
-  extractScore,
-  parseAnswers,
-  extractImageUrlFromAnswers,
-  extractEvaluationStatus,
-  evaluationStatusToScore,
-  getEvaluationStatusRating,
-} from '../lib/postulacion_utils.js';
-import { ttGet, ttPatch, ttPost, mcPost, mcGet } from '../lib/api_clients.js';
-import { log } from '../lib/logger.js';
+  contieneUrl,
+  limpiarTelefono,
+  limpiarHtml,
+  extraerPrimerasCincoPreguntas,
+  extraerPrimerasTresPreguntas,
+  obtenerUrlImagenPuntuacion,
+  obtenerNombreCategoriaPuntuacion,
+  obtenerCalificacionEstrellas,
+  construirJsonSalario,
+  formatearSalario,
+  construirBloqueInfoVacante,
+  construirBloqueInfoCandidato,
+  extraerCalificacion,
+  analizarRespuestas,
+  extraerUrlImagenDeRespuestas,
+  extraerEstadoEvaluacion,
+  estadoEvaluacionACalificacion,
+  obtenerCalificacionEstadoEvaluacion,
+} from '../lib/utilidades_postulacion.js';
+import { ttObtener, ttActualizar, ttCrear, mcCrear, mcObtener } from '../lib/clientes_api.js';
+import { registrar } from '../lib/registro.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -61,13 +61,13 @@ const MANYCHAT_FIELDS = {
 // FUNCIONES AUXILIARES
 // ============================================================================
 
-async function fetchCustomFieldContext(vacanteId) {
+async function obtenerContextoCampoPersonalizado(vacanteId) {
   try {
-    const cfData  = await ttGet(`/jobs/${vacanteId}/custom-field-values?include=custom-field`, true);
-    const cfEntry = (cfData.data ?? []).find(i =>
+    const datosCf  = await ttObtener(`/jobs/${vacanteId}/custom-field-values?include=custom-field`, true);
+    const entradaCf = (datosCf.data ?? []).find(i =>
       i.relationships?.['custom-field']?.data?.id === CUSTOM_FIELD_ID,
     );
-    return cfEntry?.attributes?.value
+    return entradaCf?.attributes?.value
       ?.replace(/[\r\n]+/g, ' ')
       .replace(/\s+/g, ' ')
       .replace(/[^\x20-\x7E -￿]/g, '')
@@ -78,76 +78,76 @@ async function fetchCustomFieldContext(vacanteId) {
   }
 }
 
-async function sendWhatsApp({ candidateFirstName, candidatePhone, candidateId, jobTitle, questions, vacanteTipo }) {
-  const phone = cleanPhoneNumber(candidatePhone);
-  if (!phone) {
+async function enviarWhatsApp({ candidatoNombrePila, candidatoTelefono, candidatoId, tituloVacante, preguntas, vacanteTipo }) {
+  const telefono = limpiarTelefono(candidatoTelefono);
+  if (!telefono) {
     console.log(JSON.stringify({ etapa: 'whatsapp_integracion', estado: 'saltado', razon: 'sin_telefono' }));
     return { enviado: false, error: 'No phone number provided' };
   }
 
   try {
-    let mcUserId;
+    let idUsuarioMc;
 
     try {
-      const subResp = await mcPost('/fb/subscriber/createSubscriber', {
-        first_name:     candidateFirstName,
-        whatsapp_phone: phone,
+      const respSuscriptor = await mcCrear('/fb/subscriber/createSubscriber', {
+        first_name:     candidatoNombrePila,
+        whatsapp_phone: telefono,
         consent_phrase: 'Consiento a que mi contacto sea usado para enviarme actualizaciones de las vacantes disponibles',
       });
 
-      if (subResp.status !== 'success' || !subResp.data)
+      if (respSuscriptor.status !== 'success' || !respSuscriptor.data)
         return { enviado: false, error: 'createSubscriber did not return success' };
 
-      mcUserId = parseInt(subResp.data.id, 10);
-      if (isNaN(mcUserId))
-        return { enviado: false, error: `Invalid subscriber ID: ${subResp.data.id}` };
+      idUsuarioMc = parseInt(respSuscriptor.data.id, 10);
+      if (isNaN(idUsuarioMc))
+        return { enviado: false, error: `Invalid subscriber ID: ${respSuscriptor.data.id}` };
 
-      console.log(JSON.stringify({ etapa: 'whatsapp_suscriptor', estado: 'creado', mcUserId }));
-    } catch (createErr) {
-      if (createErr.message.includes('wa_id') && createErr.message.includes('already exists')) {
-        console.log(JSON.stringify({ etapa: 'whatsapp_suscriptor', estado: 'ya_existe', razon: 'buscando_por_telefono', phone }));
-        const found = await mcGet('/fb/subscriber/findByCustomField', {
+      console.log(JSON.stringify({ etapa: 'whatsapp_suscriptor', estado: 'creado', idUsuarioMc }));
+    } catch (errorCreacion) {
+      if (errorCreacion.message.includes('wa_id') && errorCreacion.message.includes('already exists')) {
+        console.log(JSON.stringify({ etapa: 'whatsapp_suscriptor', estado: 'ya_existe', razon: 'buscando_por_telefono', telefono }));
+        const encontrado = await mcObtener('/fb/subscriber/findByCustomField', {
           field_id:    MANYCHAT_PHONE_FIELD_ID,
-          field_value: phone,
+          field_value: telefono,
         });
-        const existing = found?.data?.[0];
-        if (!existing?.id)
-          return { enviado: false, error: `createSubscriber failed (already exists) and findByCustomField returned no results for phone ${phone}` };
-        mcUserId = existing.id;
-        console.log(JSON.stringify({ etapa: 'whatsapp_suscriptor', estado: 'encontrado_por_telefono', mcUserId }));
+        const existente = encontrado?.data?.[0];
+        if (!existente?.id)
+          return { enviado: false, error: `createSubscriber failed (already exists) and findByCustomField returned no results for phone ${telefono}` };
+        idUsuarioMc = existente.id;
+        console.log(JSON.stringify({ etapa: 'whatsapp_suscriptor', estado: 'encontrado_por_telefono', idUsuarioMc }));
       } else {
-        throw createErr;
+        throw errorCreacion;
       }
     }
 
     try {
-      const questionKeys = vacanteTipo === 'OP'
+      const clavesPreguntas = vacanteTipo === 'OP'
         ? ['question_1', 'question_2', 'question_3']
         : ['question_1', 'question_2', 'question_3', 'question_4', 'question_5'];
 
-      const questionFields = questionKeys
-        .map((key, i) => questions[i] ? { field_id: MANYCHAT_FIELDS[key], field_value: questions[i] } : null)
+      const camposPreguntas = clavesPreguntas
+        .map((clave, i) => preguntas[i] ? { field_id: MANYCHAT_FIELDS[clave], field_value: preguntas[i] } : null)
         .filter(Boolean);
 
-      await mcPost('/fb/subscriber/setCustomFields', {
-        subscriber_id: mcUserId,
+      await mcCrear('/fb/subscriber/setCustomFields', {
+        subscriber_id: idUsuarioMc,
         fields: [
-          { field_id: MANYCHAT_FIELDS.job_title,    field_value: jobTitle || '' },
-          { field_id: MANYCHAT_FIELDS.candidate_id, field_value: candidateId.toString() },
-          ...questionFields,
+          { field_id: MANYCHAT_FIELDS.job_title,    field_value: tituloVacante || '' },
+          { field_id: MANYCHAT_FIELDS.candidate_id, field_value: candidatoId.toString() },
+          ...camposPreguntas,
         ],
       });
     } catch (e) {
       return { enviado: false, error: `setCustomFields failed: ${e.message}` };
     }
 
-    await mcPost('/fb/sending/sendFlow', { subscriber_id: mcUserId, flow_ns: MANYCHAT_FLOW_NS });
-    console.log(JSON.stringify({ etapa: 'whatsapp_enviado', candidato: candidateFirstName, estado: 'exito' }));
+    await mcCrear('/fb/sending/sendFlow', { subscriber_id: idUsuarioMc, flow_ns: MANYCHAT_FLOW_NS });
+    console.log(JSON.stringify({ etapa: 'whatsapp_enviado', candidato: candidatoNombrePila, estado: 'exito' }));
     return { enviado: true, error: null };
 
   } catch (e) {
-    log('postulaciones', 500, `whatsapp [${candidateFirstName} | ${candidateId}]: ${e.message}`);
-    console.log(JSON.stringify({ etapa: 'whatsapp_integracion', estado: 'error', candidato: candidateFirstName, candidato_id: candidateId, mensaje: e.message }));
+    registrar('postulaciones', 500, `whatsapp [${candidatoNombrePila} | ${candidatoId}]: ${e.message}`);
+    console.log(JSON.stringify({ etapa: 'whatsapp_integracion', estado: 'error', candidato: candidatoNombrePila, candidato_id: candidatoId, mensaje: e.message }));
     return { enviado: false, error: e.message };
   }
 }
@@ -167,40 +167,40 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
   try {
     // PASO 3: Obtener datos de la vacante
     etapaActual    = 'datos_job';
-    const jobData  = await ttGet(`/jobs/${vacanteId}?include=location`, true);
-    const jobAttrs = jobData.data.attributes;
+    const datosVacante = await ttObtener(`/jobs/${vacanteId}?include=location`, true);
+    const atributosVacante = datosVacante.data.attributes;
 
-    const jobTitle            = jobAttrs.title || 'Untitled Job';
-    const cleanJobDescription = stripHtml(jobAttrs.body || '');
-    const jobLocation         = jobData.included?.find(i => i.type === 'locations')?.attributes?.name ?? null;
-    const minSalary           = jobAttrs['min-salary'] ?? null;
-    const maxSalary           = jobAttrs['max-salary'] ?? null;
-    const currency            = jobAttrs.currency || 'MXN';
-    const jobSalaryJson       = buildSalaryJson(minSalary, maxSalary, currency);
-    const jobSalaryText       = formatSalary(minSalary, maxSalary, currency);
+    const tituloVacante          = atributosVacante.title || 'Untitled Job';
+    const descripcionVacanteLimpia = limpiarHtml(atributosVacante.body || '');
+    const ubicacionVacante       = datosVacante.included?.find(i => i.type === 'locations')?.attributes?.name ?? null;
+    const salarioMin             = atributosVacante['min-salary'] ?? null;
+    const salarioMax             = atributosVacante['max-salary'] ?? null;
+    const moneda                 = atributosVacante.currency || 'MXN';
+    const jsonSalarioVacante     = construirJsonSalario(salarioMin, salarioMax, moneda);
+    const textoSalarioVacante    = formatearSalario(salarioMin, salarioMax, moneda);
 
-    console.log(JSON.stringify({ etapa: 'datos_job', titulo: jobTitle, ubicacion: jobLocation, salario: jobSalaryText }));
+    console.log(JSON.stringify({ etapa: 'datos_job', titulo: tituloVacante, ubicacion: ubicacionVacante, salario: textoSalarioVacante }));
 
     // PASO 4: Obtener campo personalizado de contexto
     etapaActual              = 'custom_field';
-    const customFieldContext = await fetchCustomFieldContext(vacanteId);
+    const contextoCampoPersonalizado = await obtenerContextoCampoPersonalizado(vacanteId);
 
     // PASO 5: Obtener datos del candidato
     etapaActual          = 'datos_candidato';
-    const candidateRaw   = await ttGet(`/job-applications/${postulacionId}/candidate`, true);
-    const candidateData  = candidateRaw.data;
-    candidateId          = candidateData.id;
-    const resumeUrl          = candidateData.attributes.resume;
-    const candidatePhone     = candidateData.attributes.phone || candidatoTelefono;
-    const candidateFirstName = candidateData.attributes['first-name'] || candidatoNombre.split(' ')[0];
-    const candidateLocation  = candidateData.attributes.city ?? null;
+    const candidatoCrudo   = await ttObtener(`/job-applications/${postulacionId}/candidate`, true);
+    const datosCandidato  = candidatoCrudo.data;
+    candidateId          = datosCandidato.id;
+    const urlCurriculum       = datosCandidato.attributes.resume;
+    const candidatoTelefonoTt = datosCandidato.attributes.phone || candidatoTelefono;
+    const candidatoNombrePila = datosCandidato.attributes['first-name'] || candidatoNombre.split(' ')[0];
+    const ubicacionCandidato  = datosCandidato.attributes.city ?? null;
 
-    console.log(JSON.stringify({ etapa: 'datos_candidato', candidato_id: candidateId, resume: resumeUrl ? 'encontrado' : 'no_encontrado' }));
+    console.log(JSON.stringify({ etapa: 'datos_candidato', candidato_id: candidateId, resume: urlCurriculum ? 'encontrado' : 'no_encontrado' }));
 
-    if (!resumeUrl?.trim()) {
+    if (!urlCurriculum?.trim()) {
       if (vacanteTipo !== 'OP') {
         console.log(JSON.stringify({ etapa: 'no_resume', candidato: candidatoNombre, accion: 'registro_eliminado' }));
-        log('postulaciones', 200, `[${postulacionId}] no_resume: ${candidatoNombre} eliminado`);
+        registrar('postulaciones', 200, `[${postulacionId}] no_resume: ${candidatoNombre} eliminado`);
         await supabase.from('postulaciones').delete().eq('postulacion_id', postulacionId);
         return;
       }
@@ -209,36 +209,36 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
 
     // PASO 6: Obtener y procesar respuestas del candidato
     etapaActual               = 'respuestas_candidato';
-    const answersRaw          = await ttGet(`/candidates/${candidateId}/answers?include=question`, true);
-    const rawAnswers          = answersRaw.data ?? [];
-    const candidatoRespuestas = parseAnswers(rawAnswers, answersRaw.included ?? []);
+    const respuestasCrudas          = await ttObtener(`/candidates/${candidateId}/answers?include=question`, true);
+    const respuestasCandidatoCrudas = respuestasCrudas.data ?? [];
+    const candidatoRespuestas = analizarRespuestas(respuestasCandidatoCrudas, respuestasCrudas.included ?? []);
 
-    // Para OP: buscar imagen de historial en respuestas (parseAnswers la descarta por ser URL)
-    const imageUrlFromAnswers = vacanteTipo === 'OP' ? extractImageUrlFromAnswers(rawAnswers) : null;
-    console.log(JSON.stringify({ etapa: 'fuentes_historial', cv: resumeUrl ? 'si' : 'no', imagen_respuestas: imageUrlFromAnswers ? 'si' : 'no' }));
+    // Para OP: buscar imagen de historial en respuestas (analizarRespuestas la descarta por ser URL)
+    const urlImagenDeRespuestas = vacanteTipo === 'OP' ? extraerUrlImagenDeRespuestas(respuestasCandidatoCrudas) : null;
+    console.log(JSON.stringify({ etapa: 'fuentes_historial', cv: urlCurriculum ? 'si' : 'no', imagen_respuestas: urlImagenDeRespuestas ? 'si' : 'no' }));
 
     // PASO 7: Guardar datos de TeamTailor en Supabase
     etapaActual = 'guardar_datos_tt';
     await supabase.from('postulaciones').update({
-      vacante_nombre:       jobTitle,
-      vacante_descripcion:  cleanJobDescription,
-      vacante_ubicacion:    jobLocation,
-      vacante_sueldo:       jobSalaryJson,
-      vacante_contexto:     customFieldContext || null,
-      candidato_ubicacion:  candidateLocation,
+      vacante_nombre:       tituloVacante,
+      vacante_descripcion:  descripcionVacanteLimpia,
+      vacante_ubicacion:    ubicacionVacante,
+      vacante_sueldo:       jsonSalarioVacante,
+      vacante_contexto:     contextoCampoPersonalizado || null,
+      candidato_ubicacion:  ubicacionCandidato,
       candidato_respuestas: candidatoRespuestas,
     }).eq('postulacion_id', postulacionId);
 
     // PASO 8: Construir solicitud a Claude
     const fechaActual          = new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Mexico_City' });
-    const systemPromptWithDate = systemPrompt.replace('{{fecha_actual}}', fechaActual);
+    const promptSistemaConFecha = systemPrompt.replace('{{fecha_actual}}', fechaActual);
 
-    const isAdministrativa = vacanteTipo === 'AD' || !vacanteTipo;
+    const esAdministrativa = vacanteTipo === 'AD' || !vacanteTipo;
 
-    const claudeRequest = {
+    const peticionClaude = {
       model:      tipoConfig.model,
       max_tokens: tipoConfig.max_tokens,
-      ...(isAdministrativa
+      ...(esAdministrativa
         ? {
             thinking:      { type: 'adaptive', display: 'summarized' },
             output_config: { effort: tipoConfig.effort },
@@ -248,18 +248,18 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
             thinking:    { type: 'enabled', budget_tokens: tipoConfig.thinking_budget_tokens },
           }),
       system: [{
-        type: 'text', text: systemPromptWithDate,
+        type: 'text', text: promptSistemaConFecha,
         cache_control: { type: 'ephemeral', ttl: '1h' },
       }],
       messages: [{
         role: 'user',
         content: [
-          { type: 'text', text: buildVacanteInfoBlock(jobTitle, cleanJobDescription, jobLocation, customFieldContext, jobSalaryText) },
-          { type: 'text', text: buildCandidatoInfoBlock(candidatoNombre, candidateLocation, candidatoRespuestas) },
-          ...(imageUrlFromAnswers
-            ? [{ type: 'image', source: { type: 'url', url: imageUrlFromAnswers } }]
-            : resumeUrl?.trim()
-              ? [{ type: 'document', source: { type: 'url', url: resumeUrl } }]
+          { type: 'text', text: construirBloqueInfoVacante(tituloVacante, descripcionVacanteLimpia, ubicacionVacante, contextoCampoPersonalizado, textoSalarioVacante) },
+          { type: 'text', text: construirBloqueInfoCandidato(candidatoNombre, ubicacionCandidato, candidatoRespuestas) },
+          ...(urlImagenDeRespuestas
+            ? [{ type: 'image', source: { type: 'url', url: urlImagenDeRespuestas } }]
+            : urlCurriculum?.trim()
+              ? [{ type: 'document', source: { type: 'url', url: urlCurriculum } }]
               : []),
         ],
       }],
@@ -268,102 +268,102 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     // PASO 9: Registrar solicitud en Supabase
     etapaActual = 'guardar_peticion_claude';
     await supabase.from('postulaciones').update({
-      evaluacion_peticion: JSON.stringify(claudeRequest),
-      evaluacion_prompt:   systemPromptWithDate,
+      evaluacion_peticion: JSON.stringify(peticionClaude),
+      evaluacion_prompt:   promptSistemaConFecha,
       evaluacion_modelo:   tipoConfig.model,
     }).eq('postulacion_id', postulacionId);
 
     // PASO 10: Llamar a la API de Claude
     etapaActual      = 'claude_api';
-    const claudeData = await claude.messages.create(claudeRequest);
+    const datosClaude = await claude.messages.create(peticionClaude);
 
-    const evaluationResult = claudeData.content?.find(b => b.type === 'text')?.text;
-    const thinkingContent  = claudeData.content?.find(b => b.type === 'thinking')?.thinking ?? null;
-    const { input_tokens: inputTokens, output_tokens: outputTokens,
-            cache_creation_input_tokens: cacheCreationInputTokens = 0,
-            cache_read_input_tokens: cacheReadInputTokens = 0 } = claudeData.usage ?? {};
+    const resultadoEvaluacion = datosClaude.content?.find(b => b.type === 'text')?.text;
+    const contenidoPensamiento  = datosClaude.content?.find(b => b.type === 'thinking')?.thinking ?? null;
+    const { input_tokens: tokensEntrada, output_tokens: tokensSalida,
+            cache_creation_input_tokens: tokensCreacionCache = 0,
+            cache_read_input_tokens: tokensLecturaCache = 0 } = datosClaude.usage ?? {};
 
-    if (!evaluationResult) throw new Error('Claude returned no text content');
+    if (!resultadoEvaluacion) throw new Error('Claude returned no text content');
 
-    console.log(JSON.stringify({ etapa: 'claude_api', caracteres: evaluationResult.length, tokens_input: inputTokens, tokens_output: outputTokens, cache_read: cacheReadInputTokens, cache_creation: cacheCreationInputTokens }));
+    console.log(JSON.stringify({ etapa: 'claude_api', caracteres: resultadoEvaluacion.length, tokens_input: tokensEntrada, tokens_output: tokensSalida, cache_read: tokensLecturaCache, cache_creation: tokensCreacionCache }));
 
     // PASO 11: Extraer calificación y preguntas
     etapaActual       = 'extraccion_resultados';
-    const globalScore = isAdministrativa
-      ? extractScore(evaluationResult)
-      : evaluationStatusToScore(extractEvaluationStatus(evaluationResult));
+    const calificacionGlobal = esAdministrativa
+      ? extraerCalificacion(resultadoEvaluacion)
+      : estadoEvaluacionACalificacion(extraerEstadoEvaluacion(resultadoEvaluacion));
 
-    if (globalScore === null) {
-      log('postulaciones', 200, `[${postulacionId}] score_no_parseable: Claude no devolvió calificación en formato esperado (${candidatoNombre} | ${jobTitle})`);
+    if (calificacionGlobal === null) {
+      registrar('postulaciones', 200, `[${postulacionId}] score_no_parseable: Claude no devolvió calificación en formato esperado (${candidatoNombre} | ${tituloVacante})`);
       console.log(JSON.stringify({ etapa: 'extraccion_score', estado: 'null', candidato: candidatoNombre }));
     }
 
-    let extractedQuestions             = [];
-    let questionsExtractedSuccessfully = false;
+    let preguntasExtraidas             = [];
+    let preguntasExtraidasExitosamente = false;
     let evaluacionPreguntas            = null;
 
-    if (evaluationResult.includes('#PREGUNTAS#')) {
+    if (resultadoEvaluacion.includes('#PREGUNTAS#')) {
       try {
-        extractedQuestions             = isAdministrativa
-          ? extractFirstFiveQuestions(evaluationResult)
-          : extractFirstThreeQuestions(evaluationResult);
-        questionsExtractedSuccessfully = true;
+        preguntasExtraidas             = esAdministrativa
+          ? extraerPrimerasCincoPreguntas(resultadoEvaluacion)
+          : extraerPrimerasTresPreguntas(resultadoEvaluacion);
+        preguntasExtraidasExitosamente = true;
         evaluacionPreguntas = {
-          pregunta_1: extractedQuestions[0] ?? null,
-          pregunta_2: extractedQuestions[1] ?? null,
-          pregunta_3: extractedQuestions[2] ?? null,
-          pregunta_4: extractedQuestions[3] ?? null,
-          pregunta_5: extractedQuestions[4] ?? null,
+          pregunta_1: preguntasExtraidas[0] ?? null,
+          pregunta_2: preguntasExtraidas[1] ?? null,
+          pregunta_3: preguntasExtraidas[2] ?? null,
+          pregunta_4: preguntasExtraidas[3] ?? null,
+          pregunta_5: preguntasExtraidas[4] ?? null,
         };
       } catch (e) {
-        log('postulaciones', 200, `[${postulacionId}] preguntas_malformadas: ${e.message} (${candidatoNombre} | ${jobTitle})`);
+        registrar('postulaciones', 200, `[${postulacionId}] preguntas_malformadas: ${e.message} (${candidatoNombre} | ${tituloVacante})`);
         console.log(JSON.stringify({ etapa: 'extraccion_preguntas', estado: 'error', mensaje: e.message }));
       }
     } else {
-      log('postulaciones', 200, `[${postulacionId}] sin_seccion_preguntas: Claude no incluyó #PREGUNTAS# (${candidatoNombre} | ${jobTitle})`);
+      registrar('postulaciones', 200, `[${postulacionId}] sin_seccion_preguntas: Claude no incluyó #PREGUNTAS# (${candidatoNombre} | ${tituloVacante})`);
       console.log(JSON.stringify({ etapa: 'extraccion_preguntas', estado: 'no_encontrada', razon: 'sin_seccion_preguntas' }));
     }
 
     // PASO 12: Guardar resultados de la evaluación
     etapaActual = 'guardar_evaluacion';
-    const { error: saveError } = await supabase.from('postulaciones').update({
-      evaluacion_pensamiento:  thinkingContent,
-      evaluacion_calificacion: globalScore,
-      evaluacion_resultado:    evaluationResult,
+    const { error: errorGuardado } = await supabase.from('postulaciones').update({
+      evaluacion_pensamiento:  contenidoPensamiento,
+      evaluacion_calificacion: calificacionGlobal,
+      evaluacion_resultado:    resultadoEvaluacion,
       evaluacion_completada:   true,
       evaluacion_fecha:        new Date().toISOString(),
-      tokens_input:            inputTokens,
-      tokens_output:           outputTokens,
+      tokens_input:            tokensEntrada,
+      tokens_output:           tokensSalida,
       ...(evaluacionPreguntas && { evaluacion_preguntas: evaluacionPreguntas }),
     }).eq('postulacion_id', postulacionId);
-    if (saveError) throw saveError;
+    if (errorGuardado) throw errorGuardado;
 
-    console.log(JSON.stringify({ etapa: 'guardado_evaluacion', calificacion: globalScore, preguntas_extraidas: questionsExtractedSuccessfully }));
+    console.log(JSON.stringify({ etapa: 'guardado_evaluacion', calificacion: calificacionGlobal, preguntas_extraidas: preguntasExtraidasExitosamente }));
 
     // PASO 13: Actualizar foto del candidato en TeamTailor
     etapaActual = 'actualizar_foto';
-    if (globalScore !== null && isAdministrativa) {
+    if (calificacionGlobal !== null && esAdministrativa) {
       try {
-        await ttPatch(`/candidates/${candidateId}`, {
-          data: { id: candidateId.toString(), type: 'candidates', attributes: { picture: getScorePictureUrl(globalScore) } },
+        await ttActualizar(`/candidates/${candidateId}`, {
+          data: { id: candidateId.toString(), type: 'candidates', attributes: { picture: obtenerUrlImagenPuntuacion(calificacionGlobal) } },
         }, true);
-        console.log(JSON.stringify({ etapa: 'actualizar_foto_candidato', estado: 'exito', categoria: getScoreCategoryName(globalScore), calificacion: globalScore }));
+        console.log(JSON.stringify({ etapa: 'actualizar_foto_candidato', estado: 'exito', categoria: obtenerNombreCategoriaPuntuacion(calificacionGlobal), calificacion: calificacionGlobal }));
       } catch (e) {
-        log('postulaciones', 200, `[${postulacionId}] fallo_foto_candidato: ${e.message}`);
+        registrar('postulaciones', 200, `[${postulacionId}] fallo_foto_candidato: ${e.message}`);
         console.log(JSON.stringify({ etapa: 'actualizar_foto_candidato', estado: 'error', mensaje: e.message }));
       }
     }
 
     // PASO 14: Crear nota de evaluación en TeamTailor
     etapaActual = 'crear_nota_tt';
-    const evaluationRating = getScoreRating(globalScore);
+    const calificacionNotaEvaluacion = obtenerCalificacionEstrellas(calificacionGlobal);
     try {
-      await ttPost('/notes', {
+      await ttCrear('/notes', {
         data: {
           type: 'notes',
           attributes: {
-            note: evaluationResult,
-            ...(evaluationRating != null && { rating: evaluationRating }),
+            note: resultadoEvaluacion,
+            ...(calificacionNotaEvaluacion != null && { rating: calificacionNotaEvaluacion }),
           },
           relationships: {
             candidate:         { data: { id: candidateId,             type: 'candidates'       } },
@@ -372,9 +372,9 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
           },
         },
       }, true);
-      console.log(JSON.stringify({ etapa: 'crear_nota_teamtailor', calificacion_nota: evaluationRating }));
+      console.log(JSON.stringify({ etapa: 'crear_nota_teamtailor', calificacion_nota: calificacionNotaEvaluacion }));
     } catch (e) {
-      log('postulaciones', 500, `[${postulacionId}] fallo_nota_tt: ${e.message} (${candidatoNombre} | ${jobTitle})`);
+      registrar('postulaciones', 500, `[${postulacionId}] fallo_nota_tt: ${e.message} (${candidatoNombre} | ${tituloVacante})`);
       console.log(JSON.stringify({ etapa: 'crear_nota_teamtailor', estado: 'error', mensaje: e.message }));
     }
 
@@ -383,22 +383,22 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     let whatsappEnviado = false;
     let whatsappError   = null;
 
-    if (questionsExtractedSuccessfully) {
-      const result = await sendWhatsApp({ candidateFirstName, candidatePhone, candidateId, jobTitle, questions: extractedQuestions, vacanteTipo });
-      whatsappEnviado = result.enviado;
-      whatsappError   = result.error;
-    } else if (!questionsExtractedSuccessfully) {
+    if (preguntasExtraidasExitosamente) {
+      const resultado = await enviarWhatsApp({ candidatoNombrePila: candidatoNombrePila, candidatoTelefono: candidatoTelefonoTt, candidatoId: candidateId, tituloVacante, preguntas: preguntasExtraidas, vacanteTipo });
+      whatsappEnviado = resultado.enviado;
+      whatsappError   = resultado.error;
+    } else if (!preguntasExtraidasExitosamente) {
       whatsappError = 'Questions section missing or extraction failed';
       console.log(JSON.stringify({ etapa: 'whatsapp_integracion', estado: 'saltado', razon: 'sin_preguntas' }));
     }
 
     // PASO 16: Nota en TeamTailor si WhatsApp falló
     if (!whatsappEnviado && whatsappError) {
-      const notaWa = questionsExtractedSuccessfully
+      const notaWa = preguntasExtraidasExitosamente
         ? `❌ Fallo el envío de mensaje de WhatsApp (error ManyChat): ${whatsappError}`
         : `❌ No se envió mensaje de WhatsApp: Claude no generó preguntas válidas. Detalle: ${whatsappError}`;
       try {
-        await ttPost('/notes', {
+        await ttCrear('/notes', {
           data: {
             type: 'notes',
             attributes: { note: notaWa },
@@ -419,12 +419,12 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     etapaActual = 'guardar_estado_wa';
     await supabase.from('postulaciones').update({ whatsapp_enviado: whatsappEnviado, whatsapp_error: whatsappError }).eq('postulacion_id', postulacionId);
 
-    console.log(JSON.stringify({ etapa: 'completado', candidato: candidateFirstName, vacante: jobTitle, calificacion: globalScore, whatsapp: whatsappEnviado }));
-    log('postulaciones', 200, `${candidateFirstName} | ${jobTitle} | cal:${globalScore} | wa:${whatsappEnviado ? 'ok' : whatsappError}`);
+    console.log(JSON.stringify({ etapa: 'completado', candidato: candidatoNombrePila, vacante: tituloVacante, calificacion: calificacionGlobal, whatsapp: whatsappEnviado }));
+    registrar('postulaciones', 200, `${candidatoNombrePila} | ${tituloVacante} | cal:${calificacionGlobal} | wa:${whatsappEnviado ? 'ok' : whatsappError}`);
 
   } catch (error) {
     console.log(JSON.stringify({ etapa: 'error', etapa_fallida: etapaActual, postulacion_id: postulacionId, mensaje: error.message }));
-    log('postulaciones', 500, `[${postulacionId}] fallo en "${etapaActual}": ${error.message}`);
+    registrar('postulaciones', 500, `[${postulacionId}] fallo en "${etapaActual}": ${error.message}`);
     try {
       await supabase.from('postulaciones').update({
         evaluacion_agendada:   false,
@@ -435,7 +435,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     } catch (_) {}
     if (candidateId) {
       try {
-        await ttPost('/notes', {
+        await ttCrear('/notes', {
           data: {
             type: 'notes',
             attributes: { note: `❌ Error en evaluación automática [${etapaActual}]: ${error.message}` },
@@ -458,14 +458,14 @@ export default async function handler(req, res) {
   if (req.method !== 'POST')
     return res.status(405).json({ error: 'Método no permitido, usa POST' });
 
-  const apiKey = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
-  if (process.env.POWERBELL_API_KEY && apiKey !== process.env.POWERBELL_API_KEY)
+  const claveApi = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
+  if (process.env.POWERBELL_API_KEY && claveApi !== process.env.POWERBELL_API_KEY)
     return res.status(401).json({ error: 'Unauthorized' });
 
   const { postulacion: postulacionId } = req.body ?? {};
   if (!postulacionId) {
     const respuesta = { status: 400, body: { error: 'Missing postulacion field' } };
-    log('postulaciones', respuesta.status, 'missing postulacion field');
+    registrar('postulaciones', respuesta.status, 'missing postulacion field');
     return res.status(respuesta.status).json(respuesta.body);
   }
   console.log(JSON.stringify({ etapa: 'inicio', postulacion_id: postulacionId }));
@@ -473,18 +473,18 @@ export default async function handler(req, res) {
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
   // PASO 1: Obtener registro de postulación
-  const { data: postulacion, error: fetchError } = await supabase
+  const { data: postulacion, error: errorConsulta } = await supabase
     .from('postulaciones').select('*').eq('postulacion_id', postulacionId).single();
 
-  if (fetchError || !postulacion) {
-    const respuesta = { status: 404, body: { error: 'Postulacion not found', detail: fetchError?.message } };
-    log('postulaciones', respuesta.status, `Postulacion not found: ${postulacionId}`);
+  if (errorConsulta || !postulacion) {
+    const respuesta = { status: 404, body: { error: 'Postulacion not found', detail: errorConsulta?.message } };
+    registrar('postulaciones', respuesta.status, `Postulacion not found: ${postulacionId}`);
     return res.status(respuesta.status).json(respuesta.body);
   }
 
   if (!postulacion.vacante_id) {
     const respuesta = { status: 400, body: { error: 'Missing vacante_id in record' } };
-    log('postulaciones', respuesta.status, `Missing vacante_id for postulacion: ${postulacionId}`);
+    registrar('postulaciones', respuesta.status, `Missing vacante_id for postulacion: ${postulacionId}`);
     return res.status(respuesta.status).json(respuesta.body);
   }
 
