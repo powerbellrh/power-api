@@ -4,6 +4,7 @@
     { "source": "/postulaciones",   "destination": "/api/postulaciones"   },
     { "source": "/catalogo",        "destination": "/api/catalogo"        },
     { "source": "/cola",            "destination": "/api/cola"            },
+    { "source": "/bloqueos",        "destination": "/api/bloqueos"        },
     { "source": "/recepcion-postulaciones", "destination": "/api/recepcion-postulaciones" }
   ],
   "functions": {
