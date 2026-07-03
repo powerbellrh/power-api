@@ -3,7 +3,7 @@
     { "source": "/estudios",        "destination": "/api/estudios"        },
     { "source": "/postulaciones",   "destination": "/api/postulaciones"   },
     { "source": "/catalogo",        "destination": "/api/catalogo"        },
-    { "source": "/procesador-cola", "destination": "/api/procesador-cola" },
+    { "source": "/cola",            "destination": "/api/cola"            },
     { "source": "/recepcion-postulaciones", "destination": "/api/recepcion-postulaciones" }
   ],
   "functions": {
@@ -16,7 +16,7 @@
     "api/catalogo.js": {
       "maxDuration": 30
     },
-    "api/procesador-cola.js": {
+    "api/cola.js": {
       "maxDuration": 60
     },
     "api/recepcion-postulaciones.js": {
@@ -24,6 +24,6 @@
     }
   },
   "crons": [
-    { "path": "/api/procesador-cola", "schedule": "* * * * *" }
+    { "path": "/api/cola", "schedule": "* * * * *" }
   ]
 }
