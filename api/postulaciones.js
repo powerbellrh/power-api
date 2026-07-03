@@ -7,6 +7,7 @@ import { waitUntil }        from '@vercel/functions';
 import {
   contieneUrl,
   limpiarTelefono,
+  normalizarTelefonoMx,
   limpiarHtml,
   extraerPrimerasCincoPreguntas,
   extraerPrimerasTresPreguntas,
@@ -79,11 +80,12 @@ async function obtenerContextoCampoPersonalizado(vacanteId) {
 }
 
 async function enviarWhatsApp({ candidatoNombrePila, candidatoTelefono, candidatoId, tituloVacante, preguntas, vacanteTipo }) {
-  const telefono = limpiarTelefono(candidatoTelefono);
-  if (!telefono) {
+  const telefonoLimpio = limpiarTelefono(candidatoTelefono);
+  if (!telefonoLimpio) {
     console.log(JSON.stringify({ etapa: 'whatsapp_integracion', estado: 'saltado', razon: 'sin_telefono' }));
     return { enviado: false, error: 'No phone number provided' };
   }
+  const telefono = normalizarTelefonoMx(telefonoLimpio);
 
   try {
     let idUsuarioMc;
@@ -91,7 +93,7 @@ async function enviarWhatsApp({ candidatoNombrePila, candidatoTelefono, candidat
     try {
       const respSuscriptor = await mcCrear('/fb/subscriber/createSubscriber', {
         first_name:     candidatoNombrePila,
-        whatsapp_phone: telefono,
+        whatsapp_phone: `+${telefono}`,
         consent_phrase: 'Consiento a que mi contacto sea usado para enviarme actualizaciones de las vacantes disponibles',
       });
 
@@ -108,7 +110,7 @@ async function enviarWhatsApp({ candidatoNombrePila, candidatoTelefono, candidat
         console.log(JSON.stringify({ etapa: 'whatsapp_suscriptor', estado: 'ya_existe', razon: 'buscando_por_telefono', telefono }));
         const encontrado = await mcObtener('/fb/subscriber/findByCustomField', {
           field_id:    MANYCHAT_PHONE_FIELD_ID,
-          field_value: telefono.replace(/^\+/, ''),
+          field_value: telefono,
         });
         const existente = encontrado?.data?.[0];
         if (!existente?.id)
