@@ -1,5 +1,4 @@
 import { createClient } from '@supabase/supabase-js';
-import { registrar }    from '../lib/registro.js';
 
 const TAMANO_LOTE   = 5;
 const RETRASO_MS      = 5000;
@@ -22,7 +21,7 @@ export default async function handler(req, res) {
     .limit(TAMANO_LOTE);
 
   if (errorConsulta) {
-    registrar('cola', 500, `query falló: ${errorConsulta.message}`);
+    console.log(JSON.stringify({ etapa: 'consulta_pendientes', estado: 'error', mensaje: errorConsulta.message }));
     return res.status(500).json({ status: 'error', message: 'Database query failed', detail: errorConsulta.message });
   }
 
@@ -60,9 +59,9 @@ export default async function handler(req, res) {
     if (i < pendientes.length - 1) await dormir(RETRASO_MS);
   }
 
-  registrar('cola', 200, `encontrados:${pendientes.length} enviados:${procesados.length} fallidos:${fallidos.length}`);
+  console.log(JSON.stringify({ etapa: 'completado', encontrados: pendientes.length, enviados: procesados.length, fallidos: fallidos.length }));
 
-  return res.status(200).json({
+  return res.status(fallidos.length > 0 ? 207 : 200).json({
     status: 'success',
     total_found: pendientes.length,
     processed_count: procesados.length,

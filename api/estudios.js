@@ -5,7 +5,6 @@ import { dirname, join }                            from 'path';
 import { extraerCampos, esMediotiempo, deduplicar } from '../lib/vacante.js';
 import { filtrarConIA }                             from '../lib/filtrado.js';
 import { extraerSalariosConIA }                     from '../lib/extraccion_salario_ia.js';
-import { registrar }                                from '../lib/registro.js';
 import { GLASSDOOR_IC }                             from '../lib/glassdoor_ic.js';
 
 const SALARIO_MINIMO_MENSUAL        = parseFloat(process.env.SALARIO_MINIMO_MENSUAL);
@@ -108,17 +107,15 @@ async function manejarGlassdoor(vacante, ubicacion, muestra, res) {
 
   const datosCrudos = await respuestaApify.json();
   if (!Array.isArray(datosCrudos) || datosCrudos.length === 0) {
-    const respuesta = { status: 500, body: { error: 'Apify Glassdoor falló', detalle: datosCrudos } };
-    registrar('estudios', respuesta.status, `Apify Glassdoor falló: ${JSON.stringify(datosCrudos).slice(0, 200)}`);
-    return res.status(respuesta.status).json(respuesta.body);
+    console.log(JSON.stringify({ etapa: 'apify_glassdoor', estado: 'error', detalle: JSON.stringify(datosCrudos).slice(0, 200) }));
+    return res.status(500).json({ error: 'Apify Glassdoor falló', detalle: datosCrudos });
   }
 
   const resultados = datosCrudos.flatMap(page => page?.aggregateSalaryResponse?.results ?? []);
   console.log(JSON.stringify({ etapa: 'debug_apify_glassdoor', datosCrudos_length: datosCrudos.length, resultados_length: resultados.length, resultCount_p0: datosCrudos[0]?.aggregateSalaryResponse?.resultCount ?? null }));
   if (resultados.length === 0) {
-    const respuesta = { status: 500, body: { error: 'Glassdoor no devolvió resultados salariales' } };
-    registrar('estudios', respuesta.status, 'Glassdoor sin resultados');
-    return res.status(respuesta.status).json(respuesta.body);
+    console.log(JSON.stringify({ etapa: 'glassdoor', estado: 'sin_resultados' }));
+    return res.status(500).json({ error: 'Glassdoor no devolvió resultados salariales' });
   }
 
   // Normalizar entradas: solo registros con salario mensual por encima del mínimo legal
@@ -212,7 +209,7 @@ async function manejarGlassdoor(vacante, ubicacion, muestra, res) {
       ...entradas.filter(e => !aprobadasSet.has(e)).map(e        => ({ ...e, validez: 'invalida', razon_invalidez: 'rechazada_ia' })),
     ],
   } };
-  registrar('estudios', respuesta.status, `glassdoor: ${aprobadas.length} registros válidos | rechazadas_ia: ${n_rechazadas_ia} | costo: $${costo_total}`);
+  console.log(JSON.stringify({ etapa: 'completado_glassdoor', estado: 'ok', validos: aprobadas.length, rechazadas_ia: n_rechazadas_ia, costo_usd: costo_total }));
   return res.status(respuesta.status).json(respuesta.body);
 }
 
@@ -228,14 +225,12 @@ export default async function handler(req, res) {
 
   const { vacante, ubicacion, fuente, muestra } = req.body;
   if (!vacante || !ubicacion || !fuente) {
-    const respuesta = { status: 400, body: { error: "Los campos 'vacante', 'ubicacion' y 'fuente' son requeridos" } };
-    registrar('estudios', respuesta.status, "missing vacante, ubicacion or fuente");
-    return res.status(respuesta.status).json(respuesta.body);
+    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing vacante, ubicacion or fuente' }));
+    return res.status(400).json({ error: "Los campos 'vacante', 'ubicacion' y 'fuente' son requeridos" });
   }
   if (fuente !== 'indeed' && fuente !== 'glassdoor') {
-    const respuesta = { status: 400, body: { error: "El campo 'fuente' debe ser 'indeed' o 'glassdoor'" } };
-    registrar('estudios', respuesta.status, `fuente inválida: ${fuente}`);
-    return res.status(respuesta.status).json(respuesta.body);
+    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: `fuente inválida: ${fuente}` }));
+    return res.status(400).json({ error: "El campo 'fuente' debe ser 'indeed' o 'glassdoor'" });
   }
 
   if (fuente === 'glassdoor') return manejarGlassdoor(vacante, ubicacion, muestra, res);
@@ -253,9 +248,8 @@ export default async function handler(req, res) {
 
   const vacantes = await respuestaApify.json();
   if (!Array.isArray(vacantes)) {
-    const respuesta = { status: 500, body: { error: 'Apify falló', detalle: vacantes } };
-    registrar('estudios', respuesta.status, `Apify falló: ${JSON.stringify(vacantes).slice(0, 200)}`);
-    return res.status(respuesta.status).json(respuesta.body);
+    console.log(JSON.stringify({ etapa: 'apify', estado: 'error', detalle: JSON.stringify(vacantes).slice(0, 200) }));
+    return res.status(500).json({ error: 'Apify falló', detalle: vacantes });
   }
 
   const dedup       = deduplicar(vacantes.map(v => extraerCampos(v)));
@@ -380,6 +374,6 @@ export default async function handler(req, res) {
       ...medioTiempo.map(v                                       => ({ ...depurar(v), validez: 'invalida', razon_invalidez: 'medio_tiempo' })),
     ],
   } };
-  registrar('estudios', respuesta.status, `${aprobadas.length} vacantes válidas | costo: $${costo_total}`);
+  console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', validas: aprobadas.length, costo_usd: costo_total }));
   return res.status(respuesta.status).json(respuesta.body);
 }
