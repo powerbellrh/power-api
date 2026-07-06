@@ -26,7 +26,6 @@ import {
   obtenerCalificacionEstadoEvaluacion,
 } from '../lib/utilidades_postulacion.js';
 import { ttObtener, ttActualizar, ttCrear, mcCrear, mcObtener } from '../lib/clientes_api.js';
-import { registrar } from '../lib/registro.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -148,7 +147,6 @@ async function enviarWhatsApp({ candidatoNombrePila, candidatoTelefono, candidat
     return { enviado: true, error: null };
 
   } catch (e) {
-    registrar('postulaciones', 500, `whatsapp [${candidatoNombrePila} | ${candidatoId}]: ${e.message}`);
     console.log(JSON.stringify({ etapa: 'whatsapp_integracion', estado: 'error', candidato: candidatoNombrePila, candidato_id: candidatoId, mensaje: e.message }));
     return { enviado: false, error: e.message };
   }
@@ -202,7 +200,6 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     if (!urlCurriculum?.trim()) {
       if (vacanteTipo !== 'OP') {
         console.log(JSON.stringify({ etapa: 'no_resume', candidato: candidatoNombre, accion: 'registro_eliminado' }));
-        registrar('postulaciones', 200, `[${postulacionId}] no_resume: ${candidatoNombre} eliminado`);
         await supabase.from('postulaciones').delete().eq('postulacion_id', postulacionId);
         return;
       }
@@ -296,8 +293,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
       : estadoEvaluacionACalificacion(extraerEstadoEvaluacion(resultadoEvaluacion));
 
     if (calificacionGlobal === null) {
-      registrar('postulaciones', 200, `[${postulacionId}] score_no_parseable: Claude no devolvió calificación en formato esperado (${candidatoNombre} | ${tituloVacante})`);
-      console.log(JSON.stringify({ etapa: 'extraccion_score', estado: 'null', candidato: candidatoNombre }));
+      console.log(JSON.stringify({ etapa: 'extraccion_score', estado: 'null', mensaje: 'Claude no devolvió calificación en formato esperado', candidato: candidatoNombre }));
     }
 
     let preguntasExtraidas             = [];
@@ -318,11 +314,9 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
           pregunta_5: preguntasExtraidas[4] ?? null,
         };
       } catch (e) {
-        registrar('postulaciones', 200, `[${postulacionId}] preguntas_malformadas: ${e.message} (${candidatoNombre} | ${tituloVacante})`);
         console.log(JSON.stringify({ etapa: 'extraccion_preguntas', estado: 'error', mensaje: e.message }));
       }
     } else {
-      registrar('postulaciones', 200, `[${postulacionId}] sin_seccion_preguntas: Claude no incluyó #PREGUNTAS# (${candidatoNombre} | ${tituloVacante})`);
       console.log(JSON.stringify({ etapa: 'extraccion_preguntas', estado: 'no_encontrada', razon: 'sin_seccion_preguntas' }));
     }
 
@@ -351,7 +345,6 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
         }, true);
         console.log(JSON.stringify({ etapa: 'actualizar_foto_candidato', estado: 'exito', categoria: obtenerNombreCategoriaPuntuacion(calificacionGlobal), calificacion: calificacionGlobal }));
       } catch (e) {
-        registrar('postulaciones', 200, `[${postulacionId}] fallo_foto_candidato: ${e.message}`);
         console.log(JSON.stringify({ etapa: 'actualizar_foto_candidato', estado: 'error', mensaje: e.message }));
       }
     }
@@ -376,7 +369,6 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
       }, true);
       console.log(JSON.stringify({ etapa: 'crear_nota_teamtailor', calificacion_nota: calificacionNotaEvaluacion }));
     } catch (e) {
-      registrar('postulaciones', 500, `[${postulacionId}] fallo_nota_tt: ${e.message} (${candidatoNombre} | ${tituloVacante})`);
       console.log(JSON.stringify({ etapa: 'crear_nota_teamtailor', estado: 'error', mensaje: e.message }));
     }
 
@@ -421,12 +413,10 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     etapaActual = 'guardar_estado_wa';
     await supabase.from('postulaciones').update({ whatsapp_enviado: whatsappEnviado, whatsapp_error: whatsappError }).eq('postulacion_id', postulacionId);
 
-    console.log(JSON.stringify({ etapa: 'completado', candidato: candidatoNombrePila, vacante: tituloVacante, calificacion: calificacionGlobal, whatsapp: whatsappEnviado }));
-    registrar('postulaciones', 200, `${candidatoNombrePila} | ${tituloVacante} | cal:${calificacionGlobal} | wa:${whatsappEnviado ? 'ok' : whatsappError}`);
+    console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', candidato: candidatoNombrePila, vacante: tituloVacante, calificacion: calificacionGlobal, whatsapp: whatsappEnviado ? 'ok' : whatsappError }));
 
   } catch (error) {
-    console.log(JSON.stringify({ etapa: 'error', etapa_fallida: etapaActual, postulacion_id: postulacionId, mensaje: error.message }));
-    registrar('postulaciones', 500, `[${postulacionId}] fallo en "${etapaActual}": ${error.message}`);
+    console.log(JSON.stringify({ etapa: 'error', estado: 'error', etapa_fallida: etapaActual, postulacion_id: postulacionId, mensaje: error.message }));
     try {
       await supabase.from('postulaciones').update({
         evaluacion_agendada:   false,
@@ -466,9 +456,8 @@ export default async function handler(req, res) {
 
   const { postulacion: postulacionId } = req.body ?? {};
   if (!postulacionId) {
-    const respuesta = { status: 400, body: { error: 'Missing postulacion field' } };
-    registrar('postulaciones', respuesta.status, 'missing postulacion field');
-    return res.status(respuesta.status).json(respuesta.body);
+    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing postulacion field' }));
+    return res.status(400).json({ error: 'Missing postulacion field' });
   }
   console.log(JSON.stringify({ etapa: 'inicio', postulacion_id: postulacionId }));
 
@@ -479,15 +468,13 @@ export default async function handler(req, res) {
     .from('postulaciones').select('*').eq('postulacion_id', postulacionId).single();
 
   if (errorConsulta || !postulacion) {
-    const respuesta = { status: 404, body: { error: 'Postulacion not found', detail: errorConsulta?.message } };
-    registrar('postulaciones', respuesta.status, `Postulacion not found: ${postulacionId}`);
-    return res.status(respuesta.status).json(respuesta.body);
+    console.log(JSON.stringify({ etapa: 'consulta_postulacion', estado: 'error', mensaje: 'not found', postulacion_id: postulacionId }));
+    return res.status(404).json({ error: 'Postulacion not found', detail: errorConsulta?.message });
   }
 
   if (!postulacion.vacante_id) {
-    const respuesta = { status: 400, body: { error: 'Missing vacante_id in record' } };
-    registrar('postulaciones', respuesta.status, `Missing vacante_id for postulacion: ${postulacionId}`);
-    return res.status(respuesta.status).json(respuesta.body);
+    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing vacante_id', postulacion_id: postulacionId }));
+    return res.status(400).json({ error: 'Missing vacante_id in record' });
   }
 
   // PASO 2: Marcar como en proceso y disparar trabajo en background

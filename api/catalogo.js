@@ -1,5 +1,4 @@
 import { ttObtener, mcCrear } from '../lib/clientes_api.js';
-import { registrar } from '../lib/registro.js';
 
 const CAT_MANYCHAT_FIELDS = {
   info_vacante: +process.env.CAT_MANYCHAT_FIELD_INFO_VACANTE,
@@ -72,18 +71,14 @@ export default async function handler(req, res) {
   const esInicio      = cuerpo?.inicio === true || cuerpo?.inicio === 'true';
 
   if (!idSuscriptor) {
-    const respuesta = { httpStatus: 200, logStatus: 400, body: { ok: false, error: 'missing subscriber id' } };
     console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing subscriber id' }));
-    registrar('catalogo', respuesta.logStatus, 'missing subscriber id');
-    return res.status(respuesta.httpStatus).json(respuesta.body);
+    return res.status(400).json({ ok: false, error: 'missing subscriber id' });
   }
 
   const coincidencia = mensaje.match(/#(\d+)/);
   if (!coincidencia) {
-    const respuesta = { httpStatus: 200, logStatus: 200, body: { ok: false, error: 'no job id in message' } };
     console.log(JSON.stringify({ etapa: 'validacion', estado: 'sin_vacante', idSuscriptor, mensaje }));
-    registrar('catalogo', respuesta.logStatus, 'no job id in message');
-    return res.status(respuesta.httpStatus).json(respuesta.body);
+    return res.status(200).json({ ok: false, error: 'no job id in message' });
   }
 
   const idVacante = coincidencia[1];
@@ -96,15 +91,12 @@ export default async function handler(req, res) {
     datosVacante = respuestaTt.data.attributes;
   } catch (e) {
     const mensajeError = e?.message ?? '';
-    const respuesta = { httpStatus: 200, logStatus: 500, body: { ok: false, error: 'job not found' } };
     if (mensajeError.includes('404')) {
       console.log(JSON.stringify({ etapa: 'teamtailor', estado: 'not_found', idVacante }));
-      registrar('catalogo', respuesta.logStatus, `TeamTailor: job ${idVacante} not found`);
-    } else {
-      console.log(JSON.stringify({ etapa: 'teamtailor', estado: 'error', mensaje: mensajeError }));
-      registrar('catalogo', respuesta.logStatus, `TeamTailor error: ${mensajeError}`);
+      return res.status(404).json({ ok: false, error: 'job not found' });
     }
-    return res.status(respuesta.httpStatus).json(respuesta.body);
+    console.log(JSON.stringify({ etapa: 'teamtailor', estado: 'error', mensaje: mensajeError }));
+    return res.status(502).json({ ok: false, error: 'TeamTailor error' });
   }
 
   const informacionVacante = limpiarHtmlParaWhatsApp(datosVacante.body);
@@ -128,7 +120,6 @@ export default async function handler(req, res) {
   resultadosCampos.forEach((r, i) => {
     if (r.status === 'rejected') {
       console.log(JSON.stringify({ etapa: 'manychat_field', indice: i, estado: 'error', mensaje: r.reason?.message }));
-      registrar('catalogo', 500, `manychat_field[${i}]: ${r.reason?.message}`);
     }
   });
   console.log(JSON.stringify({ etapa: 'manychat_fields', estado: 'ok' }));
@@ -143,13 +134,11 @@ export default async function handler(req, res) {
       console.log(JSON.stringify({ etapa: 'manychat_flow', estado: 'enviado' }));
     } catch (e) {
       console.log(JSON.stringify({ etapa: 'manychat_flow', estado: 'error', mensaje: e.message }));
-      registrar('catalogo', 500, `manychat_flow: ${e.message}`);
     }
   } else {
     console.log(JSON.stringify({ etapa: 'manychat_flow', estado: 'omitido', razon: 'inicio=true' }));
   }
 
-  const respuesta = { httpStatus: 200, logStatus: 200, body: { ok: true } };
-  registrar('catalogo', respuesta.logStatus, `job ${idVacante} | ${datosVacante.title}`);
-  return res.status(respuesta.httpStatus).json(respuesta.body);
+  console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', idVacante, titulo: datosVacante.title }));
+  return res.status(200).json({ ok: true });
 }

@@ -1,6 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { ttCrear, ttActualizar, mcCrear } from '../lib/clientes_api.js';
-import { registrar } from '../lib/registro.js';
 
 const FOTO_PERFIL_DEFAULT = 'https://i.ibb.co/JwvVrDr0/fotodesconocido.png';
 const FOTO_PERFIL_HOMBRE  = 'https://i.ibb.co/4RGYgcC4/fotohombre.png';
@@ -68,9 +67,8 @@ async function manejarAlta(req, res) {
   const { telefono, vacante, id: idSuscriptor } = req.body ?? {};
 
   if (!telefono || !vacante) {
-    const respuesta = { status: 400, body: { error: 'Missing telefono or vacante' } };
-    registrar('candidatos', respuesta.status, 'missing telefono or vacante');
-    return res.status(respuesta.status).json(respuesta.body);
+    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing telefono or vacante' }));
+    return res.status(400).json({ error: 'Missing telefono or vacante' });
   }
 
   console.log(JSON.stringify({ etapa: 'inicio', telefono, vacante_id: vacante, suscriptor_id: idSuscriptor ?? null }));
@@ -118,19 +116,17 @@ async function manejarAlta(req, res) {
         });
         console.log(JSON.stringify({ etapa: 'manychat_actualizado', suscriptor_id: idSuscriptor }));
       } catch (e) {
-        registrar('candidatos', 200, `[${candidatoId}] fallo_manychat: ${e.message}`);
         console.log(JSON.stringify({ etapa: 'manychat_actualizado', estado: 'error', mensaje: e.message }));
       }
     } else {
       console.log(JSON.stringify({ etapa: 'manychat_actualizado', estado: 'saltado', razon: 'sin_suscriptor_id' }));
     }
 
-    registrar('candidatos', 200, `candidato:${candidatoId} | postulacion:${postulacionId} | vacante:${vacante}`);
+    console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', candidato_id: candidatoId, postulacion_id: postulacionId }));
     return res.status(200).json({ id: candidatoId, job_application_id: postulacionId });
 
   } catch (error) {
     console.log(JSON.stringify({ etapa: 'error', mensaje: error.message }));
-    registrar('candidatos', 500, `[${telefono} | vacante:${vacante}] ${error.message}`);
     return res.status(500).json({ error: 'Failed to create candidate or job application' });
   }
 }
@@ -144,9 +140,8 @@ async function manejarActualizacionNombre(req, res) {
   const { candidato: candidatoId, nombre: textoRespuesta, manychat: idSuscriptor } = req.body ?? {};
 
   if (!candidatoId || !textoRespuesta) {
-    const respuesta = { status: 400, body: { resultado: 'fallido', nombre: 'ninguno' } };
-    registrar('candidatos', 400, 'missing candidato or nombre');
-    return res.status(respuesta.status).json(respuesta.body);
+    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing candidato or nombre' }));
+    return res.status(400).json({ resultado: 'fallido', nombre: 'ninguno' });
   }
 
   console.log(JSON.stringify({ etapa: 'inicio_actualizacion', candidato_id: candidatoId, suscriptor_id: idSuscriptor ?? null }));
@@ -156,7 +151,7 @@ async function manejarActualizacionNombre(req, res) {
     console.log(JSON.stringify({ etapa: 'extraccion_ia', nombre, genero }));
 
     if (nombre === 'ninguno') {
-      registrar('candidatos', 200, `[${candidatoId}] nombre_no_reconocido: "${textoRespuesta}"`);
+      console.log(JSON.stringify({ etapa: 'extraccion_ia', estado: 'no_reconocido', candidato_id: candidatoId, texto: textoRespuesta }));
       return res.status(200).json({ resultado: 'fallido', nombre: 'ninguno' });
     }
 
@@ -181,19 +176,16 @@ async function manejarActualizacionNombre(req, res) {
         await mcCrear('/fb/subscriber/setCustomFields', { subscriber_id: idSuscriptor, fields: campos });
         console.log(JSON.stringify({ etapa: 'manychat_actualizado', suscriptor_id: idSuscriptor }));
       } catch (e) {
-        registrar('candidatos', 200, `[${candidatoId}] fallo_manychat: ${e.message}`);
         console.log(JSON.stringify({ etapa: 'manychat_actualizado', estado: 'error', mensaje: e.message }));
       }
     }
 
-    registrar('candidatos', 200, `[${candidatoId}] nombre:${nombre} | genero:${genero}`);
+    console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', candidato_id: candidatoId, nombre, genero }));
     return res.status(200).json({ resultado: candidatoId, nombre, genero });
 
   } catch (error) {
-    // ManyChat requiere 200 siempre en este flujo conversacional, aunque falle todo
-    console.log(JSON.stringify({ etapa: 'error_actualizacion', candidato_id: candidatoId, mensaje: error.message }));
-    registrar('candidatos', 500, `[${candidatoId}] ${error.message}`);
-    return res.status(200).json({ resultado: 'fallido', nombre: 'ninguno' });
+    console.log(JSON.stringify({ etapa: 'error_actualizacion', estado: 'error', candidato_id: candidatoId, mensaje: error.message }));
+    return res.status(500).json({ resultado: 'fallido', nombre: 'ninguno', error: error.message });
   }
 }
 
