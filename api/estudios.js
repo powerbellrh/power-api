@@ -5,7 +5,6 @@ import { dirname, join }                            from 'path';
 import { extraerCampos, esMediotiempo, deduplicar } from '../lib/vacante.js';
 import { filtrarConIA }                             from '../lib/filtrado.js';
 import { extraerSalariosConIA }                     from '../lib/extraccion_salario_ia.js';
-import { GLASSDOOR_IC }                             from '../lib/glassdoor_ic.js';
 
 const SALARIO_MINIMO_MENSUAL        = parseFloat(process.env.SALARIO_MINIMO_MENSUAL);
 const __dirname                     = dirname(fileURLToPath(import.meta.url));
@@ -22,60 +21,9 @@ function percentil(sorted, p) {
   return Math.round(sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo));
 }
 
-// ── Glassdoor helpers ──────────────────────────────────────────────────────
-
-
-function convertirEnSlug(texto) {
-  return texto
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9\s]/g, '')
-    .trim()
-    .replace(/\s+/g, '-');
-}
-
-// Usa Haiku + web_search para descubrir el IC de una ciudad desconocida
-async function buscarGlassdoorIC(ubicacion) {
-  const resp = await client.messages.create({
-    model:      'claude-haiku-4-5-20251001',
-    max_tokens: 300,
-    tools:      [{ type: 'web_search_20250305', name: 'web_search' }],
-    messages:   [{
-      role:    'user',
-      content: `Busca en glassdoor.com.mx sueldos para la ciudad "${ubicacion}" México. Necesito el parámetro _IC seguido de un número en la URL de resultados. Por ejemplo: _IC3486357. Devuelve ÚNICAMENTE el número del IC, sin texto adicional.`,
-    }],
-  });
-
-  const texto = resp.content.find(b => b.type === 'text')?.text ?? '';
-  const match = texto.match(/\b(\d{6,8})\b/);
-  if (!match) throw new Error(`No se pudo encontrar el IC de Glassdoor para "${ubicacion}"`);
-  return parseInt(match[1], 10);
-}
-
-async function resolverGlassdoorIC(ubicacion) {
-  const key = ubicacion.toLowerCase().trim();
-  if (GLASSDOOR_IC[key]) return GLASSDOOR_IC[key];
-  return buscarGlassdoorIC(ubicacion);
-}
-
-function construirUrlGlassdoor(slugCiudad, slugVacante, idUbicacion) {
-  const largoCiudad  = slugCiudad.length;
-  const inicioVacante = largoCiudad + 1;
-  const finVacante     = inicioVacante + slugVacante.length;
-  return `https://www.glassdoor.com.mx/Sueldos/${slugCiudad}-${slugVacante}-sueldo-SRCH_IL.0,${largoCiudad}_IC${idUbicacion}_KO${inicioVacante},${finVacante}.htm`;
-}
-
 // ── Handler Glassdoor ──────────────────────────────────────────────────────
 
-async function manejarGlassdoor(vacante, ubicacion, muestra, res) {
-  const idUbicacion  = await resolverGlassdoorIC(ubicacion);
-  const slugCiudad   = convertirEnSlug(ubicacion);
-  const slugVacante  = convertirEnSlug(vacante);
-  const url          = construirUrlGlassdoor(slugCiudad, slugVacante, idUbicacion);
-
-  console.log(JSON.stringify({ etapa: 'glassdoor_url', url }));
-
+async function manejarGlassdoor(vacante, ubicacion, url, muestra, res) {
   const respuestaApify = await fetch(
     `https://api.apify.com/v2/actors/memo23~glassdoor-scraper-ppr/run-sync-get-dataset-items?token=${process.env.APIFY_TOKEN}`,
     {
@@ -223,7 +171,7 @@ export default async function handler(req, res) {
   if (process.env.POWERBELL_API_KEY && claveApi !== process.env.POWERBELL_API_KEY)
     return res.status(401).json({ error: 'Unauthorized' });
 
-  const { vacante, ubicacion, fuente, muestra } = req.body;
+  const { vacante, ubicacion, fuente, muestra, url } = req.body;
   if (!vacante || !ubicacion || !fuente) {
     console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing vacante, ubicacion or fuente' }));
     return res.status(400).json({ error: "Los campos 'vacante', 'ubicacion' y 'fuente' son requeridos" });
@@ -232,8 +180,12 @@ export default async function handler(req, res) {
     console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: `fuente inválida: ${fuente}` }));
     return res.status(400).json({ error: "El campo 'fuente' debe ser 'indeed' o 'glassdoor'" });
   }
+  if (fuente === 'glassdoor' && !url) {
+    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing url for fuente glassdoor' }));
+    return res.status(400).json({ error: "El campo 'url' es requerido cuando 'fuente' es 'glassdoor'" });
+  }
 
-  if (fuente === 'glassdoor') return manejarGlassdoor(vacante, ubicacion, muestra, res);
+  if (fuente === 'glassdoor') return manejarGlassdoor(vacante, ubicacion, url, muestra, res);
 
   // ── Indeed ────────────────────────────────────────────────────────────────
 
