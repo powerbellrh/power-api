@@ -26,6 +26,7 @@ import {
   obtenerCalificacionEstadoEvaluacion,
 } from '../lib/utilidades_postulacion.js';
 import { ttObtener, ttActualizar, ttCrear, mcCrear, mcObtener } from '../lib/clientes_api.js';
+import { verificarProximidadUbicacion, construirContextoUbicacion } from '../lib/ubicacion.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -156,7 +157,7 @@ async function enviarWhatsApp({ candidatoNombrePila, candidatoTelefono, candidat
 // PROCESAMIENTO EN BACKGROUND
 // ============================================================================
 async function procesarEvaluacion(postulacionId, postulacion, supabase) {
-  const { vacante_id: vacanteId, candidato_nombre: candidatoNombre, candidato_telefono: candidatoTelefono, vacante_tipo: vacanteTipo } = postulacion;
+  const { vacante_id: vacanteId, candidato_nombre: candidatoNombre, candidato_telefono: candidatoTelefono, candidato_ubicacion: candidatoUbicacionGuardada, vacante_tipo: vacanteTipo } = postulacion;
 
   const tipoConfig   = AI_CONFIG[vacanteTipo] ?? AI_CONFIG.AD;
   const systemPrompt = PROMPTS[vacanteTipo]   ?? PROMPTS.AD;
@@ -193,7 +194,6 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     const urlCurriculum       = datosCandidato.attributes.resume;
     const candidatoTelefonoTt = datosCandidato.attributes.phone || candidatoTelefono;
     const candidatoNombrePila = datosCandidato.attributes['first-name'] || candidatoNombre.split(' ')[0];
-    const ubicacionCandidato  = datosCandidato.attributes.city ?? null;
 
     console.log(JSON.stringify({ etapa: 'datos_candidato', candidato_id: candidateId, resume: urlCurriculum ? 'encontrado' : 'no_encontrado' }));
 
@@ -216,6 +216,19 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     const urlImagenDeRespuestas = vacanteTipo === 'OP' ? extraerUrlImagenDeRespuestas(respuestasCandidatoCrudas) : null;
     console.log(JSON.stringify({ etapa: 'fuentes_historial', cv: urlCurriculum ? 'si' : 'no', imagen_respuestas: urlImagenDeRespuestas ? 'si' : 'no' }));
 
+    // PASO 6.1: Para vacantes OP, si ya existe candidato_ubicacion en Supabase, calcular proximidad al punto de trabajo
+    let contextoUbicacion = '';
+    if (vacanteTipo === 'OP' && candidatoUbicacionGuardada) {
+      etapaActual = 'proximidad_ubicacion';
+      const datosProximidad = await verificarProximidadUbicacion(vacanteId, candidatoUbicacionGuardada);
+      if (datosProximidad.encontrado) {
+        console.log(JSON.stringify({ etapa: 'proximidad_ubicacion', estado: 'ok', distancia: datosProximidad.distancia_texto, ubicacion: datosProximidad.nombre_ubicacion }));
+      } else {
+        console.log(JSON.stringify({ etapa: 'proximidad_ubicacion', estado: 'no_disponible', razon: datosProximidad.razon }));
+      }
+      contextoUbicacion = construirContextoUbicacion(datosProximidad, candidatoUbicacionGuardada);
+    }
+
     // PASO 7: Guardar datos de TeamTailor en Supabase
     etapaActual = 'guardar_datos_tt';
     await supabase.from('postulaciones').update({
@@ -224,7 +237,6 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
       vacante_ubicacion:    ubicacionVacante,
       vacante_sueldo:       jsonSalarioVacante,
       vacante_contexto:     contextoCampoPersonalizado || null,
-      candidato_ubicacion:  ubicacionCandidato,
       candidato_respuestas: candidatoRespuestas,
     }).eq('postulacion_id', postulacionId);
 
@@ -254,7 +266,8 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
         role: 'user',
         content: [
           { type: 'text', text: construirBloqueInfoVacante(tituloVacante, descripcionVacanteLimpia, ubicacionVacante, contextoCampoPersonalizado, textoSalarioVacante) },
-          { type: 'text', text: construirBloqueInfoCandidato(candidatoNombre, ubicacionCandidato, candidatoRespuestas) },
+          { type: 'text', text: construirBloqueInfoCandidato(candidatoNombre, candidatoRespuestas) },
+          ...(contextoUbicacion ? [{ type: 'text', text: contextoUbicacion }] : []),
           ...(urlImagenDeRespuestas
             ? [{ type: 'image', source: { type: 'url', url: urlImagenDeRespuestas } }]
             : urlCurriculum?.trim()
