@@ -7,7 +7,8 @@
     { "source": "/bloqueos",        "destination": "/api/bloqueos"        },
     { "source": "/recepcion-postulaciones", "destination": "/api/recepcion-postulaciones" },
     { "source": "/candidatos",      "destination": "/api/candidatos"      },
-    { "source": "/direcciones",     "destination": "/api/direcciones"     }
+    { "source": "/direcciones",     "destination": "/api/direcciones"     },
+    { "source": "/historial",       "destination": "/api/historial"       }
   ],
   "functions": {
     "api/estudios.js": {
@@ -29,6 +30,9 @@
       "maxDuration": 30
     },
     "api/direcciones.js": {
+      "maxDuration": 30
+    },
+    "api/historial.js": {
       "maxDuration": 30
     }
   },
