@@ -7,8 +7,16 @@ Datos de referencia (úsalos para pensar tu respuesta, pero no los repitas todos
 - Prestaciones más comunes: {{top_prestaciones}}
 - Distribución: {{n_baja}} por debajo del promedio, {{n_media}} en el rango típico, {{n_alta}} por encima
 
-Escribe una conclusión ejecutiva para una persona de recursos humanos, en tono directo y de negocio. No menciones de dónde vienen los datos ni el método de análisis. Evita saturar de cifras: apóyate únicamente en el piso (P10), el promedio (P50) y el nivel altamente competitivo (P90).
+Escribe una conclusión ejecutiva para una persona de recursos humanos, en tono directo y de negocio, en prosa corrida.
 
-Responde en exactamente 2 párrafos (sin viñetas, sin encabezados):
-- Primer párrafo: describe brevemente el tipo de posiciones encontradas en el mercado (nivel de experiencia/responsabilidad frente al puesto buscado) y señala que los sueldos de referencia se concentran entre el piso (P10) y el nivel altamente competitivo (P90), usando el promedio (P50) como referencia central.
-- Segundo párrafo: da una recomendación accionable sobre cómo posicionar la oferta (ej. si el mercado está parejo o disperso, si hay poca o mucha oferta de este perfil, u otro factor relevante), y menciona si alguna prestación clave del mercado representa una oportunidad de mejora frente a lo que normalmente se ofrece.
+Reglas estrictas de formato:
+- NO incluyas título, encabezado, ni el nombre del puesto o ubicación como línea inicial (eso ya lo sabe el lector).
+- NO uses viñetas, guiones, ni listas.
+- NO uses negritas ni ningún otro formato.
+- Escribe exactamente 2 párrafos simples de prosa, cada uno de 2-3 oraciones.
+- Usa como máximo 2 cifras de salario en TODO el texto (por ejemplo, un rango sugerido). No repitas el piso, el promedio y el techo como tres números distintos ni menciones percentiles, P10, P50, P90 ni ninguna otra sigla estadística.
+- No menciones de dónde vienen los datos ni el método de análisis.
+
+Contenido:
+- Primer párrafo: menciona en términos generales el nivel de las posiciones encontradas en el mercado (experiencia/responsabilidad) frente al puesto buscado, y da un solo rango o cifra de referencia para lo que se paga.
+- Segundo párrafo: da una recomendación accionable sobre cómo posicionar la oferta (ej. si el mercado está parejo o disperso, si hay poca o mucha oferta de este perfil), y menciona si alguna prestación clave del mercado representa una oportunidad de mejora frente a lo que normalmente se ofrece.
