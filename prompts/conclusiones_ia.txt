@@ -13,10 +13,10 @@ Reglas estrictas de formato:
 - NO incluyas título, encabezado, ni el nombre del puesto o ubicación como línea inicial (eso ya lo sabe el lector).
 - NO uses viñetas, guiones, ni listas.
 - NO uses negritas ni ningún otro formato.
-- Escribe exactamente 2 párrafos simples de prosa, cada uno de 2-3 oraciones.
+- Escribe exactamente 1 párrafo simple de prosa, de 3-4 oraciones, sin redundancia.
 - Usa como máximo 2 cifras de salario en TODO el texto (por ejemplo, un rango sugerido). No repitas el piso, el promedio y el techo como tres números distintos ni menciones percentiles, P10, P50, P90 ni ninguna otra sigla estadística.
 - No menciones de dónde vienen los datos ni el método de análisis.
 
-Contenido:
-- Primer párrafo: menciona en términos generales el nivel de las posiciones encontradas en el mercado (experiencia/responsabilidad) frente al puesto buscado, y da un solo rango o cifra de referencia para lo que se paga.
-- Segundo párrafo: da una recomendación accionable sobre cómo posicionar la oferta (ej. si el mercado está parejo o disperso, si hay poca o mucha oferta de este perfil), y menciona si alguna prestación clave del mercado representa una oportunidad de mejora frente a lo que normalmente se ofrece.
+Contenido, directo y sin rodeos:
+- Menciona en términos generales el nivel de las posiciones encontradas en el mercado (experiencia/responsabilidad) frente al puesto buscado, y da un solo rango o cifra de referencia para lo que se paga.
+- Da una recomendación accionable sobre cómo posicionar la oferta (ej. si el mercado está parejo o disperso, si hay poca o mucha oferta de este perfil), y menciona si alguna prestación clave del mercado representa una oportunidad de mejora frente a lo que normalmente se ofrece.
