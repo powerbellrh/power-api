@@ -51,11 +51,11 @@ const MANYCHAT_PHONE_FIELD_ID = +process.env.MANYCHAT_FIELD_PHONE_ID;
 const MANYCHAT_FIELDS = {
   job_title:    +process.env.AD_MANYCHAT_FIELD_JOB_TITLE,
   candidate_id: +process.env.AD_MANYCHAT_FIELD_CANDIDATE_ID,
-  question_1:   +process.env.AD_MANYCHAT_FIELD_Q1,
-  question_2:   +process.env.AD_MANYCHAT_FIELD_Q2,
-  question_3:   +process.env.AD_MANYCHAT_FIELD_Q3,
-  question_4:   +process.env.AD_MANYCHAT_FIELD_Q4,
-  question_5:   +process.env.AD_MANYCHAT_FIELD_Q5,
+  question_1:   +process.env.MANYCHAT_FIELD_PREGUNTA_1,
+  question_2:   +process.env.MANYCHAT_FIELD_PREGUNTA_2,
+  question_3:   +process.env.MANYCHAT_FIELD_PREGUNTA_3,
+  question_4:   +process.env.MANYCHAT_FIELD_PREGUNTA_4,
+  question_5:   +process.env.MANYCHAT_FIELD_PREGUNTA_5,
 };
 
 // ============================================================================
