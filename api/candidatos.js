@@ -1,14 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { ttCrear, ttActualizar, mcCrear } from '../lib/clientes_api.js';
+import { ttCrear, ttActualizar } from '../lib/clientes_api.js';
 
 const FOTO_PERFIL_DEFAULT = 'https://i.ibb.co/JwvVrDr0/fotodesconocido.png';
 const FOTO_PERFIL_HOMBRE  = 'https://i.ibb.co/4RGYgcC4/fotohombre.png';
 const FOTO_PERFIL_MUJER   = 'https://i.ibb.co/6CdjYbv/fotomujer.png';
-
-const MANYCHAT_FIELD_CANDIDATE_ID    = +process.env.CANDIDATOS_MANYCHAT_FIELD_CANDIDATE_ID;
-const MANYCHAT_FIELD_JOB_APPLICATION = +process.env.CANDIDATOS_MANYCHAT_FIELD_JOB_APPLICATION_ID;
-const MANYCHAT_FIELD_NAME            = +process.env.CANDIDATOS_MANYCHAT_FIELD_NAME;
-const MANYCHAT_FIELD_GENDER          = +process.env.CANDIDATOS_MANYCHAT_FIELD_GENDER;
 
 const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY_CHATBOT });
 
@@ -104,24 +99,6 @@ async function manejarAlta(req, res) {
     const postulacionId = respuestaPostulacion.data.id;
     console.log(JSON.stringify({ etapa: 'postulacion_creada', postulacion_id: postulacionId }));
 
-    // PASO 3: Actualizar campos personalizados en ManyChat (best effort, no interrumpe la respuesta)
-    if (idSuscriptor) {
-      try {
-        await mcCrear('/fb/subscriber/setCustomFields', {
-          subscriber_id: idSuscriptor,
-          fields: [
-            { field_id: MANYCHAT_FIELD_CANDIDATE_ID,    field_value: candidatoId.toString()   },
-            { field_id: MANYCHAT_FIELD_JOB_APPLICATION, field_value: postulacionId.toString() },
-          ],
-        });
-        console.log(JSON.stringify({ etapa: 'manychat_actualizado', suscriptor_id: idSuscriptor }));
-      } catch (e) {
-        console.log(JSON.stringify({ etapa: 'manychat_actualizado', estado: 'error', mensaje: e.message }));
-      }
-    } else {
-      console.log(JSON.stringify({ etapa: 'manychat_actualizado', estado: 'saltado', razon: 'sin_suscriptor_id' }));
-    }
-
     console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', candidato_id: candidatoId, postulacion_id: postulacionId }));
     return res.status(200).json({ id: candidatoId, job_application_id: postulacionId });
 
@@ -166,19 +143,6 @@ async function manejarActualizacionNombre(req, res) {
       },
     });
     console.log(JSON.stringify({ etapa: 'candidato_actualizado', candidato_id: candidatoId, nombre }));
-
-    // PASO 2: Actualizar campos personalizados en ManyChat (best effort, no interrumpe la respuesta)
-    if (idSuscriptor) {
-      try {
-        const campos = [{ field_id: MANYCHAT_FIELD_NAME, field_value: nombre }];
-        if (genero !== 'ninguno') campos.push({ field_id: MANYCHAT_FIELD_GENDER, field_value: genero });
-
-        await mcCrear('/fb/subscriber/setCustomFields', { subscriber_id: idSuscriptor, fields: campos });
-        console.log(JSON.stringify({ etapa: 'manychat_actualizado', suscriptor_id: idSuscriptor }));
-      } catch (e) {
-        console.log(JSON.stringify({ etapa: 'manychat_actualizado', estado: 'error', mensaje: e.message }));
-      }
-    }
 
     console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', candidato_id: candidatoId, nombre, genero }));
     return res.status(200).json({ resultado: candidatoId, nombre, genero });
