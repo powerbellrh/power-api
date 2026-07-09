@@ -8,7 +8,8 @@
     { "source": "/recepcion-postulaciones", "destination": "/api/recepcion-postulaciones" },
     { "source": "/candidatos",      "destination": "/api/candidatos"      },
     { "source": "/direcciones",     "destination": "/api/direcciones"     },
-    { "source": "/historial",       "destination": "/api/historial"       }
+    { "source": "/historial",       "destination": "/api/historial"       },
+    { "source": "/preguntas",       "destination": "/api/preguntas"       }
   ],
   "functions": {
     "api/estudios.js": {
@@ -33,6 +34,9 @@
       "maxDuration": 30
     },
     "api/historial.js": {
+      "maxDuration": 30
+    },
+    "api/preguntas.js": {
       "maxDuration": 30
     }
   },
