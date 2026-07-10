@@ -26,15 +26,6 @@ Nivel educativo mínimo requerido, certificaciones obligatorias para el puesto (
 DISPONIBILIDAD Y LOGÍSTICA
 Disponibilidad de horario (turnos, fines de semana, guardias), ubicación o disposición para trasladarse, disponibilidad inmediata si es requerida.
 
-PROXIMIDAD Y TRANSPORTE AL TRABAJO
-Si se proporciona información de proximidad (distancia, tiempos de traslado):
-- PRIORIDAD MÁXIMA: Si el candidato menciona explícitamente en sus respuestas que tiene disponibilidad para trabajar en esa ubicación, que cuenta con transporte propio, o que puede llegar sin problemas, ESTA INFORMACIÓN DEBE PREVALECER sobre los tiempos calculados
-- Si el candidato NO menciona transporte o disponibilidad de ubicación, entonces considerar los tiempos calculados:
-  - Caminando: Menos de 30 minutos = excelente | 30-60 minutos = aceptable | Más de 60 minutos = considerar riesgo
-  - Manejando: Menos de 20 minutos = excelente | 20-45 minutos = aceptable | Más de 45 minutos = considerar riesgo
-- La proximidad es un factor informativo, NO un criterio de exclusión automática
-- Si hay tiempos largos SIN mención de transporte del candidato, incluirlo como punto de aclaración en las preguntas
-
 CONDICIONES ESPECÍFICAS DEL PUESTO
 Cumplimiento de requisitos físicos o de salud si aplican, documentación necesaria (licencias, permisos, etc.), cualquier condición operativa particular definida en la vacante.
 
