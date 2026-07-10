@@ -9,7 +9,8 @@
     { "source": "/candidatos",      "destination": "/api/candidatos"      },
     { "source": "/direcciones",     "destination": "/api/direcciones"     },
     { "source": "/historial",       "destination": "/api/historial"       },
-    { "source": "/preguntas",       "destination": "/api/preguntas"       }
+    { "source": "/preguntas",       "destination": "/api/preguntas"       },
+    { "source": "/experiencia",     "destination": "/api/experiencia"     }
   ],
   "functions": {
     "api/estudios.js": {
