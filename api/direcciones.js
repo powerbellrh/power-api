@@ -11,7 +11,7 @@ const SYSTEM_PROMPT_VALIDACION_DIRECCION = `\
 Eres un verificador. Detectas posibles direcciones en México.
 
 # Instrucciones
-Si el input contiene una posible dirección, responde con la dirección nuevamente formateada de una manera en la que se pueda buscar en Google, esta información será ingresada en una base de datos, por lo cuál su formato es increiblemente importante
+Si el input contiene una posible dirección, responde con la dirección nuevamente formateada de manera clara y estandarizada, esta información será ingresada en una base de datos, por lo cuál su formato es increiblemente importante
 Si no, responde: inválido.
 No expliques ni muestres razonamiento.
 
@@ -48,25 +48,8 @@ async function validarDireccion(texto) {
   return bloqueTexto.text.trim();
 }
 
-async function geocodificarDireccion(texto) {
-  const r = await fetch('https://places.googleapis.com/v1/places:searchText', {
-    method:  'POST',
-    headers: {
-      'Content-Type':      'application/json',
-      'X-Goog-Api-Key':    process.env.GOOGLE_MAPS_API_KEY,
-      'X-Goog-FieldMask':  'places.formattedAddress',
-    },
-    body: JSON.stringify({ textQuery: texto, languageCode: 'es' }),
-  });
-
-  if (!r.ok) throw new Error(`Google Places → ${r.status}: ${await r.text()}`);
-
-  const datos = await r.json();
-  return datos.places?.[0]?.formattedAddress ?? texto;
-}
-
 // ============================================================================
-// PUT — Validación, geocodificación y actualización de dirección de candidato
+// PUT — Validación y actualización de dirección de candidato
 // (ManyChat solo soporta GET/POST/PUT en sus llamadas externas; se usa PUT
 // para esta actualización aunque semánticamente sea un PATCH parcial)
 // ============================================================================
@@ -90,28 +73,25 @@ async function manejarActualizacionDireccion(req, res) {
       return res.status(200).json({ resultado: 'fallido', direccion: 'ninguno' });
     }
 
-    const direccionFinal = await geocodificarDireccion(direccionValidada);
-    console.log(JSON.stringify({ etapa: 'geocodificacion', direccion: direccionFinal }));
-
     // PASO 1: Guardar respuesta de dirección en TeamTailor
     await ttCrear('/answers', {
       data: {
         type:       'answers',
-        attributes: { text: direccionFinal },
+        attributes: { text: direccionValidada },
         relationships: {
           candidate: { data: { id: candidatoId.toString(),               type: 'candidates' } },
           question:  { data: { id: TEAMTAILOR_ADDRESS_QUESTION_ID.toString(), type: 'questions'  } },
         },
       },
     });
-    console.log(JSON.stringify({ etapa: 'teamtailor_actualizado', candidato_id: candidatoId, direccion: direccionFinal }));
+    console.log(JSON.stringify({ etapa: 'teamtailor_actualizado', candidato_id: candidatoId, direccion: direccionValidada }));
 
     // PASO 2: Actualizar campo personalizado en ManyChat (best effort, no interrumpe la respuesta)
     if (idSuscriptor) {
       try {
         await mcCrear('/fb/subscriber/setCustomFields', {
           subscriber_id: idSuscriptor,
-          fields: [{ field_id: MANYCHAT_FIELD_ADDRESS_ID, field_value: direccionFinal }],
+          fields: [{ field_id: MANYCHAT_FIELD_ADDRESS_ID, field_value: direccionValidada }],
         });
         console.log(JSON.stringify({ etapa: 'manychat_actualizado', suscriptor_id: idSuscriptor }));
       } catch (e) {
@@ -121,8 +101,8 @@ async function manejarActualizacionDireccion(req, res) {
       console.log(JSON.stringify({ etapa: 'manychat_actualizado', estado: 'saltado', razon: 'sin_suscriptor_id' }));
     }
 
-    console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', candidato_id: candidatoId, direccion: direccionFinal }));
-    return res.status(200).json({ resultado: candidatoId, direccion: direccionFinal });
+    console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', candidato_id: candidatoId, direccion: direccionValidada }));
+    return res.status(200).json({ resultado: candidatoId, direccion: direccionValidada });
 
   } catch (error) {
     console.log(JSON.stringify({ etapa: 'error', candidato_id: candidatoId, mensaje: error.message }));
