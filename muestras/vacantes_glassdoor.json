@@ -1,0 +1,1786 @@
+[
+  {
+    "__typename": "KeywordSalaryEstimates",
+    "aggregateSalaryResponse": {
+      "__typename": "AggregatedSalaryEstimates",
+      "employerCount": 94,
+      "estimateSourceName": "UGC",
+      "jobTitleCount": 97,
+      "mostRecent": "2026-01-06T07:16:09",
+      "numPages": 5,
+      "queryLocation": {
+        "__typename": "City",
+        "id": 3486357,
+        "name": "Guadalajara, Jalisco",
+        "type": "CITY"
+      },
+      "resultCount": 97,
+      "results": [
+        {
+          "__typename": "AggregatedSalaryEstimatesResult",
+          "currency": {
+            "__typename": "Currency",
+            "code": "MXN",
+            "symbol": "MXN$"
+          },
+          "employer": {
+            "__typename": "Employer",
+            "counts": {
+              "__typename": "EmployerCounts",
+              "globalJobCount": {
+                "__typename": "EmployerJobCountHolder",
+                "jobCount": 0
+              }
+            },
+            "id": 4435376,
+            "name": "ISS Consultores",
+            "primaryIndustryId": null,
+            "ratings": {
+              "__typename": "DefaultEmployerRatings",
+              "overallRating": 5
+            },
+            "shortName": "ISS Consultores",
+            "squareLogoUrl": "https://media.glassdoor.com/sql/4435376/iss-consultores-squarelogo-1626938421119.png"
+          },
+          "jobTitle": {
+            "__typename": "JobTitle",
+            "gocId": 100370,
+            "id": 138895,
+            "mgocId": 10013,
+            "text": "Director General"
+          },
+          "payPeriod": "MONTHLY",
+          "salaryCount": 2,
+          "totalPayStatistics": {
+            "__typename": "StatisticsResult",
+            "mean": 324277.55,
+            "percentiles": [
+              {
+                "__typename": "Percentile",
+                "ident": "P25",
+                "value": 290000
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P95",
+                "value": 350000
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P90",
+                "value": 350000
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P995",
+                "value": 350000
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P75",
+                "value": 350000
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P05",
+                "value": 290000
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P005",
+                "value": 290000
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P10",
+                "value": 290000
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P50",
+                "value": 320000
+              }
+            ]
+          }
+        },
+        {
+          "__typename": "AggregatedSalaryEstimatesResult",
+          "currency": {
+            "__typename": "Currency",
+            "code": "MXN",
+            "symbol": "MXN$"
+          },
+          "employer": {
+            "__typename": "Employer",
+            "counts": {
+              "__typename": "EmployerCounts",
+              "globalJobCount": {
+                "__typename": "EmployerJobCountHolder",
+                "jobCount": 8
+              }
+            },
+            "id": 10916,
+            "name": "Grupo Carso, S.A.B. de C.V.",
+            "primaryIndustryId": 200036,
+            "ratings": {
+              "__typename": "DefaultEmployerRatings",
+              "overallRating": 3.8
+            },
+            "shortName": "Grupo Carso",
+            "squareLogoUrl": "https://media.glassdoor.com/sql/10916/grupo-carso-squarelogo-1629790298747.png"
+          },
+          "jobTitle": {
+            "__typename": "JobTitle",
+            "gocId": 100370,
+            "id": 138895,
+            "mgocId": 10013,
+            "text": "Director General"
+          },
+          "payPeriod": "MONTHLY",
+          "salaryCount": 1,
+          "totalPayStatistics": {
+            "__typename": "StatisticsResult",
+            "mean": 175735.3,
+            "percentiles": [
+              {
+                "__typename": "Percentile",
+                "ident": "P25",
+                "value": 166746.67
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P95",
+                "value": 181939.33
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P90",
+                "value": 181939.33
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P995",
+                "value": 181939.33
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P75",
+                "value": 181939.33
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P05",
+                "value": 166746.67
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P005",
+                "value": 166746.67
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P10",
+                "value": 166746.67
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P50",
+                "value": 174343
+              }
+            ]
+          }
+        },
+        {
+          "__typename": "AggregatedSalaryEstimatesResult",
+          "currency": {
+            "__typename": "Currency",
+            "code": "MXN",
+            "symbol": "MXN$"
+          },
+          "employer": {
+            "__typename": "Employer",
+            "counts": {
+              "__typename": "EmployerCounts",
+              "globalJobCount": {
+                "__typename": "EmployerJobCountHolder",
+                "jobCount": 8
+              }
+            },
+            "id": 3336755,
+            "name": "Traxión",
+            "primaryIndustryId": 200130,
+            "ratings": {
+              "__typename": "DefaultEmployerRatings",
+              "overallRating": 3.3
+            },
+            "shortName": "Traxión (Mexico)",
+            "squareLogoUrl": "https://media.glassdoor.com/sql/3336755/traxión-mexico-squarelogo-1640252454242.png"
+          },
+          "jobTitle": {
+            "__typename": "JobTitle",
+            "gocId": 100370,
+            "id": 138895,
+            "mgocId": 10013,
+            "text": "Director General"
+          },
+          "payPeriod": "MONTHLY",
+          "salaryCount": 1,
+          "totalPayStatistics": {
+            "__typename": "StatisticsResult",
+            "mean": 35024.27,
+            "percentiles": [
+              {
+                "__typename": "Percentile",
+                "ident": "P25",
+                "value": 33828.2
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P95",
+                "value": 36402.8
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P90",
+                "value": 36402.8
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P995",
+                "value": 36402.8
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P75",
+                "value": 36402.8
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P05",
+                "value": 33828.2
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P005",
+                "value": 33828.2
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P10",
+                "value": 33828.2
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P50",
+                "value": 35115.5
+              }
+            ]
+          }
+        },
+        {
+          "__typename": "AggregatedSalaryEstimatesResult",
+          "currency": {
+            "__typename": "Currency",
+            "code": "MXN",
+            "symbol": "MXN$"
+          },
+          "employer": {
+            "__typename": "Employer",
+            "counts": {
+              "__typename": "EmployerCounts",
+              "globalJobCount": {
+                "__typename": "EmployerJobCountHolder",
+                "jobCount": 0
+              }
+            },
+            "id": 6381579,
+            "name": "Gordian Staffing",
+            "primaryIndustryId": 200154,
+            "ratings": {
+              "__typename": "DefaultEmployerRatings",
+              "overallRating": 4.1
+            },
+            "shortName": "Gordian Staffing",
+            "squareLogoUrl": "https://media.glassdoor.com/sql/6381579/gordian-staffing-squareLogo-1701116933031.png"
+          },
+          "jobTitle": {
+            "__typename": "JobTitle",
+            "gocId": 100370,
+            "id": 138895,
+            "mgocId": 10013,
+            "text": "Director General"
+          },
+          "payPeriod": "MONTHLY",
+          "salaryCount": 1,
+          "totalPayStatistics": {
+            "__typename": "StatisticsResult",
+            "mean": 85978.54,
+            "percentiles": [
+              {
+                "__typename": "Percentile",
+                "ident": "P25",
+                "value": 82403.53
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P95",
+                "value": 90389
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P90",
+                "value": 90389
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P995",
+                "value": 90389
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P75",
+                "value": 90389
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P05",
+                "value": 82403.53
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P005",
+                "value": 82403.53
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P10",
+                "value": 82403.53
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P50",
+                "value": 86396.27
+              }
+            ]
+          }
+        },
+        {
+          "__typename": "AggregatedSalaryEstimatesResult",
+          "currency": {
+            "__typename": "Currency",
+            "code": "MXN",
+            "symbol": "MXN$"
+          },
+          "employer": {
+            "__typename": "Employer",
+            "counts": {
+              "__typename": "EmployerCounts",
+              "globalJobCount": {
+                "__typename": "EmployerJobCountHolder",
+                "jobCount": 0
+              }
+            },
+            "id": 2484368,
+            "name": "Bufete Jurídico",
+            "primaryIndustryId": null,
+            "ratings": {
+              "__typename": "DefaultEmployerRatings",
+              "overallRating": 4.1
+            },
+            "shortName": "Bufete Jurídico",
+            "squareLogoUrl": "https://media.glassdoor.com/sql/2484368/bufete-jurídico-squarelogo-1552541922699.png"
+          },
+          "jobTitle": {
+            "__typename": "JobTitle",
+            "gocId": 100370,
+            "id": 138895,
+            "mgocId": 10013,
+            "text": "Director General"
+          },
+          "payPeriod": "MONTHLY",
+          "salaryCount": 1,
+          "totalPayStatistics": {
+            "__typename": "StatisticsResult",
+            "mean": 9944.34,
+            "percentiles": [
+              {
+                "__typename": "Percentile",
+                "ident": "P25",
+                "value": 9542.9
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P95",
+                "value": 10405.8
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P90",
+                "value": 10405.8
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P995",
+                "value": 10405.8
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P75",
+                "value": 10405.8
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P05",
+                "value": 9542.9
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P005",
+                "value": 9542.9
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P10",
+                "value": 9542.9
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P50",
+                "value": 9974.35
+              }
+            ]
+          }
+        },
+        {
+          "__typename": "AggregatedSalaryEstimatesResult",
+          "currency": {
+            "__typename": "Currency",
+            "code": "MXN",
+            "symbol": "MXN$"
+          },
+          "employer": {
+            "__typename": "Employer",
+            "counts": {
+              "__typename": "EmployerCounts",
+              "globalJobCount": {
+                "__typename": "EmployerJobCountHolder",
+                "jobCount": 0
+              }
+            },
+            "id": 2694364,
+            "name": "Grupo Gin",
+            "primaryIndustryId": null,
+            "ratings": {
+              "__typename": "DefaultEmployerRatings",
+              "overallRating": 3.6
+            },
+            "shortName": "Grupo Gin",
+            "squareLogoUrl": null
+          },
+          "jobTitle": {
+            "__typename": "JobTitle",
+            "gocId": 100370,
+            "id": 138895,
+            "mgocId": 10013,
+            "text": "Director General"
+          },
+          "payPeriod": "MONTHLY",
+          "salaryCount": 1,
+          "totalPayStatistics": {
+            "__typename": "StatisticsResult",
+            "mean": 12108.74,
+            "percentiles": [
+              {
+                "__typename": "Percentile",
+                "ident": "P25",
+                "value": 11634.24
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P95",
+                "value": 12526.68
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P90",
+                "value": 12526.68
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P995",
+                "value": 12526.68
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P75",
+                "value": 12526.68
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P05",
+                "value": 11634.24
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P005",
+                "value": 11634.24
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P10",
+                "value": 11634.24
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P50",
+                "value": 12080.46
+              }
+            ]
+          }
+        },
+        {
+          "__typename": "AggregatedSalaryEstimatesResult",
+          "currency": {
+            "__typename": "Currency",
+            "code": "MXN",
+            "symbol": "MXN$"
+          },
+          "employer": {
+            "__typename": "Employer",
+            "counts": {
+              "__typename": "EmployerCounts",
+              "globalJobCount": {
+                "__typename": "EmployerJobCountHolder",
+                "jobCount": 0
+              }
+            },
+            "id": 3191063,
+            "name": "Monsanto Agricultura España S.L.",
+            "primaryIndustryId": null,
+            "ratings": {
+              "__typename": "DefaultEmployerRatings",
+              "overallRating": 4
+            },
+            "shortName": "Monsanto Agricultura",
+            "squareLogoUrl": "https://media.glassdoor.com/sql/3191063/monsanto-agricultura-squarelogo-1597212587761.png"
+          },
+          "jobTitle": {
+            "__typename": "JobTitle",
+            "gocId": 100370,
+            "id": 138895,
+            "mgocId": 10013,
+            "text": "Director General"
+          },
+          "payPeriod": "MONTHLY",
+          "salaryCount": 1,
+          "totalPayStatistics": {
+            "__typename": "StatisticsResult",
+            "mean": 45322.09,
+            "percentiles": [
+              {
+                "__typename": "Percentile",
+                "ident": "P25",
+                "value": 43101.9
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P95",
+                "value": 47249.55
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P90",
+                "value": 47249.55
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P995",
+                "value": 47249.55
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P75",
+                "value": 47249.55
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P05",
+                "value": 43101.9
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P005",
+                "value": 43101.9
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P10",
+                "value": 43101.9
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P50",
+                "value": 45175.73
+              }
+            ]
+          }
+        },
+        {
+          "__typename": "AggregatedSalaryEstimatesResult",
+          "currency": {
+            "__typename": "Currency",
+            "code": "MXN",
+            "symbol": "MXN$"
+          },
+          "employer": {
+            "__typename": "Employer",
+            "counts": {
+              "__typename": "EmployerCounts",
+              "globalJobCount": {
+                "__typename": "EmployerJobCountHolder",
+                "jobCount": 0
+              }
+            },
+            "id": 2748677,
+            "name": "Estudio 3.14",
+            "primaryIndustryId": null,
+            "ratings": {
+              "__typename": "DefaultEmployerRatings",
+              "overallRating": 3.6
+            },
+            "shortName": "Estudio 3.14",
+            "squareLogoUrl": "https://media.glassdoor.com/sql/2748677/estudio-3-14-squarelogo-1674801139131.png"
+          },
+          "jobTitle": {
+            "__typename": "JobTitle",
+            "gocId": 100370,
+            "id": 138895,
+            "mgocId": 10013,
+            "text": "Director General"
+          },
+          "payPeriod": "MONTHLY",
+          "salaryCount": 1,
+          "totalPayStatistics": {
+            "__typename": "StatisticsResult",
+            "mean": 88675.13,
+            "percentiles": [
+              {
+                "__typename": "Percentile",
+                "ident": "P25",
+                "value": 85603.08
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P95",
+                "value": 92619.96
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P90",
+                "value": 92619.96
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P995",
+                "value": 92619.96
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P75",
+                "value": 92619.96
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P05",
+                "value": 85603.08
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P005",
+                "value": 85603.08
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P10",
+                "value": 85603.08
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P50",
+                "value": 89111.52
+              }
+            ]
+          }
+        },
+        {
+          "__typename": "AggregatedSalaryEstimatesResult",
+          "currency": {
+            "__typename": "Currency",
+            "code": "MXN",
+            "symbol": "MXN$"
+          },
+          "employer": {
+            "__typename": "Employer",
+            "counts": {
+              "__typename": "EmployerCounts",
+              "globalJobCount": {
+                "__typename": "EmployerJobCountHolder",
+                "jobCount": 0
+              }
+            },
+            "id": 4352187,
+            "name": "Telenet de México S.A. de C.V.",
+            "primaryIndustryId": null,
+            "ratings": {
+              "__typename": "DefaultEmployerRatings",
+              "overallRating": 3.4
+            },
+            "shortName": "Telenet de México",
+            "squareLogoUrl": "https://media.glassdoor.com/sql/4352187/telenet-de-méxico-squarelogo-1624980930963.png"
+          },
+          "jobTitle": {
+            "__typename": "JobTitle",
+            "gocId": 100370,
+            "id": 138895,
+            "mgocId": 10013,
+            "text": "Director General"
+          },
+          "payPeriod": "MONTHLY",
+          "salaryCount": 1,
+          "totalPayStatistics": {
+            "__typename": "StatisticsResult",
+            "mean": 268346.66,
+            "percentiles": [
+              {
+                "__typename": "Percentile",
+                "ident": "P25",
+                "value": 255610.75
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P95",
+                "value": 277841.6
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P90",
+                "value": 277841.6
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P995",
+                "value": 277841.6
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P75",
+                "value": 277841.6
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P05",
+                "value": 255610.75
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P005",
+                "value": 255610.75
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P10",
+                "value": 255610.75
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P50",
+                "value": 266726.18
+              }
+            ]
+          }
+        },
+        {
+          "__typename": "AggregatedSalaryEstimatesResult",
+          "currency": {
+            "__typename": "Currency",
+            "code": "MXN",
+            "symbol": "MXN$"
+          },
+          "employer": {
+            "__typename": "Employer",
+            "counts": {
+              "__typename": "EmployerCounts",
+              "globalJobCount": {
+                "__typename": "EmployerJobCountHolder",
+                "jobCount": 0
+              }
+            },
+            "id": 7755227,
+            "name": "Laboratorio Optimex S.A. de C.V.",
+            "primaryIndustryId": null,
+            "ratings": {
+              "__typename": "DefaultEmployerRatings",
+              "overallRating": 4
+            },
+            "shortName": "Laboratorio Optimex",
+            "squareLogoUrl": "https://media.glassdoor.com/sql/7755227/laboratorio-optimex-squarelogo-1662524862067.png"
+          },
+          "jobTitle": {
+            "__typename": "JobTitle",
+            "gocId": 100370,
+            "id": 138895,
+            "mgocId": 10013,
+            "text": "Director General"
+          },
+          "payPeriod": "MONTHLY",
+          "salaryCount": 1,
+          "totalPayStatistics": {
+            "__typename": "StatisticsResult",
+            "mean": 80043.9,
+            "percentiles": [
+              {
+                "__typename": "Percentile",
+                "ident": "P25",
+                "value": 76056.8
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P95",
+                "value": 82666.4
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P90",
+                "value": 82666.4
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P995",
+                "value": 82666.4
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P75",
+                "value": 82666.4
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P05",
+                "value": 76056.8
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P005",
+                "value": 76056.8
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P10",
+                "value": 76056.8
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P50",
+                "value": 79361.6
+              }
+            ]
+          }
+        },
+        {
+          "__typename": "AggregatedSalaryEstimatesResult",
+          "currency": {
+            "__typename": "Currency",
+            "code": "MXN",
+            "symbol": "MXN$"
+          },
+          "employer": {
+            "__typename": "Employer",
+            "counts": {
+              "__typename": "EmployerCounts",
+              "globalJobCount": {
+                "__typename": "EmployerJobCountHolder",
+                "jobCount": 0
+              }
+            },
+            "id": 2705760,
+            "name": "Copiroyal Printcenter",
+            "primaryIndustryId": null,
+            "ratings": {
+              "__typename": "DefaultEmployerRatings",
+              "overallRating": 3.5
+            },
+            "shortName": "Copiroyal Printcenter",
+            "squareLogoUrl": "https://media.glassdoor.com/sql/2705760/copiroyal-printcenter-squarelogo-1677820440582.png"
+          },
+          "jobTitle": {
+            "__typename": "JobTitle",
+            "gocId": 100370,
+            "id": 138895,
+            "mgocId": 10013,
+            "text": "Director General"
+          },
+          "payPeriod": "MONTHLY",
+          "salaryCount": 1,
+          "totalPayStatistics": {
+            "__typename": "StatisticsResult",
+            "mean": 97607.38,
+            "percentiles": [
+              {
+                "__typename": "Percentile",
+                "ident": "P25",
+                "value": 93752.7
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P95",
+                "value": 101398.69
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P90",
+                "value": 101398.69
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P995",
+                "value": 101398.69
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P75",
+                "value": 101398.69
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P05",
+                "value": 93752.7
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P005",
+                "value": 93752.7
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P10",
+                "value": 93752.7
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P50",
+                "value": 97575.7
+              }
+            ]
+          }
+        },
+        {
+          "__typename": "AggregatedSalaryEstimatesResult",
+          "currency": {
+            "__typename": "Currency",
+            "code": "MXN",
+            "symbol": "MXN$"
+          },
+          "employer": {
+            "__typename": "Employer",
+            "counts": {
+              "__typename": "EmployerCounts",
+              "globalJobCount": {
+                "__typename": "EmployerJobCountHolder",
+                "jobCount": 0
+              }
+            },
+            "id": 8135305,
+            "name": "PIABSA S.A. de C.V.",
+            "primaryIndustryId": null,
+            "ratings": {
+              "__typename": "DefaultEmployerRatings",
+              "overallRating": 5
+            },
+            "shortName": "PIABSA",
+            "squareLogoUrl": null
+          },
+          "jobTitle": {
+            "__typename": "JobTitle",
+            "gocId": 100370,
+            "id": 138895,
+            "mgocId": 10013,
+            "text": "Director General"
+          },
+          "payPeriod": "MONTHLY",
+          "salaryCount": 1,
+          "totalPayStatistics": {
+            "__typename": "StatisticsResult",
+            "mean": 19928.31,
+            "percentiles": [
+              {
+                "__typename": "Percentile",
+                "ident": "P25",
+                "value": 19067.2
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P95",
+                "value": 20749.2
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P90",
+                "value": 20749.2
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P995",
+                "value": 20749.2
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P75",
+                "value": 20749.2
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P05",
+                "value": 19067.2
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P005",
+                "value": 19067.2
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P10",
+                "value": 19067.2
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P50",
+                "value": 19908.2
+              }
+            ]
+          }
+        },
+        {
+          "__typename": "AggregatedSalaryEstimatesResult",
+          "currency": {
+            "__typename": "Currency",
+            "code": "MXN",
+            "symbol": "MXN$"
+          },
+          "employer": {
+            "__typename": "Employer",
+            "counts": {
+              "__typename": "EmployerCounts",
+              "globalJobCount": {
+                "__typename": "EmployerJobCountHolder",
+                "jobCount": 0
+              }
+            },
+            "id": 7941749,
+            "name": "Turn My App SA de CV",
+            "primaryIndustryId": null,
+            "ratings": {
+              "__typename": "DefaultEmployerRatings",
+              "overallRating": 4.5
+            },
+            "shortName": "Turn (Mexico)",
+            "squareLogoUrl": "https://media.glassdoor.com/sql/7941749/turn-mexico-squarelogo-1668075690952.png"
+          },
+          "jobTitle": {
+            "__typename": "JobTitle",
+            "gocId": 100370,
+            "id": 138895,
+            "mgocId": 10013,
+            "text": "Director General"
+          },
+          "payPeriod": "MONTHLY",
+          "salaryCount": 1,
+          "totalPayStatistics": {
+            "__typename": "StatisticsResult",
+            "mean": 200395.65,
+            "percentiles": [
+              {
+                "__typename": "Percentile",
+                "ident": "P25",
+                "value": 193540
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P95",
+                "value": 208798
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P90",
+                "value": 208798
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P995",
+                "value": 208798
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P75",
+                "value": 208798
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P05",
+                "value": 193540
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P005",
+                "value": 193540
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P10",
+                "value": 193540
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P50",
+                "value": 201169
+              }
+            ]
+          }
+        },
+        {
+          "__typename": "AggregatedSalaryEstimatesResult",
+          "currency": {
+            "__typename": "Currency",
+            "code": "MXN",
+            "symbol": "MXN$"
+          },
+          "employer": {
+            "__typename": "Employer",
+            "counts": {
+              "__typename": "EmployerCounts",
+              "globalJobCount": {
+                "__typename": "EmployerJobCountHolder",
+                "jobCount": 0
+              }
+            },
+            "id": 2719274,
+            "name": "Dunn Arquitectura Ligera",
+            "primaryIndustryId": null,
+            "ratings": {
+              "__typename": "DefaultEmployerRatings",
+              "overallRating": 5
+            },
+            "shortName": "Dunn Arquitectura Ligera",
+            "squareLogoUrl": "https://media.glassdoor.com/sql/2719274/dunn-arquitectura-ligera-squarelogo-1677052369406.png"
+          },
+          "jobTitle": {
+            "__typename": "JobTitle",
+            "gocId": 100370,
+            "id": 138895,
+            "mgocId": 10013,
+            "text": "Director General"
+          },
+          "payPeriod": "MONTHLY",
+          "salaryCount": 1,
+          "totalPayStatistics": {
+            "__typename": "StatisticsResult",
+            "mean": 99925.52,
+            "percentiles": [
+              {
+                "__typename": "Percentile",
+                "ident": "P25",
+                "value": 95100
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P95",
+                "value": 103521
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P90",
+                "value": 103521
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P995",
+                "value": 103521
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P75",
+                "value": 103521
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P05",
+                "value": 95100
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P005",
+                "value": 95100
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P10",
+                "value": 95100
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P50",
+                "value": 99310.5
+              }
+            ]
+          }
+        },
+        {
+          "__typename": "AggregatedSalaryEstimatesResult",
+          "currency": {
+            "__typename": "Currency",
+            "code": "MXN",
+            "symbol": "MXN$"
+          },
+          "employer": {
+            "__typename": "Employer",
+            "counts": {
+              "__typename": "EmployerCounts",
+              "globalJobCount": {
+                "__typename": "EmployerJobCountHolder",
+                "jobCount": 0
+              }
+            },
+            "id": 2695054,
+            "name": "Taste MKT",
+            "primaryIndustryId": 200028,
+            "ratings": {
+              "__typename": "DefaultEmployerRatings",
+              "overallRating": 4.5
+            },
+            "shortName": "Taste MKT",
+            "squareLogoUrl": "https://media.glassdoor.com/sql/2695054/taste-mkt-squareLogo-1762968426735.png"
+          },
+          "jobTitle": {
+            "__typename": "JobTitle",
+            "gocId": 100370,
+            "id": 138895,
+            "mgocId": 10013,
+            "text": "Director General"
+          },
+          "payPeriod": "MONTHLY",
+          "salaryCount": 1,
+          "totalPayStatistics": {
+            "__typename": "StatisticsResult",
+            "mean": 104490.47,
+            "percentiles": [
+              {
+                "__typename": "Percentile",
+                "ident": "P25",
+                "value": 100144.79
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P95",
+                "value": 108942.71
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P90",
+                "value": 108942.71
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P995",
+                "value": 108942.71
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P75",
+                "value": 108942.71
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P05",
+                "value": 100144.79
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P005",
+                "value": 100144.79
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P10",
+                "value": 100144.79
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P50",
+                "value": 104543.75
+              }
+            ]
+          }
+        },
+        {
+          "__typename": "AggregatedSalaryEstimatesResult",
+          "currency": {
+            "__typename": "Currency",
+            "code": "MXN",
+            "symbol": "MXN$"
+          },
+          "employer": {
+            "__typename": "Employer",
+            "counts": {
+              "__typename": "EmployerCounts",
+              "globalJobCount": {
+                "__typename": "EmployerJobCountHolder",
+                "jobCount": 0
+              }
+            },
+            "id": 2841250,
+            "name": "VRS Estructuras",
+            "primaryIndustryId": null,
+            "ratings": {
+              "__typename": "DefaultEmployerRatings",
+              "overallRating": 5
+            },
+            "shortName": "VRS Estructuras",
+            "squareLogoUrl": "https://media.glassdoor.com/sql/2841250/vrs-estructuras-squarelogo-1670404432479.png"
+          },
+          "jobTitle": {
+            "__typename": "JobTitle",
+            "gocId": 100370,
+            "id": 138895,
+            "mgocId": 10013,
+            "text": "Director General"
+          },
+          "payPeriod": "MONTHLY",
+          "salaryCount": 1,
+          "totalPayStatistics": {
+            "__typename": "StatisticsResult",
+            "mean": 25002.12,
+            "percentiles": [
+              {
+                "__typename": "Percentile",
+                "ident": "P25",
+                "value": 23800.75
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P95",
+                "value": 25968.25
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P90",
+                "value": 25968.25
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P995",
+                "value": 25968.25
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P75",
+                "value": 25968.25
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P05",
+                "value": 23800.75
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P005",
+                "value": 23800.75
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P10",
+                "value": 23800.75
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P50",
+                "value": 24884.5
+              }
+            ]
+          }
+        },
+        {
+          "__typename": "AggregatedSalaryEstimatesResult",
+          "currency": {
+            "__typename": "Currency",
+            "code": "MXN",
+            "symbol": "MXN$"
+          },
+          "employer": {
+            "__typename": "Employer",
+            "counts": {
+              "__typename": "EmployerCounts",
+              "globalJobCount": {
+                "__typename": "EmployerJobCountHolder",
+                "jobCount": 0
+              }
+            },
+            "id": 2810290,
+            "name": "Maya Producciones",
+            "primaryIndustryId": null,
+            "ratings": {
+              "__typename": "DefaultEmployerRatings",
+              "overallRating": null
+            },
+            "shortName": "Maya Producciones",
+            "squareLogoUrl": "https://media.glassdoor.com/sql/2810290/maya-producciones-squarelogo-1637917804282.png"
+          },
+          "jobTitle": {
+            "__typename": "JobTitle",
+            "gocId": 100370,
+            "id": 138895,
+            "mgocId": 10013,
+            "text": "Director General"
+          },
+          "payPeriod": "MONTHLY",
+          "salaryCount": 1,
+          "totalPayStatistics": {
+            "__typename": "StatisticsResult",
+            "mean": 29690.29,
+            "percentiles": [
+              {
+                "__typename": "Percentile",
+                "ident": "P25",
+                "value": 28644.9
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P95",
+                "value": 30944.7
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P90",
+                "value": 30944.7
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P995",
+                "value": 30944.7
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P75",
+                "value": 30944.7
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P05",
+                "value": 28644.9
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P005",
+                "value": 28644.9
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P10",
+                "value": 28644.9
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P50",
+                "value": 29794.8
+              }
+            ]
+          }
+        },
+        {
+          "__typename": "AggregatedSalaryEstimatesResult",
+          "currency": {
+            "__typename": "Currency",
+            "code": "MXN",
+            "symbol": "MXN$"
+          },
+          "employer": {
+            "__typename": "Employer",
+            "counts": {
+              "__typename": "EmployerCounts",
+              "globalJobCount": {
+                "__typename": "EmployerJobCountHolder",
+                "jobCount": 0
+              }
+            },
+            "id": 3509295,
+            "name": "Forestal Proplay, S.A. de C.V.",
+            "primaryIndustryId": null,
+            "ratings": {
+              "__typename": "DefaultEmployerRatings",
+              "overallRating": 5
+            },
+            "shortName": "Forestal Proplay",
+            "squareLogoUrl": "https://media.glassdoor.com/sql/3509295/forestal-proplay-squarelogo-1663753983050.png"
+          },
+          "jobTitle": {
+            "__typename": "JobTitle",
+            "gocId": 100370,
+            "id": 138895,
+            "mgocId": 10013,
+            "text": "Director General"
+          },
+          "payPeriod": "MONTHLY",
+          "salaryCount": 1,
+          "totalPayStatistics": {
+            "__typename": "StatisticsResult",
+            "mean": 25207.74,
+            "percentiles": [
+              {
+                "__typename": "Percentile",
+                "ident": "P25",
+                "value": 24080.5
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P95",
+                "value": 25847.5
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P90",
+                "value": 25847.5
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P995",
+                "value": 25847.5
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P75",
+                "value": 25847.5
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P05",
+                "value": 24080.5
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P005",
+                "value": 24080.5
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P10",
+                "value": 24080.5
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P50",
+                "value": 24964
+              }
+            ]
+          }
+        },
+        {
+          "__typename": "AggregatedSalaryEstimatesResult",
+          "currency": {
+            "__typename": "Currency",
+            "code": "MXN",
+            "symbol": "MXN$"
+          },
+          "employer": {
+            "__typename": "Employer",
+            "counts": {
+              "__typename": "EmployerCounts",
+              "globalJobCount": {
+                "__typename": "EmployerJobCountHolder",
+                "jobCount": 0
+              }
+            },
+            "id": 2698395,
+            "name": "Grupo Orutek",
+            "primaryIndustryId": null,
+            "ratings": {
+              "__typename": "DefaultEmployerRatings",
+              "overallRating": 5
+            },
+            "shortName": "Grupo Orutek",
+            "squareLogoUrl": "https://media.glassdoor.com/sql/2698395/grupo-orutek-squarelogo-1678269088994.png"
+          },
+          "jobTitle": {
+            "__typename": "JobTitle",
+            "gocId": 100370,
+            "id": 138895,
+            "mgocId": 10013,
+            "text": "Director General"
+          },
+          "payPeriod": "MONTHLY",
+          "salaryCount": 1,
+          "totalPayStatistics": {
+            "__typename": "StatisticsResult",
+            "mean": 64966.32,
+            "percentiles": [
+              {
+                "__typename": "Percentile",
+                "ident": "P25",
+                "value": 62233.6
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P95",
+                "value": 67724.15
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P90",
+                "value": 67724.15
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P995",
+                "value": 67724.15
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P75",
+                "value": 67724.15
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P05",
+                "value": 62233.6
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P005",
+                "value": 62233.6
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P10",
+                "value": 62233.6
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P50",
+                "value": 64978.88
+              }
+            ]
+          }
+        },
+        {
+          "__typename": "AggregatedSalaryEstimatesResult",
+          "currency": {
+            "__typename": "Currency",
+            "code": "MXN",
+            "symbol": "MXN$"
+          },
+          "employer": {
+            "__typename": "Employer",
+            "counts": {
+              "__typename": "EmployerCounts",
+              "globalJobCount": {
+                "__typename": "EmployerJobCountHolder",
+                "jobCount": 0
+              }
+            },
+            "id": 2819900,
+            "name": "Ejecutivo Express Hotel",
+            "primaryIndustryId": null,
+            "ratings": {
+              "__typename": "DefaultEmployerRatings",
+              "overallRating": 5
+            },
+            "shortName": "Ejecutivo Express Hotel",
+            "squareLogoUrl": "https://media.glassdoor.com/sql/2819900/ejecutivo-express-hotel-squarelogo-1671168955032.png"
+          },
+          "jobTitle": {
+            "__typename": "JobTitle",
+            "gocId": 100370,
+            "id": 138895,
+            "mgocId": 10013,
+            "text": "Director General"
+          },
+          "payPeriod": "MONTHLY",
+          "salaryCount": 1,
+          "totalPayStatistics": {
+            "__typename": "StatisticsResult",
+            "mean": 69402.18,
+            "percentiles": [
+              {
+                "__typename": "Percentile",
+                "ident": "P25",
+                "value": 66654.7
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P95",
+                "value": 72236.5
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P90",
+                "value": 72236.5
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P995",
+                "value": 72236.5
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P75",
+                "value": 72236.5
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P05",
+                "value": 66654.7
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P005",
+                "value": 66654.7
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P10",
+                "value": 66654.7
+              },
+              {
+                "__typename": "Percentile",
+                "ident": "P50",
+                "value": 69445.6
+              }
+            ]
+          }
+        }
+      ],
+      "salaryCount": 98
+    },
+    "lashedEmployer": null,
+    "lashedJobTitle": null,
+    "occSalaryResponse": {
+      "__typename": "OccSalaryEstimates",
+      "additionalPayPercentiles": null,
+      "basePayPercentiles": null,
+      "confidence": null,
+      "currency": null,
+      "estimateSourceName": null,
+      "estimateSourceUpdateTime": null,
+      "estimateSourceVersion": null,
+      "jobTitle": null,
+      "payPeriod": null,
+      "queryLocation": {
+        "__typename": "City",
+        "id": 3486357,
+        "longName": "Guadalajara (Mexico)",
+        "name": "Guadalajara, Jalisco",
+        "type": "CITY"
+      },
+      "salariesCount": null,
+      "totalPayPercentiles": null
+    }
+  }
+]

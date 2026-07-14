@@ -23,37 +23,38 @@ function percentil(sorted, p) {
 
 // ── Handler Glassdoor ──────────────────────────────────────────────────────
 
-async function manejarGlassdoor(vacante, ubicacion, url, muestra, res) {
-  const respuestaApify = await fetch(
-    `https://api.apify.com/v2/actors/memo23~glassdoor-scraper-ppr/run-sync-get-dataset-items?token=${process.env.APIFY_TOKEN}`,
-    {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({
-        command:                      'salaries',
-        enrichEmails:                 false,
-        includeAllReviews:            false,
-        includeAllSalaries:           true,
-        includeCompanyBenefitsStats:  false,
-        includeCompanyInterviewStats: false,
-        includeCompanyReviewStats:    false,
-        maxItems:                     muestra ?? 100,
-        monitoringModeForReviews:     false,
-        proxy: {
-          useApifyProxy:      true,
-          apifyProxyGroups:   ['RESIDENTIAL'],
-          apifyProxyCountry:  'MX',
-        },
-        startUrls:      [{ url }],
-        sortReviewsBy:  'RELEVANCE',
-        maxConcurrency: 7,
-        minConcurrency: 1,
-        maxRequestRetries: 100,
-      }),
-    }
-  );
+async function manejarGlassdoor(vacante, ubicacion, url, muestra, test, res) {
+  const datosCrudos = test
+    ? JSON.parse(readFileSync(join(__dirname, '../muestras/vacantes_glassdoor.json'), 'utf-8'))
+    : await (await fetch(
+        `https://api.apify.com/v2/actors/memo23~glassdoor-scraper-ppr/run-sync-get-dataset-items?token=${process.env.APIFY_TOKEN}`,
+        {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({
+            command:                      'salaries',
+            enrichEmails:                 false,
+            includeAllReviews:            false,
+            includeAllSalaries:           true,
+            includeCompanyBenefitsStats:  false,
+            includeCompanyInterviewStats: false,
+            includeCompanyReviewStats:    false,
+            maxItems:                     muestra ?? 100,
+            monitoringModeForReviews:     false,
+            proxy: {
+              useApifyProxy:      true,
+              apifyProxyGroups:   ['RESIDENTIAL'],
+              apifyProxyCountry:  'MX',
+            },
+            startUrls:      [{ url }],
+            sortReviewsBy:  'RELEVANCE',
+            maxConcurrency: 7,
+            minConcurrency: 1,
+            maxRequestRetries: 100,
+          }),
+        }
+      )).json();
 
-  const datosCrudos = await respuestaApify.json();
   if (!Array.isArray(datosCrudos) || datosCrudos.length === 0) {
     console.log(JSON.stringify({ etapa: 'apify_glassdoor', estado: 'error', detalle: JSON.stringify(datosCrudos).slice(0, 200) }));
     return res.status(500).json({ error: 'Apify Glassdoor falló', detalle: datosCrudos });
@@ -138,7 +139,7 @@ async function manejarGlassdoor(vacante, ubicacion, url, muestra, res) {
     m_fil.tokens_input + m_fil.cache_creados + m_fil.cache_leidos + ti_c,
     m_fil.tokens_output + to_c,
   );
-  const costo_apify = +((resultados.length / 1000) * 5).toFixed(6);
+  const costo_apify = test ? 0 : +((resultados.length / 1000) * 5).toFixed(6);
   const costo_total = +(costo_ia + costo_apify).toFixed(6);
 
   console.log(JSON.stringify({ etapa: 'conclusiones_ia', costo_usd: costo(ti_c, to_c) }));
@@ -173,7 +174,7 @@ export default async function handler(req, res) {
   if (process.env.POWERBELL_API_KEY && claveApi !== process.env.POWERBELL_API_KEY)
     return res.status(401).json({ error: 'Unauthorized' });
 
-  const { vacante, ubicacion, fuente, muestra, url } = req.body;
+  const { vacante, ubicacion, fuente, muestra, url, test } = req.body;
   if (!vacante || !ubicacion || !fuente) {
     console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing vacante, ubicacion or fuente' }));
     return res.status(400).json({ error: "Los campos 'vacante', 'ubicacion' y 'fuente' son requeridos" });
@@ -182,25 +183,26 @@ export default async function handler(req, res) {
     console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: `fuente inválida: ${fuente}` }));
     return res.status(400).json({ error: "El campo 'fuente' debe ser 'indeed' o 'glassdoor'" });
   }
-  if (fuente === 'glassdoor' && !url) {
+  if (fuente === 'glassdoor' && !url && !test) {
     console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing url for fuente glassdoor' }));
     return res.status(400).json({ error: "El campo 'url' es requerido cuando 'fuente' es 'glassdoor'" });
   }
 
-  if (fuente === 'glassdoor') return manejarGlassdoor(vacante, ubicacion, url, muestra, res);
+  if (fuente === 'glassdoor') return manejarGlassdoor(vacante, ubicacion, url, muestra, test, res);
 
   // ── Indeed ────────────────────────────────────────────────────────────────
 
-  const respuestaApify = await fetch(
-    `https://api.apify.com/v2/actors/borderline~indeed-scraper/run-sync-get-dataset-items?token=${process.env.APIFY_TOKEN}`,
-    {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ country: 'mx', fromDays: '14', location: ubicacion, query: vacante, maxRows: muestra ?? 100, sort: 'relevance' }),
-    }
-  );
+  const vacantes = test
+    ? JSON.parse(readFileSync(join(__dirname, '../muestras/vacantes_indeed.json'), 'utf-8'))
+    : await (await fetch(
+        `https://api.apify.com/v2/actors/borderline~indeed-scraper/run-sync-get-dataset-items?token=${process.env.APIFY_TOKEN}`,
+        {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ country: 'mx', fromDays: '14', location: ubicacion, query: vacante, maxRows: muestra ?? 100, sort: 'relevance' }),
+        }
+      )).json();
 
-  const vacantes = await respuestaApify.json();
   if (!Array.isArray(vacantes)) {
     console.log(JSON.stringify({ etapa: 'apify', estado: 'error', detalle: JSON.stringify(vacantes).slice(0, 200) }));
     return res.status(500).json({ error: 'Apify falló', detalle: vacantes });
@@ -296,7 +298,7 @@ export default async function handler(req, res) {
     m_fil.tokens_input + m_fil.cache_creados + m_fil.cache_leidos + ti_c,
     m_sal.tokens_output + m_fil.tokens_output + to_c
   );
-  const costo_apify = +((vacantes.length / 1000) * 5).toFixed(6);
+  const costo_apify = test ? 0 : +((vacantes.length / 1000) * 5).toFixed(6);
   const costo_total = +(costo_ia + costo_apify).toFixed(6);
   const costo_por_vacante = vacantes.length > 0 ? +(costo_total / vacantes.length).toFixed(6) : 0;
 
