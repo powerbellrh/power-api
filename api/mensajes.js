@@ -4,6 +4,7 @@ import { timestampMexico } from '../lib/historial_utils.js';
 import { mcCrear } from '../lib/clientes_api.js';
 
 const CAMPO_MANYCHAT_RESPUESTA = '14779615';
+const MAX_TURNOS_DESPERDICIADOS = 5;
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -38,8 +39,12 @@ const ESQUEMA_RESPUESTA = {
         items: { type: 'string' },
         description: 'Lista de los datos de DATOS A RECOPILAR que todavía no se tienen.',
       },
+      turno_desperdiciado: {
+        type: 'boolean',
+        description: 'true si en este mensaje la persona solo hizo preguntas o comentarios sin aportar ningún dato nuevo de DATOS A RECOPILAR; false si aportó al menos un dato nuevo.',
+      },
     },
-    required: ['respuesta', 'campos_recopilados', 'campos_faltantes'],
+    required: ['respuesta', 'campos_recopilados', 'campos_faltantes', 'turno_desperdiciado'],
     additionalProperties: false,
   },
 };
@@ -72,16 +77,17 @@ REGLAS DE ESTILO (aplican al campo "respuesta", que se envía tal cual a WhatsAp
 - Termina siempre el mensaje con un emoji que corresponda al contenido o tono de la respuesta.
 
 FORMATO DE SALIDA:
-Debes devolver únicamente el objeto JSON que exige el esquema, con estos tres campos:
+Debes devolver únicamente el objeto JSON que exige el esquema, con estos cuatro campos:
 - "respuesta": el mensaje para la persona, siguiendo las reglas de estilo de arriba.
 - "campos_recopilados": el estado ACUMULADO de todos los datos que ya se tienen (los de antes más lo nuevo que hayas extraído en este mensaje), no solo lo de este turno.
-- "campos_faltantes": los datos de "DATOS A RECOPILAR" que aún no tienes.`;
+- "campos_faltantes": los datos de "DATOS A RECOPILAR" que aún no tienes.
+- "turno_desperdiciado": true si en este mensaje la persona SOLO hizo preguntas o comentarios y NO aportó ningún dato nuevo de la lista de DATOS A RECOPILAR; false si aportó al menos un dato nuevo.`;
 
 async function procesarMensaje(mensaje, manychat, supabase) {
   try {
     const { data: registro, error: errorBusqueda } = await supabase
       .from('chatbot')
-      .select('historial_mensajes, vacante_info, campos_requeridos, campos_recopilados')
+      .select('historial_mensajes, vacante_info, campos_requeridos, campos_recopilados, turnos_desperdiciados')
       .eq('manychat_id', manychat)
       .maybeSingle();
 
@@ -142,19 +148,25 @@ async function procesarMensaje(mensaje, manychat, supabase) {
     const camposRecopilados  = aTextoLegible(salidaModelo.campos_recopilados) || (registro?.campos_recopilados || '');
     const historialFinal     = `${historialConUsuario}\n${lineaHistorial('agente', respuestaModelo)}`;
 
+    const camposFaltantes = Array.isArray(salidaModelo.campos_faltantes) ? salidaModelo.campos_faltantes : [];
+    const turnosDesperdiciadosPrevios = registro?.turnos_desperdiciados || 0;
+    const turnosDesperdiciados = turnosDesperdiciadosPrevios + (salidaModelo.turno_desperdiciado ? 1 : 0);
+    const debeSalir = turnosDesperdiciados >= MAX_TURNOS_DESPERDICIADOS || camposFaltantes.length === 0;
+    const respuestaFinal = debeSalir ? 'salida' : respuestaModelo;
+
     const { error: errorGuardado } = await supabase
       .from('chatbot')
-      .upsert({ manychat_id: manychat, historial_mensajes: historialFinal, campos_recopilados: camposRecopilados });
+      .upsert({ manychat_id: manychat, historial_mensajes: historialFinal, campos_recopilados: camposRecopilados, turnos_desperdiciados: turnosDesperdiciados });
 
     if (errorGuardado) throw new Error(`Supabase upsert failed: ${errorGuardado.message}`);
 
     await mcCrear('/fb/subscriber/setCustomField', {
       subscriber_id: manychat,
       field_id: CAMPO_MANYCHAT_RESPUESTA,
-      field_value: respuestaModelo,
+      field_value: respuestaFinal,
     });
 
-    console.log(JSON.stringify({ etapa: 'completado', estado: 'exito', manychat, mensaje, respuesta: respuestaModelo, campos_faltantes: salidaModelo.campos_faltantes }));
+    console.log(JSON.stringify({ etapa: 'completado', estado: 'exito', manychat, mensaje, respuesta: respuestaFinal, campos_faltantes: camposFaltantes, turnos_desperdiciados: turnosDesperdiciados }));
   } catch (error) {
     console.log(JSON.stringify({ etapa: 'completado', estado: 'error', manychat, mensaje: error.message }));
   }
