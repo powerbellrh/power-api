@@ -1,4 +1,9 @@
+import { createClient } from '@supabase/supabase-js';
+import { timestampMexico } from '../lib/historial_utils.js';
+
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+
+const lineaHistorial = (rol, mensaje) => `${timestampMexico(new Date().toISOString())} - ${rol}: ${mensaje}`;
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -13,14 +18,30 @@ export default async function handler(req, res) {
   }
 
   const cuerpo = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-  const mensaje = cuerpo?.mensaje;
+  const mensaje  = cuerpo?.mensaje;
+  const manychat = cuerpo?.manychat;
 
-  if (!mensaje) {
-    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing mensaje' }));
-    return res.status(400).json({ ok: false, error: 'missing mensaje' });
+  if (!mensaje || !manychat) {
+    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing mensaje or manychat' }));
+    return res.status(400).json({ ok: false, error: 'missing mensaje or manychat' });
   }
 
+  const supabase = createClient(process.env.HISTORIAL_SUPABASE_URL, process.env.HISTORIAL_SUPABASE_SERVICE_ROLE_KEY);
+
   try {
+    const { data: registro, error: errorBusqueda } = await supabase
+      .from('chatbot')
+      .select('historial_mensajes')
+      .eq('manychat_id', manychat)
+      .maybeSingle();
+
+    if (errorBusqueda) throw new Error(`Supabase select failed: ${errorBusqueda.message}`);
+
+    const historialPrevio = registro?.historial_mensajes || '';
+    const historialConUsuario = historialPrevio
+      ? `${historialPrevio}\n${lineaHistorial('usuario', mensaje)}`
+      : lineaHistorial('usuario', mensaje);
+
     const respuesta = await fetch(OPENROUTER_URL, {
       method: 'POST',
       headers: {
@@ -29,7 +50,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: process.env.OPENROUTER_MODEL,
-        messages: [{ role: 'user', content: mensaje }],
+        messages: [{ role: 'user', content: historialConUsuario }],
         provider: {
           sort: 'latency',
           zdr: true,
@@ -45,11 +66,18 @@ export default async function handler(req, res) {
     }
 
     const respuestaModelo = datos?.choices?.[0]?.message?.content ?? '';
+    const historialFinal = `${historialConUsuario}\n${lineaHistorial('agente', respuestaModelo)}`;
 
-    console.log(JSON.stringify({ etapa: 'openrouter', estado: 'exito', mensaje, respuesta: respuestaModelo }));
+    const { error: errorGuardado } = await supabase
+      .from('chatbot')
+      .upsert({ manychat_id: manychat, historial_mensajes: historialFinal });
+
+    if (errorGuardado) throw new Error(`Supabase upsert failed: ${errorGuardado.message}`);
+
+    console.log(JSON.stringify({ etapa: 'openrouter', estado: 'exito', manychat, mensaje, respuesta: respuestaModelo }));
     return res.status(200).json({ ok: true, respuesta: respuestaModelo });
   } catch (error) {
-    console.log(JSON.stringify({ etapa: 'openrouter', estado: 'error', mensaje: error.message }));
+    console.log(JSON.stringify({ etapa: 'completado', estado: 'error', manychat, mensaje: error.message }));
     return res.status(500).json({ ok: false, error: 'internal error' });
   }
 }
