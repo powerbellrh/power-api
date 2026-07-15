@@ -10,7 +10,8 @@
     { "source": "/direcciones",     "destination": "/api/direcciones"     },
     { "source": "/historial",       "destination": "/api/historial"       },
     { "source": "/preguntas",       "destination": "/api/preguntas"       },
-    { "source": "/experiencia",     "destination": "/api/experiencia"     }
+    { "source": "/experiencia",     "destination": "/api/experiencia"     },
+    { "source": "/mensajes",        "destination": "/api/mensajes"        }
   ],
   "functions": {
     "api/estudios.js": {
@@ -38,6 +39,9 @@
       "maxDuration": 30
     },
     "api/preguntas.js": {
+      "maxDuration": 30
+    },
+    "api/mensajes.js": {
       "maxDuration": 30
     }
   },
