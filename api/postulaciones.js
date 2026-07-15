@@ -85,6 +85,7 @@ function construirPeticionOpenRouter(promptSistema, bloqueVacante, bloqueCandida
   return {
     model:      OPENROUTER_MODEL_AD,
     max_tokens: AI_CONFIG.AD.max_tokens,
+    reasoning:  { effort: 'xhigh' },
     plugins: [{ id: 'file-parser', pdf: { engine: 'mistral-ocr' } }],
     messages: [
       { role: 'system', content: promptSistema },
