@@ -65,6 +65,20 @@ async function obtenerPreguntasVacante(vacanteId) {
   }
 }
 
+// campos_requeridos guarda el JSON de [{id, titulo}] de las preguntas de TeamTailor;
+// se parsea para mapear respuestas a su id y se muestra al modelo solo como texto de títulos.
+function parsearPreguntas(campoRequeridosCrudo) {
+  if (!campoRequeridosCrudo) return [];
+  try {
+    const parseado = JSON.parse(campoRequeridosCrudo);
+    return Array.isArray(parseado) ? parseado : [];
+  } catch {
+    return [];
+  }
+}
+
+const preguntasComoTexto = (preguntasVacante) => preguntasVacante.map(p => p.titulo).join('\n');
+
 const aTextoLegible = (valor) => {
   if (typeof valor === 'string') return valor;
   if (valor && typeof valor === 'object') {
@@ -154,7 +168,7 @@ async function procesarMensaje(mensaje, manychat, supabase) {
   try {
     const { data: registro, error: errorBusqueda } = await supabase
       .from('chatbot')
-      .select('historial_mensajes, vacante_info, campos_requeridos, campos_recopilados, turnos_desperdiciados, candidato_id, vacante_id, preguntas_vacante')
+      .select('historial_mensajes, vacante_info, campos_requeridos, campos_recopilados, turnos_desperdiciados, candidato_id, vacante_id')
       .eq('manychat_id', manychat)
       .maybeSingle();
 
@@ -163,16 +177,14 @@ async function procesarMensaje(mensaje, manychat, supabase) {
     const historialPrevio = registro?.historial_mensajes || '';
     const tieneTurnoUsuario = /- usuario: /.test(historialPrevio);
 
-    let preguntasVacante = registro?.preguntas_vacante || [];
-    let camposRequeridos = registro?.campos_requeridos;
+    let preguntasVacante = parsearPreguntas(registro?.campos_requeridos);
 
     if (preguntasVacante.length === 0 && !tieneTurnoUsuario && registro?.vacante_id) {
       preguntasVacante = await obtenerPreguntasVacante(registro.vacante_id);
-      camposRequeridos = preguntasVacante.map(p => p.titulo).join('\n') || camposRequeridos;
 
       const { error: errorPreguntas } = await supabase
         .from('chatbot')
-        .update({ preguntas_vacante: preguntasVacante, campos_requeridos: camposRequeridos })
+        .update({ campos_requeridos: JSON.stringify(preguntasVacante) })
         .eq('manychat_id', manychat);
       if (errorPreguntas) console.log(JSON.stringify({ etapa: 'teamtailor_preguntas', estado: 'error_guardado', manychat, mensaje: errorPreguntas.message }));
     }
@@ -183,7 +195,7 @@ async function procesarMensaje(mensaje, manychat, supabase) {
 
     const promptSistema = construirPromptSistema(
       registro?.vacante_info,
-      camposRequeridos,
+      preguntasComoTexto(preguntasVacante),
       registro?.campos_recopilados,
     );
 
@@ -260,7 +272,6 @@ async function procesarMensaje(mensaje, manychat, supabase) {
 async function procesarInicio(manychat, candidatoId, vacanteId, vacanteInfo, historialInicial, supabase) {
   try {
     const preguntasVacante = await obtenerPreguntasVacante(vacanteId);
-    const camposRequeridos = preguntasVacante.map(p => p.titulo).join('\n') || null;
 
     const { error: errorGuardado } = await supabase
       .from('chatbot')
@@ -270,8 +281,7 @@ async function procesarInicio(manychat, candidatoId, vacanteId, vacanteInfo, his
         vacante_id: vacanteId,
         vacante_info: vacanteInfo,
         historial_mensajes: historialInicial,
-        campos_requeridos: camposRequeridos,
-        preguntas_vacante: preguntasVacante,
+        campos_requeridos: JSON.stringify(preguntasVacante),
         turnos_desperdiciados: 0,
       });
 
