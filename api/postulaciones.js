@@ -36,8 +36,11 @@ const PROMPTS = {
 
 const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY_POSTULACIONES });
 
+const OPENROUTER_URL           = 'https://openrouter.ai/api/v1/chat/completions';
+const OPENROUTER_MODEL_AD      = 'z-ai/glm-5.2';
+
 const AI_CONFIG = {
-  AD: { model: 'claude-sonnet-5',  max_tokens: 20000, effort: 'high' },
+  AD: { model: OPENROUTER_MODEL_AD, max_tokens: 20000 },
   OP: { model: 'claude-haiku-4-5', max_tokens: 20000, thinking_budget_tokens: 16000 },
 };
 
@@ -76,6 +79,48 @@ async function obtenerContextoCampoPersonalizado(vacanteId) {
     console.log(JSON.stringify({ etapa: 'custom_field', estado: 'error', mensaje: e.message }));
     return '';
   }
+}
+
+function construirPeticionOpenRouter(promptSistema, bloqueVacante, bloqueCandidato, urlCurriculum) {
+  return {
+    model:      OPENROUTER_MODEL_AD,
+    max_tokens: AI_CONFIG.AD.max_tokens,
+    plugins: [{ id: 'file-parser', pdf: { engine: 'mistral-ocr' } }],
+    messages: [
+      { role: 'system', content: promptSistema },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: bloqueVacante },
+          { type: 'text', text: bloqueCandidato },
+          ...(urlCurriculum?.trim()
+            ? [{ type: 'file', file: { filename: 'curriculum.pdf', file_data: urlCurriculum } }]
+            : []),
+        ],
+      },
+    ],
+  };
+}
+
+async function llamarOpenRouter(peticion) {
+  const respuesta = await fetch(OPENROUTER_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      'Content-Type':  'application/json',
+    },
+    body: JSON.stringify(peticion),
+  });
+
+  const datos = await respuesta.json();
+  if (!respuesta.ok) throw new Error(`OpenRouter ${respuesta.status}: ${JSON.stringify(datos)}`);
+
+  const resultadoEvaluacion = datos?.choices?.[0]?.message?.content ?? '';
+  if (!resultadoEvaluacion) throw new Error('OpenRouter returned no text content');
+
+  const { prompt_tokens: tokensEntrada = 0, completion_tokens: tokensSalida = 0 } = datos?.usage ?? {};
+
+  return { resultadoEvaluacion, contenidoPensamiento: null, tokensEntrada, tokensSalida, tokensCreacionCache: 0, tokensLecturaCache: 0 };
 }
 
 async function enviarWhatsApp({ candidatoNombrePila, candidatoTelefono, candidatoId, tituloVacante, preguntas, vacanteTipo }) {
@@ -226,63 +271,67 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
       candidato_respuestas: candidatoRespuestas,
     }).eq('postulacion_id', postulacionId);
 
-    // PASO 8: Construir solicitud a Claude
+    // PASO 8: Construir solicitud al modelo
     const fechaActual          = new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Mexico_City' });
     const promptSistemaConFecha = systemPrompt.replace('{{fecha_actual}}', fechaActual);
 
     const esAdministrativa = vacanteTipo === 'AD' || !vacanteTipo;
 
-    const peticionClaude = {
-      model:      tipoConfig.model,
-      max_tokens: tipoConfig.max_tokens,
-      ...(esAdministrativa
-        ? {
-            thinking:      { type: 'adaptive', display: 'summarized' },
-            output_config: { effort: tipoConfig.effort },
-          }
-        : {
-            temperature: 1,
-            thinking:    { type: 'enabled', budget_tokens: tipoConfig.thinking_budget_tokens },
-          }),
-      system: [{
-        type: 'text', text: promptSistemaConFecha,
-        cache_control: { type: 'ephemeral', ttl: '1h' },
-      }],
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'text', text: construirBloqueInfoVacante(tituloVacante, descripcionVacanteLimpia, ubicacionVacante, contextoCampoPersonalizado, textoSalarioVacante) },
-          { type: 'text', text: construirBloqueInfoCandidato(candidatoNombre, candidatoRespuestas) },
-          ...(urlImagenDeRespuestas
-            ? [{ type: 'image', source: { type: 'url', url: urlImagenDeRespuestas } }]
-            : urlCurriculum?.trim()
-              ? [{ type: 'document', source: { type: 'url', url: urlCurriculum } }]
-              : []),
-        ],
-      }],
-    };
+    const bloqueVacante   = construirBloqueInfoVacante(tituloVacante, descripcionVacanteLimpia, ubicacionVacante, contextoCampoPersonalizado, textoSalarioVacante);
+    const bloqueCandidato = construirBloqueInfoCandidato(candidatoNombre, candidatoRespuestas);
+
+    const peticionModelo = esAdministrativa
+      ? construirPeticionOpenRouter(promptSistemaConFecha, bloqueVacante, bloqueCandidato, urlCurriculum)
+      : {
+          model:       tipoConfig.model,
+          max_tokens:  tipoConfig.max_tokens,
+          temperature: 1,
+          thinking:    { type: 'enabled', budget_tokens: tipoConfig.thinking_budget_tokens },
+          system: [{
+            type: 'text', text: promptSistemaConFecha,
+            cache_control: { type: 'ephemeral', ttl: '1h' },
+          }],
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'text', text: bloqueVacante },
+              { type: 'text', text: bloqueCandidato },
+              ...(urlImagenDeRespuestas
+                ? [{ type: 'image', source: { type: 'url', url: urlImagenDeRespuestas } }]
+                : urlCurriculum?.trim()
+                  ? [{ type: 'document', source: { type: 'url', url: urlCurriculum } }]
+                  : []),
+            ],
+          }],
+        };
 
     // PASO 9: Registrar solicitud en Supabase
-    etapaActual = 'guardar_peticion_claude';
+    etapaActual = 'guardar_peticion_modelo';
     await supabase.from('postulaciones').update({
-      evaluacion_peticion: JSON.stringify(peticionClaude),
+      evaluacion_peticion: JSON.stringify(peticionModelo),
       evaluacion_prompt:   promptSistemaConFecha,
       evaluacion_modelo:   tipoConfig.model,
     }).eq('postulacion_id', postulacionId);
 
-    // PASO 10: Llamar a la API de Claude
-    etapaActual      = 'claude_api';
-    const datosClaude = await claude.messages.create(peticionClaude);
+    // PASO 10: Llamar al modelo (OpenRouter/GLM para AD, Claude para OP)
+    etapaActual = 'modelo_ia';
+    const { resultadoEvaluacion, contenidoPensamiento, tokensEntrada, tokensSalida, tokensCreacionCache, tokensLecturaCache } = esAdministrativa
+      ? await llamarOpenRouter(peticionModelo)
+      : await (async () => {
+          const datosClaude = await claude.messages.create(peticionModelo);
+          const texto = datosClaude.content?.find(b => b.type === 'text')?.text;
+          if (!texto) throw new Error('Claude returned no text content');
+          const { input_tokens: tokensEntrada = 0, output_tokens: tokensSalida = 0,
+                  cache_creation_input_tokens: tokensCreacionCache = 0,
+                  cache_read_input_tokens: tokensLecturaCache = 0 } = datosClaude.usage ?? {};
+          return {
+            resultadoEvaluacion: texto,
+            contenidoPensamiento: datosClaude.content?.find(b => b.type === 'thinking')?.thinking ?? null,
+            tokensEntrada, tokensSalida, tokensCreacionCache, tokensLecturaCache,
+          };
+        })();
 
-    const resultadoEvaluacion = datosClaude.content?.find(b => b.type === 'text')?.text;
-    const contenidoPensamiento  = datosClaude.content?.find(b => b.type === 'thinking')?.thinking ?? null;
-    const { input_tokens: tokensEntrada, output_tokens: tokensSalida,
-            cache_creation_input_tokens: tokensCreacionCache = 0,
-            cache_read_input_tokens: tokensLecturaCache = 0 } = datosClaude.usage ?? {};
-
-    if (!resultadoEvaluacion) throw new Error('Claude returned no text content');
-
-    console.log(JSON.stringify({ etapa: 'claude_api', caracteres: resultadoEvaluacion.length, tokens_input: tokensEntrada, tokens_output: tokensSalida, cache_read: tokensLecturaCache, cache_creation: tokensCreacionCache }));
+    console.log(JSON.stringify({ etapa: 'modelo_ia', modelo: tipoConfig.model, caracteres: resultadoEvaluacion.length, tokens_input: tokensEntrada, tokens_output: tokensSalida, cache_read: tokensLecturaCache, cache_creation: tokensCreacionCache }));
 
     // PASO 11: Extraer calificación y preguntas
     etapaActual       = 'extraccion_resultados';
