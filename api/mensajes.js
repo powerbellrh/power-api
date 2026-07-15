@@ -2,12 +2,30 @@ import { createClient } from '@supabase/supabase-js';
 import { waitUntil } from '@vercel/functions';
 import { timestampMexico } from '../lib/historial_utils.js';
 import { mcCrear, ttObtener, ttCrear } from '../lib/clientes_api.js';
+import { aplicarNombreCandidato } from '../lib/candidato_nombre.js';
 
 const CAMPO_MANYCHAT_RESPUESTA = '14779615';
 const MAX_TURNOS_DESPERDICIADOS = 5;
 const TEAMTAILOR_BOT_USER_ID = +process.env.AD_TEAMTAILOR_BOT_USER_ID;
 
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+// Datos que siempre se piden primero, en este orden, antes de las preguntas
+// propias de la vacante en TeamTailor. Domicilio y Edad usan preguntas fijas
+// de TeamTailor (no dependen de la vacante); Edad se manda como "number".
+const CAMPO_NOMBRE    = 'Nombre completo';
+const CAMPO_DOMICILIO = 'Domicilio';
+const CAMPO_EDAD      = 'Edad';
+
+const TEAMTAILOR_ADDRESS_QUESTION_ID = 73101; // pregunta "Domicilio" en TeamTailor
+const TEAMTAILOR_AGE_QUESTION_ID     = 70845; // pregunta "Edad" en TeamTailor (tipo number)
+
+const CAMPOS_FIJOS = [
+  { titulo: CAMPO_NOMBRE },
+  { titulo: CAMPO_DOMICILIO, id: TEAMTAILOR_ADDRESS_QUESTION_ID },
+  { titulo: CAMPO_EDAD,      id: TEAMTAILOR_AGE_QUESTION_ID, numero: true },
+];
+
+const OPENROUTER_URL   = 'https://openrouter.ai/api/v1/chat/completions';
+const OPENROUTER_MODEL = 'deepseek/deepseek-v4-flash';
 
 const lineaHistorial = (rol, mensaje) => `${timestampMexico(new Date().toISOString())} - ${rol}: ${mensaje}`;
 
@@ -18,15 +36,31 @@ const normalizarTexto = (texto) => (texto || '').trim().toLowerCase();
 async function subirRespuestasATeamtailor(respuestasNuevas, candidatoId, preguntasVacante) {
   if (!Array.isArray(respuestasNuevas) || respuestasNuevas.length === 0 || !candidatoId) return;
 
-  await Promise.allSettled(respuestasNuevas.map(async ({ pregunta, respuesta }) => {
+  await Promise.allSettled(respuestasNuevas.map(async ({ pregunta, respuesta, genero }) => {
+    // El nombre no se guarda como answer/note: actualiza directamente el
+    // candidato en TeamTailor (first-name + foto de perfil por género).
+    // El género ya viene resuelto por el modelo conversacional, así que no
+    // hace falta una llamada adicional a Claude (evita latencia extra).
+    if (normalizarTexto(pregunta) === normalizarTexto(CAMPO_NOMBRE)) {
+      try {
+        const resultado = await aplicarNombreCandidato(candidatoId, respuesta, genero);
+        console.log(JSON.stringify({ etapa: 'candidato_nombre', estado: 'ok', candidato_id: candidatoId, ...resultado }));
+      } catch (e) {
+        console.log(JSON.stringify({ etapa: 'candidato_nombre', estado: 'error', candidato_id: candidatoId, mensaje: e.message }));
+      }
+      return;
+    }
+
     const preguntaTt = preguntasVacante.find(p => normalizarTexto(p.titulo) === normalizarTexto(pregunta));
 
     try {
-      if (preguntaTt) {
+      if (preguntaTt?.id) {
+        const atributo = preguntaTt.numero ? { number: parseInt(respuesta, 10) } : { text: respuesta };
+
         await ttCrear('/answers', {
           data: {
             type: 'answers',
-            attributes: { text: respuesta },
+            attributes: atributo,
             relationships: {
               candidate: { data: { id: candidatoId.toString(), type: 'candidates' } },
               question:  { data: { id: preguntaTt.id.toString(), type: 'questions' } },
@@ -48,7 +82,7 @@ async function subirRespuestasATeamtailor(respuestasNuevas, candidatoId, pregunt
         console.log(JSON.stringify({ etapa: 'teamtailor_nota', estado: 'ok', candidato_id: candidatoId, pregunta }));
       }
     } catch (e) {
-      console.log(JSON.stringify({ etapa: preguntaTt ? 'teamtailor_answer' : 'teamtailor_nota', estado: 'error', candidato_id: candidatoId, pregunta, mensaje: e.message }));
+      console.log(JSON.stringify({ etapa: preguntaTt?.id ? 'teamtailor_answer' : 'teamtailor_nota', estado: 'error', candidato_id: candidatoId, pregunta, mensaje: e.message }));
     }
   }));
 }
@@ -56,12 +90,15 @@ async function subirRespuestasATeamtailor(respuestasNuevas, candidatoId, pregunt
 async function obtenerPreguntasVacante(vacanteId) {
   try {
     const respuestaTt = await ttObtener(`/jobs/${vacanteId}/questions`);
-    return (respuestaTt.data ?? [])
+    const preguntasVacante = (respuestaTt.data ?? [])
       .filter(p => p.attributes['question-type'] === 'Text')
-      .map(p => ({ id: +p.id, titulo: p.attributes.title ?? '' }));
+      .map(p => ({ id: +p.id, titulo: p.attributes.title ?? '' }))
+      .filter(p => !CAMPOS_FIJOS.some(fijo => normalizarTexto(fijo.titulo) === normalizarTexto(p.titulo)));
+
+    return [...CAMPOS_FIJOS, ...preguntasVacante];
   } catch (e) {
     console.log(JSON.stringify({ etapa: 'teamtailor_preguntas', estado: 'error', vacante_id: vacanteId, mensaje: e.message }));
-    return [];
+    return CAMPOS_FIJOS;
   }
 }
 
@@ -118,8 +155,13 @@ const ESQUEMA_RESPUESTA = {
           properties: {
             pregunta: { type: 'string', description: 'El texto EXACTO, tal cual aparece en DATOS A RECOPILAR, del dato que se obtuvo.' },
             respuesta: { type: 'string', description: 'La respuesta que dio la persona para ese dato.' },
+            genero: {
+              type: 'string',
+              enum: ['Hombre', 'Mujer', 'ninguno'],
+              description: 'SOLO cuando "pregunta" es "Nombre completo": el género que indica el nombre según uso común en México ("ninguno" si es unisex o ambiguo). Para cualquier otra pregunta, usa siempre "ninguno".',
+            },
           },
-          required: ['pregunta', 'respuesta'],
+          required: ['pregunta', 'respuesta', 'genero'],
           additionalProperties: false,
         },
       },
@@ -164,7 +206,7 @@ Debes devolver únicamente el objeto JSON que exige el esquema, con estos cinco 
 - "campos_recopilados": el estado ACUMULADO de todos los datos que ya se tienen (los de antes más lo nuevo que hayas extraído en este mensaje), no solo lo de este turno.
 - "campos_faltantes": los datos de "DATOS A RECOPILAR" que aún no tienes.
 - "turno_desperdiciado": true si en este mensaje la persona SOLO hizo preguntas o comentarios y NO aportó ningún dato nuevo de la lista de DATOS A RECOPILAR; false si aportó al menos un dato nuevo.
-- "respuestas_nuevas": SOLO los datos que se obtuvieron POR PRIMERA VEZ en este mensaje (no repitas los que ya estaban en DATOS YA RECOPILADOS), usando en "pregunta" el texto EXACTO tal cual aparece en DATOS A RECOPILAR.`;
+- "respuestas_nuevas": SOLO los datos que se obtuvieron POR PRIMERA VEZ en este mensaje (no repitas los que ya estaban en DATOS YA RECOPILADOS), usando en "pregunta" el texto EXACTO tal cual aparece en DATOS A RECOPILAR. Cuando "pregunta" sea "Nombre completo", en "respuesta" pon únicamente el nombre de pila (y segundo nombre si lo dice) capitalizado de forma estándar, sin apellidos, saludos ni relleno ("Mi nombre es", "Soy", "Me llamo", emojis); y en "genero" indica "Hombre" o "Mujer" solo si el nombre lo sugiere con alta confianza, o "ninguno" si es unisex o ambiguo (ej. Guadalupe, Cruz, Alex) — nunca inventes el género para quedar bien. Para cualquier otra "pregunta", "genero" siempre es "ninguno".`;
 
 async function procesarMensaje(mensaje, manychat, supabase) {
   try {
@@ -208,7 +250,7 @@ async function procesarMensaje(mensaje, manychat, supabase) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: process.env.OPENROUTER_MODEL,
+        model: OPENROUTER_MODEL,
         messages: [
           {
             role: 'system',
