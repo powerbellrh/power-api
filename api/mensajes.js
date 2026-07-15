@@ -1,5 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
+import { waitUntil } from '@vercel/functions';
 import { timestampMexico } from '../lib/historial_utils.js';
+import { mcCrear } from '../lib/clientes_api.js';
+
+const CAMPO_MANYCHAT_RESPUESTA = '14779615';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -73,29 +77,7 @@ Debes devolver únicamente el objeto JSON que exige el esquema, con estos tres c
 - "campos_recopilados": el estado ACUMULADO de todos los datos que ya se tienen (los de antes más lo nuevo que hayas extraído en este mensaje), no solo lo de este turno.
 - "campos_faltantes": los datos de "DATOS A RECOPILAR" que aún no tienes.`;
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    console.log(JSON.stringify({ etapa: 'request', estado: 'error', mensaje: `method not allowed: ${req.method}` }));
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const claveApi = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
-  if (process.env.POWERBELL_API_KEY && claveApi !== process.env.POWERBELL_API_KEY) {
-    console.log(JSON.stringify({ etapa: 'auth', estado: 'error', mensaje: 'unauthorized' }));
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
-  const cuerpo = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-  const mensaje  = cuerpo?.mensaje;
-  const manychat = cuerpo?.manychat;
-
-  if (!mensaje || !manychat) {
-    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing mensaje or manychat' }));
-    return res.status(400).json({ ok: false, error: 'missing mensaje or manychat' });
-  }
-
-  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-
+async function procesarMensaje(mensaje, manychat, supabase) {
   try {
     const { data: registro, error: errorBusqueda } = await supabase
       .from('chatbot')
@@ -143,7 +125,7 @@ export default async function handler(req, res) {
 
     if (!respuesta.ok) {
       console.log(JSON.stringify({ etapa: 'openrouter', estado: 'error', status: respuesta.status, datos }));
-      return res.status(500).json({ ok: false, error: 'openrouter request failed' });
+      return;
     }
 
     const contenidoModelo = datos?.choices?.[0]?.message?.content ?? '';
@@ -166,10 +148,43 @@ export default async function handler(req, res) {
 
     if (errorGuardado) throw new Error(`Supabase upsert failed: ${errorGuardado.message}`);
 
-    console.log(JSON.stringify({ etapa: 'openrouter', estado: 'exito', manychat, mensaje, respuesta: respuestaModelo, campos_faltantes: salidaModelo.campos_faltantes }));
-    return res.status(200).json({ ok: true, respuesta: respuestaModelo });
+    await mcCrear('/fb/subscriber/setCustomField', {
+      subscriber_id: manychat,
+      field_id: CAMPO_MANYCHAT_RESPUESTA,
+      field_value: respuestaModelo,
+    });
+
+    console.log(JSON.stringify({ etapa: 'completado', estado: 'exito', manychat, mensaje, respuesta: respuestaModelo, campos_faltantes: salidaModelo.campos_faltantes }));
   } catch (error) {
     console.log(JSON.stringify({ etapa: 'completado', estado: 'error', manychat, mensaje: error.message }));
-    return res.status(500).json({ ok: false, error: 'internal error' });
   }
+}
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    console.log(JSON.stringify({ etapa: 'request', estado: 'error', mensaje: `method not allowed: ${req.method}` }));
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const claveApi = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
+  if (process.env.POWERBELL_API_KEY && claveApi !== process.env.POWERBELL_API_KEY) {
+    console.log(JSON.stringify({ etapa: 'auth', estado: 'error', mensaje: 'unauthorized' }));
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const cuerpo = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+  const mensaje  = cuerpo?.mensaje;
+  const manychat = cuerpo?.manychat;
+
+  if (!mensaje || !manychat) {
+    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing mensaje or manychat' }));
+    return res.status(400).json({ ok: false, error: 'missing mensaje or manychat' });
+  }
+
+  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+  waitUntil(procesarMensaje(mensaje, manychat, supabase));
+
+  console.log(JSON.stringify({ etapa: 'request', estado: 'aceptado', manychat, mensaje }));
+  return res.status(202).json({ ok: true, status: 'processing' });
 }
