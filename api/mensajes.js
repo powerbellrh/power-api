@@ -5,6 +5,16 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 const lineaHistorial = (rol, mensaje) => `${timestampMexico(new Date().toISOString())} - ${rol}: ${mensaje}`;
 
+const limpiarBloqueCodigo = (texto) => texto.trim().replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/, '').trim();
+
+const aTextoLegible = (valor) => {
+  if (typeof valor === 'string') return valor;
+  if (valor && typeof valor === 'object') {
+    return Object.entries(valor).map(([campo, dato]) => `${campo}: ${dato}`).join('; ');
+  }
+  return '';
+};
+
 const ESQUEMA_RESPUESTA = {
   name: 'respuesta_chatbot',
   strict: true,
@@ -138,14 +148,14 @@ export default async function handler(req, res) {
 
     let salidaModelo;
     try {
-      salidaModelo = JSON.parse(contenidoModelo);
+      salidaModelo = JSON.parse(limpiarBloqueCodigo(contenidoModelo));
     } catch (e) {
       console.log(JSON.stringify({ etapa: 'openrouter', estado: 'error', mensaje: 'respuesta no es JSON válido', contenidoModelo }));
       salidaModelo = { respuesta: contenidoModelo, campos_recopilados: registro?.campos_recopilados || '', campos_faltantes: [] };
     }
 
     const respuestaModelo    = salidaModelo.respuesta ?? '';
-    const camposRecopilados  = salidaModelo.campos_recopilados ?? (registro?.campos_recopilados || '');
+    const camposRecopilados  = aTextoLegible(salidaModelo.campos_recopilados) || (registro?.campos_recopilados || '');
     const historialFinal     = `${historialConUsuario}\n${lineaHistorial('agente', respuestaModelo)}`;
 
     const { error: errorGuardado } = await supabase
