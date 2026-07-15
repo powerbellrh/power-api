@@ -42,7 +42,7 @@
       "maxDuration": 30
     },
     "api/mensajes.js": {
-      "maxDuration": 30
+      "maxDuration": 120
     }
   },
   "crons": [
