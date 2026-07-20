@@ -1,4 +1,3 @@
-import Anthropic             from '@anthropic-ai/sdk';
 import { createClient }     from '@supabase/supabase-js';
 import { readFileSync }     from 'fs';
 import { fileURLToPath }    from 'url';
@@ -26,6 +25,7 @@ import {
   obtenerCalificacionEstadoEvaluacion,
 } from '../lib/utilidades_postulacion.js';
 import { ttObtener, ttActualizar, ttCrear, mcCrear, mcObtener } from '../lib/clientes_api.js';
+import { orChatCompletion } from '../lib/openrouter.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -34,14 +34,12 @@ const PROMPTS = {
   OP: readFileSync(join(__dirname, '../prompts/evaluacion_operativa.txt'),      'utf-8'),
 };
 
-const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY_POSTULACIONES });
-
-const OPENROUTER_URL           = 'https://openrouter.ai/api/v1/chat/completions';
-const OPENROUTER_MODEL_AD      = 'z-ai/glm-5.2';
+const OPENROUTER_MODEL_AD = 'z-ai/glm-5.2';
+const OPENROUTER_MODEL_OP = 'xiaomi/mimo-v2.5';
 
 const AI_CONFIG = {
-  AD: { model: OPENROUTER_MODEL_AD, max_tokens: 20000 },
-  OP: { model: 'claude-haiku-4-5', max_tokens: 20000, thinking_budget_tokens: 16000 },
+  AD: { model: OPENROUTER_MODEL_AD, max_tokens: 20000, reasoningEffort: 'xhigh' },
+  OP: { model: OPENROUTER_MODEL_OP, max_tokens: 20000, reasoningEffort: 'xhigh' },
 };
 
 const TEAMTAILOR_BOT_USER_ID = +process.env.AD_TEAMTAILOR_BOT_USER_ID;
@@ -81,12 +79,17 @@ async function obtenerContextoCampoPersonalizado(vacanteId) {
   }
 }
 
-function construirPeticionOpenRouter(promptSistema, bloqueVacante, bloqueCandidato, urlCurriculum) {
+function construirPeticionOpenRouter(tipoConfig, promptSistema, bloqueVacante, bloqueCandidato, urlCurriculum, urlImagen) {
+  const adjuntoImagen  = urlImagen ? [{ type: 'image_url', image_url: { url: urlImagen } }] : [];
+  const adjuntoArchivo = !urlImagen && urlCurriculum?.trim()
+    ? [{ type: 'file', file: { filename: 'curriculum.pdf', file_data: urlCurriculum } }]
+    : [];
+
   return {
-    model:      OPENROUTER_MODEL_AD,
-    max_tokens: AI_CONFIG.AD.max_tokens,
-    reasoning:  { effort: 'xhigh' },
-    plugins: [{ id: 'file-parser', pdf: { engine: 'mistral-ocr' } }],
+    model:      tipoConfig.model,
+    max_tokens: tipoConfig.max_tokens,
+    reasoning:  { effort: tipoConfig.reasoningEffort },
+    ...(adjuntoArchivo.length > 0 && { plugins: [{ id: 'file-parser', pdf: { engine: 'mistral-ocr' } }] }),
     messages: [
       { role: 'system', content: promptSistema },
       {
@@ -94,9 +97,8 @@ function construirPeticionOpenRouter(promptSistema, bloqueVacante, bloqueCandida
         content: [
           { type: 'text', text: bloqueVacante },
           { type: 'text', text: bloqueCandidato },
-          ...(urlCurriculum?.trim()
-            ? [{ type: 'file', file: { filename: 'curriculum.pdf', file_data: urlCurriculum } }]
-            : []),
+          ...adjuntoImagen,
+          ...adjuntoArchivo,
         ],
       },
     ],
@@ -104,24 +106,21 @@ function construirPeticionOpenRouter(promptSistema, bloqueVacante, bloqueCandida
 }
 
 async function llamarOpenRouter(peticion) {
-  const respuesta = await fetch(OPENROUTER_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      'Content-Type':  'application/json',
-    },
-    body: JSON.stringify(peticion),
-  });
+  const datos = await orChatCompletion(peticion);
 
-  const datos = await respuesta.json();
-  if (!respuesta.ok) throw new Error(`OpenRouter ${respuesta.status}: ${JSON.stringify(datos)}`);
-
-  const resultadoEvaluacion = datos?.choices?.[0]?.message?.content ?? '';
+  const mensaje = datos?.choices?.[0]?.message;
+  const resultadoEvaluacion = mensaje?.content ?? '';
   if (!resultadoEvaluacion) throw new Error('OpenRouter returned no text content');
+
+  // Algunos proveedores solo llenan reasoning_details (estructurado) y dejan
+  // reasoning (string plano) vacío; se usa como respaldo en ese caso.
+  const contenidoPensamiento = mensaje?.reasoning
+    || mensaje?.reasoning_details?.map(r => r.text).filter(Boolean).join('\n')
+    || null;
 
   const { prompt_tokens: tokensEntrada = 0, completion_tokens: tokensSalida = 0 } = datos?.usage ?? {};
 
-  return { resultadoEvaluacion, contenidoPensamiento: null, tokensEntrada, tokensSalida, tokensCreacionCache: 0, tokensLecturaCache: 0 };
+  return { resultadoEvaluacion, contenidoPensamiento, tokensEntrada, tokensSalida, tokensCreacionCache: 0, tokensLecturaCache: 0 };
 }
 
 async function enviarWhatsApp({ candidatoNombrePila, candidatoTelefono, candidatoId, tituloVacante, preguntas, vacanteTipo }) {
@@ -281,30 +280,9 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     const bloqueVacante   = construirBloqueInfoVacante(tituloVacante, descripcionVacanteLimpia, ubicacionVacante, contextoCampoPersonalizado, textoSalarioVacante);
     const bloqueCandidato = construirBloqueInfoCandidato(candidatoNombre, candidatoRespuestas);
 
-    const peticionModelo = esAdministrativa
-      ? construirPeticionOpenRouter(promptSistemaConFecha, bloqueVacante, bloqueCandidato, urlCurriculum)
-      : {
-          model:       tipoConfig.model,
-          max_tokens:  tipoConfig.max_tokens,
-          temperature: 1,
-          thinking:    { type: 'enabled', budget_tokens: tipoConfig.thinking_budget_tokens },
-          system: [{
-            type: 'text', text: promptSistemaConFecha,
-            cache_control: { type: 'ephemeral', ttl: '1h' },
-          }],
-          messages: [{
-            role: 'user',
-            content: [
-              { type: 'text', text: bloqueVacante },
-              { type: 'text', text: bloqueCandidato },
-              ...(urlImagenDeRespuestas
-                ? [{ type: 'image', source: { type: 'url', url: urlImagenDeRespuestas } }]
-                : urlCurriculum?.trim()
-                  ? [{ type: 'document', source: { type: 'url', url: urlCurriculum } }]
-                  : []),
-            ],
-          }],
-        };
+    const peticionModelo = construirPeticionOpenRouter(
+      tipoConfig, promptSistemaConFecha, bloqueVacante, bloqueCandidato, urlCurriculum, urlImagenDeRespuestas,
+    );
 
     // PASO 9: Registrar solicitud en Supabase
     etapaActual = 'guardar_peticion_modelo';
@@ -314,23 +292,10 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
       evaluacion_modelo:   tipoConfig.model,
     }).eq('postulacion_id', postulacionId);
 
-    // PASO 10: Llamar al modelo (OpenRouter/GLM para AD, Claude para OP)
+    // PASO 10: Llamar al modelo (OpenRouter: GLM para AD, MiMo para OP)
     etapaActual = 'modelo_ia';
-    const { resultadoEvaluacion, contenidoPensamiento, tokensEntrada, tokensSalida, tokensCreacionCache, tokensLecturaCache } = esAdministrativa
-      ? await llamarOpenRouter(peticionModelo)
-      : await (async () => {
-          const datosClaude = await claude.messages.create(peticionModelo);
-          const texto = datosClaude.content?.find(b => b.type === 'text')?.text;
-          if (!texto) throw new Error('Claude returned no text content');
-          const { input_tokens: tokensEntrada = 0, output_tokens: tokensSalida = 0,
-                  cache_creation_input_tokens: tokensCreacionCache = 0,
-                  cache_read_input_tokens: tokensLecturaCache = 0 } = datosClaude.usage ?? {};
-          return {
-            resultadoEvaluacion: texto,
-            contenidoPensamiento: datosClaude.content?.find(b => b.type === 'thinking')?.thinking ?? null,
-            tokensEntrada, tokensSalida, tokensCreacionCache, tokensLecturaCache,
-          };
-        })();
+    const { resultadoEvaluacion, contenidoPensamiento, tokensEntrada, tokensSalida, tokensCreacionCache, tokensLecturaCache } =
+      await llamarOpenRouter(peticionModelo);
 
     console.log(JSON.stringify({ etapa: 'modelo_ia', modelo: tipoConfig.model, caracteres: resultadoEvaluacion.length, tokens_input: tokensEntrada, tokens_output: tokensSalida, cache_read: tokensLecturaCache, cache_creation: tokensCreacionCache }));
 

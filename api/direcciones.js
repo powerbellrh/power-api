@@ -1,10 +1,10 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { ttCrear, mcCrear } from '../lib/clientes_api.js';
+import { orChatCompletion } from '../lib/openrouter.js';
 
 const TEAMTAILOR_ADDRESS_QUESTION_ID       = +process.env.TEAMTAILOR_ADDRESS_QUESTION_ID;
 const MANYCHAT_FIELD_ADDRESS_ID            = +process.env.DIRECCIONES_MANYCHAT_FIELD_ADDRESS_ID;
 
-const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY_CHATBOT });
+const OPENROUTER_MODEL = 'deepseek/deepseek-v4-flash';
 
 const SYSTEM_PROMPT_VALIDACION_DIRECCION = `\
 # Rol
@@ -31,21 +31,20 @@ Ruiseñores, Tala
 Vivo en Guadalajara en Jalisco debería interpretarse como Guadalajara, Jalisco`;
 
 async function validarDireccion(texto) {
-  const respuesta = await claude.messages.create({
-    model:      'claude-haiku-4-5',
+  const datos = await orChatCompletion({
+    model:      OPENROUTER_MODEL,
     max_tokens: 300,
-    system: [{
-      type:          'text',
-      text:          SYSTEM_PROMPT_VALIDACION_DIRECCION,
-      cache_control: { type: 'ephemeral' },
-    }],
-    messages: [{ role: 'user', content: texto }],
+    reasoning:  { enabled: false },
+    messages: [
+      { role: 'system', content: SYSTEM_PROMPT_VALIDACION_DIRECCION },
+      { role: 'user',   content: texto },
+    ],
   });
 
-  const bloqueTexto = respuesta.content.find(b => b.type === 'text');
-  if (!bloqueTexto) throw new Error('Claude no devolvió bloque de texto');
+  const textoRespuesta = datos?.choices?.[0]?.message?.content?.trim();
+  if (!textoRespuesta) throw new Error('OpenRouter no devolvió contenido de texto');
 
-  return bloqueTexto.text.trim();
+  return textoRespuesta;
 }
 
 // ============================================================================

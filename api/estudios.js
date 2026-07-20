@@ -1,16 +1,16 @@
-import Anthropic                                     from '@anthropic-ai/sdk';
 import { readFileSync }                             from 'fs';
 import { fileURLToPath }                            from 'url';
 import { dirname, join }                            from 'path';
 import { extraerCampos, esMediotiempo, deduplicar } from '../lib/vacante.js';
 import { filtrarConIA }                             from '../lib/filtrado.js';
 import { extraerSalariosConIA }                     from '../lib/extraccion_salario_ia.js';
+import { orChatCompletion }                         from '../lib/openrouter.js';
 
 const SALARIO_MINIMO_MENSUAL        = parseFloat(process.env.SALARIO_MINIMO_MENSUAL);
 const __dirname                     = dirname(fileURLToPath(import.meta.url));
 const PROMPT_CONCLUSIONES           = readFileSync(join(__dirname, '../prompts/conclusiones_ia.txt'), 'utf-8');
 const PROMPT_CONCLUSIONES_GLASSDOOR = readFileSync(join(__dirname, '../prompts/conclusiones_ia_glassdoor.txt'), 'utf-8');
-const client                        = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY_ESTUDIOS });
+const OPENROUTER_MODEL              = 'z-ai/glm-5.2';
 
 const costo = (ti, to) => +((ti / 1_000_000) + (to / 1_000_000 * 5)).toFixed(6);
 
@@ -128,13 +128,14 @@ async function manejarGlassdoor(vacante, ubicacion, url, muestra, test, res) {
     .replace('{{n_alta}}',      n_alta)
     .replace('{{titulos}}',     [...new Set(aprobadas.map(e => e.titulo_vacante).filter(Boolean))].join(', '));
 
-  const respConclusion = await client.messages.create({
-    model:      'claude-haiku-4-5',
-    max_tokens: 1024,
+  const datosConclusion = await orChatCompletion({
+    model:      OPENROUTER_MODEL,
+    max_tokens: 20000,
+    reasoning:  { effort: 'xhigh' },
     messages:   [{ role: 'user', content: promptConclusion }],
   });
 
-  const { input_tokens: ti_c, output_tokens: to_c } = respConclusion.usage;
+  const { prompt_tokens: ti_c = 0, completion_tokens: to_c = 0 } = datosConclusion.usage ?? {};
   const costo_ia    = costo(
     m_fil.tokens_input + m_fil.cache_creados + m_fil.cache_leidos + ti_c,
     m_fil.tokens_output + to_c,
@@ -153,7 +154,7 @@ async function manejarGlassdoor(vacante, ubicacion, url, muestra, test, res) {
       n_vacantes_analizadas: aprobadas.reduce((sum, e) => sum + (e.n_reportes ?? 1), 0),
       estadisticos,
       top_prestaciones:      [],
-      comentario_ia:         respConclusion.content.find(b => b.type === 'text')?.text ?? null,
+      comentario_ia:         datosConclusion?.choices?.[0]?.message?.content ?? null,
     },
     vacantes: [
       ...aprobadas.map(e                                          => ({ ...e, validez: 'valida',   razon_invalidez: null           })),
@@ -286,13 +287,14 @@ export default async function handler(req, res) {
     .replace('{{top_prestaciones}}', topPrestacionesTexto)
     .replace('{{titulos}}',          [...new Set(aprobadas.map(v => v.titulo_vacante).filter(Boolean))].join(', '));
 
-  const respConclusion = await client.messages.create({
-    model:    'claude-haiku-4-5',
-    max_tokens: 1024,
-    messages: [{ role: 'user', content: promptConclusion }],
+  const datosConclusion = await orChatCompletion({
+    model:      OPENROUTER_MODEL,
+    max_tokens: 20000,
+    reasoning:  { effort: 'xhigh' },
+    messages:   [{ role: 'user', content: promptConclusion }],
   });
 
-  const { input_tokens: ti_c, output_tokens: to_c } = respConclusion.usage;
+  const { prompt_tokens: ti_c = 0, completion_tokens: to_c = 0 } = datosConclusion.usage ?? {};
   const costo_ia    = costo(
     m_sal.tokens_input + m_sal.cache_creados + m_sal.cache_leidos +
     m_fil.tokens_input + m_fil.cache_creados + m_fil.cache_leidos + ti_c,
@@ -322,7 +324,7 @@ export default async function handler(req, res) {
       n_vacantes_analizadas: aprobadas.length,
       estadisticos,
       top_prestaciones:      topPrestaciones,
-      comentario_ia:         respConclusion.content.find(b => b.type === 'text')?.text ?? null,
+      comentario_ia:         datosConclusion?.choices?.[0]?.message?.content ?? null,
     },
     vacantes: [
       ...aprobadas.map(v                                         => ({ ...depurar(v), validez: 'valida',   razon_invalidez: null           })),

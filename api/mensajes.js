@@ -251,6 +251,7 @@ async function procesarMensaje(mensaje, manychat, supabase) {
       },
       body: JSON.stringify({
         model: OPENROUTER_MODEL,
+        max_tokens: 2000,
         messages: [
           {
             role: 'system',
