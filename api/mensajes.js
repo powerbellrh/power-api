@@ -259,6 +259,7 @@ async function procesarMensaje(mensaje, manychat, supabase) {
           { role: 'user', content: historialConUsuario },
         ],
         response_format: { type: 'json_schema', json_schema: ESQUEMA_RESPUESTA },
+        reasoning: { effort: 'low' },
         provider: {
           sort: 'latency',
           zdr: true,
