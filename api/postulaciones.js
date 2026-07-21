@@ -35,11 +35,11 @@ const PROMPTS = {
 };
 
 const OPENROUTER_MODEL_AD = 'z-ai/glm-5.2';
-const OPENROUTER_MODEL_OP = 'xiaomi/mimo-v2.5';
+const OPENROUTER_MODEL_OP = 'z-ai/glm-5.2';
 
 const AI_CONFIG = {
-  AD: { model: OPENROUTER_MODEL_AD, max_tokens: 20000, reasoningEffort: 'xhigh' },
-  OP: { model: OPENROUTER_MODEL_OP, max_tokens: 20000, reasoningEffort: 'xhigh' },
+  AD: { model: OPENROUTER_MODEL_AD, max_tokens: 20000, reasoningEffort: 'high' },
+  OP: { model: OPENROUTER_MODEL_OP, max_tokens: 20000, reasoningEffort: 'high' },
 };
 
 const TEAMTAILOR_BOT_USER_ID = +process.env.AD_TEAMTAILOR_BOT_USER_ID;
