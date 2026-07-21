@@ -33,7 +33,7 @@ Vivo en Guadalajara en Jalisco debería interpretarse como Guadalajara, Jalisco`
 async function validarDireccion(texto) {
   const datos = await orChatCompletion({
     model:      OPENROUTER_MODEL,
-    max_tokens: 300,
+    max_tokens: 3000,
     reasoning:  { enabled: false },
     messages: [
       { role: 'system', content: SYSTEM_PROMPT_VALIDACION_DIRECCION },

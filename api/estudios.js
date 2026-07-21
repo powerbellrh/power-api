@@ -1,24 +1,285 @@
-import { readFileSync }                             from 'fs';
-import { fileURLToPath }                            from 'url';
-import { dirname, join }                            from 'path';
-import { extraerCampos, esMediotiempo, deduplicar } from '../lib/vacante.js';
-import { filtrarConIA }                             from '../lib/filtrado.js';
-import { extraerSalariosConIA }                     from '../lib/extraccion_salario_ia.js';
-import { orChatCompletion }                         from '../lib/openrouter.js';
+import { readFileSync }             from 'fs';
+import { fileURLToPath }            from 'url';
+import { dirname, join }            from 'path';
+import { normalizarPrestaciones }   from '../lib/prestaciones.js';
+import { orChatCompletion }         from '../lib/openrouter.js';
 
 const SALARIO_MINIMO_MENSUAL        = parseFloat(process.env.SALARIO_MINIMO_MENSUAL);
+const SEMANAS_POR_MES                = parseFloat(process.env.SEMANAS_POR_MES);
 const __dirname                     = dirname(fileURLToPath(import.meta.url));
 const PROMPT_CONCLUSIONES           = readFileSync(join(__dirname, '../prompts/conclusiones_ia.txt'), 'utf-8');
 const PROMPT_CONCLUSIONES_GLASSDOOR = readFileSync(join(__dirname, '../prompts/conclusiones_ia_glassdoor.txt'), 'utf-8');
 const OPENROUTER_MODEL              = 'z-ai/glm-5.2';
 
-const costo = (ti, to) => +((ti / 1_000_000) + (to / 1_000_000 * 5)).toFixed(6);
+const costo      = (ti, to) => +((ti / 1_000_000) + (to / 1_000_000 * 5)).toFixed(6);
+const redondear  = v => Math.round(v * 100) / 100;
 
 function percentil(sorted, p) {
   if (sorted.length === 0) return null;
   const idx = (p / 100) * (sorted.length - 1);
   const lo  = Math.floor(idx), hi = Math.ceil(idx);
   return Math.round(sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo));
+}
+
+const normalizar = (texto) => texto
+  ?.toLowerCase()
+  .normalize("NFD").replace(/[̀-ͯ]/g, "")
+  .replace(/[^a-z0-9]/g, "")
+  ?? "";
+
+// ── Extracción de campos de vacantes (Indeed/Apify) ─────────────────────────
+
+function extraerSalarioDeDescripcion(descripcion) {
+  const regexRango  = /Sueldo:\s*(?:A partir de|Hasta)?\s*\$([0-9,]+(?:\.\d+)?)\s*-\s*\$([0-9,]+(?:\.\d+)?)\s*(al mes|a la semana)/i;
+  const regexSimple = /Sueldo:\s*(?:A partir de|Hasta)?\s*\$([0-9,]+(?:\.\d+)?)\s*(al mes|a la semana)/i;
+
+  const matchRango  = descripcion?.match(regexRango);
+  const matchSimple = descripcion?.match(regexSimple);
+
+  if (matchRango) {
+    const valor_min  = parseFloat(matchRango[1].replace(/,/g, ""));
+    const valor_max  = parseFloat(matchRango[2].replace(/,/g, ""));
+    const promedio   = (valor_min + valor_max) / 2;
+    const frecuencia = matchRango[3].toLowerCase();
+
+    return {
+      valor_mensual:       redondear(frecuencia === "a la semana" ? promedio * SEMANAS_POR_MES : promedio),
+      frecuencia_original: frecuencia === "a la semana" ? "semanal" : "mensual",
+      valor_original:      `${valor_min} - ${valor_max}`,
+      estructura:          "rango"
+    };
+  }
+
+  if (matchSimple) {
+    const valor      = parseFloat(matchSimple[1].replace(/,/g, ""));
+    const frecuencia = matchSimple[2].toLowerCase();
+
+    return {
+      valor_mensual:       redondear(frecuencia === "a la semana" ? valor * SEMANAS_POR_MES : valor),
+      frecuencia_original: frecuencia === "a la semana" ? "semanal" : "mensual",
+      valor_original:      valor,
+      estructura:          "fijo"
+    };
+  }
+
+  return null;
+}
+
+function extraerCampos(vacanteApify) {
+  const descripcion = vacanteApify.descriptionText ?? null;
+  const salario     = extraerSalarioDeDescripcion(descripcion);
+
+  return {
+    titulo_vacante:        vacanteApify.title ?? null,
+    nombre_empresa:        vacanteApify.companyName ?? "Empresa no especificada",
+    salario_mensual:       salario?.valor_mensual ?? null,
+    frecuencia_original:   salario?.frecuencia_original ?? null,
+    valor_original:        salario?.valor_original ?? null,
+    estructura_salario:    salario?.estructura ?? null,
+    salario_valido:        salario !== null && salario.valor_mensual >= SALARIO_MINIMO_MENSUAL,
+    prestaciones_original: vacanteApify.benefits ?? [],
+    prestaciones:          normalizarPrestaciones(vacanteApify.benefits, descripcion),
+    descripcion_original:  descripcion,
+    ubicacion_vacante:     vacanteApify.location?.formattedAddressShort ?? null,
+    fecha_publicacion:     vacanteApify.datePublished ?? null,
+  };
+}
+
+function esMediotiempo(vacante) {
+  const palabras_clave = ["medio tiempo", "part time"];
+  const texto          = `${vacante.titulo_vacante} ${vacante.descripcion_original}`.toLowerCase();
+  if (!palabras_clave.some(p => texto.includes(p))) return false;
+  // Si también declara "tiempo completo" y el salario es válido, se trata como tiempo completo
+  if (texto.includes("tiempo completo") && vacante.salario_valido) return false;
+  return true;
+}
+
+function deduplicar(vacantes) {
+  const mapa = {};
+
+  for (const v of vacantes) {
+    const llave = normalizar(v.nombre_empresa) + "_" + normalizar(v.titulo_vacante);
+
+    if (!mapa[llave] || new Date(v.fecha_publicacion) > new Date(mapa[llave].fecha_publicacion)) {
+      mapa[llave] = v;
+    }
+  }
+
+  return Object.values(mapa);
+}
+
+// ── Filtrado IA (descarta staffing / puesto distinto) ───────────────────────
+
+const SYSTEM_PROMPT_FILTRADO = `\
+Eres un filtro de calidad para un estudio de mercado de sueldos en México. Debes evaluar si una vacante debe incluirse o descartarse del análisis.
+
+Evalúa los siguientes DOS criterios:
+
+--- CRITERIO 1: STAFFING / OUTSOURCING ---
+Descarta la vacante si la empresa que la publica NO es el empleador directo, sino una agencia intermediaria (reclutadora, consultora de RH, outsourcing, headhunter).
+
+Señales de agencia intermediaria:
+- Nombre de empresa con palabras como: Consultoría, Consultores, Capital Humano, Talento, RH, Recursos Humanos, Staffing, Outsourcing, Personnel, Search, Hunters, Placement, Soluciones de Personal
+- La descripción habla de "nuestro cliente", "importante empresa del sector", "reconocida empresa" sin revelar el nombre real del empleador
+- La empresa declara explícitamente ser reclutadora, consultora o agencia de empleo
+
+NO descartes por este criterio si:
+- La empresa es claramente una empresa productiva, fabricante, distribuidora o de servicios reales
+- La descripción menciona directamente quién es el empleador final
+
+--- CRITERIO 2: PUESTO DIFERENTE ---
+Descarta la vacante si el título corresponde a un rol FUNDAMENTALMENTE diferente al buscado.
+
+Variaciones aceptables (NO descartar):
+- Diferente nivel del mismo rol: Auxiliar, Asistente, Operador, Técnico en la misma área de trabajo
+- Sinónimos o nombres alternativos del mismo puesto (ej. "Operador de Línea" ≈ "Operador de Producción")
+- Especializaciones del mismo rol (ej. "Operador de Soplado" o "Operador CNC" cuando se busca "Operador de Producción")
+
+Descartar si:
+- El rol requiere un perfil y conocimientos completamente distintos (ej. búsqueda "Operador de Producción" pero vacante es "Gerente de Planta", "Ingeniero de Calidad", "Ejecutivo de Ventas", "Chofer")
+
+---
+
+Responde ÚNICAMENTE con un objeto JSON válido, sin texto adicional antes ni después.
+
+Si la vacante debe incluirse:
+{"aprobar": true, "motivo_rechazo": null}
+
+Si la vacante debe descartarse:
+{"aprobar": false, "motivo_rechazo": "descripción breve del motivo"}
+`;
+
+async function evaluarVacante(vacante, busqueda) {
+  const descripcion = (vacante.descripcion_original ?? '(sin descripción)').substring(0, 1200);
+
+  const datos = await orChatCompletion({
+    model:      OPENROUTER_MODEL,
+    max_tokens: 20000,
+    reasoning:  { effort: 'xhigh' },
+    messages: [
+      { role: 'system', content: SYSTEM_PROMPT_FILTRADO },
+      { role: 'user',   content: `Búsqueda original: ${busqueda}\n\nVacante a evaluar:\nEmpresa: ${vacante.nombre_empresa ?? ''}\nTítulo: ${vacante.titulo_vacante ?? ''}\nDescripción: ${descripcion}` },
+    ],
+  });
+
+  const raw = datos?.choices?.[0]?.message?.content?.trim();
+  if (!raw) throw new Error('GLM no devolvió contenido de texto');
+
+  const start = raw.indexOf('{');
+  const end   = raw.lastIndexOf('}');
+  if (start === -1 || end === -1) throw new Error('No se encontró JSON en la respuesta');
+
+  const { prompt_tokens: input_tokens = 0, completion_tokens: output_tokens = 0 } = datos?.usage ?? {};
+
+  return { resultado: JSON.parse(raw.slice(start, end + 1)), usage: { input_tokens, output_tokens } };
+}
+
+async function filtrarConIA(vacantes, busqueda) {
+  const resultados = await Promise.all(
+    vacantes.map(async (v) => {
+      try {
+        return await evaluarVacante(v, busqueda);
+      } catch (err) {
+        console.error('[filtrado_ia] error:', err?.message ?? err);
+        return null;
+      }
+    })
+  );
+
+  const peticiones    = resultados.filter(Boolean).length;
+  const tokens_input  = resultados.reduce((s, r) => s + (r?.usage?.input_tokens                  ?? 0), 0);
+  const tokens_output = resultados.reduce((s, r) => s + (r?.usage?.output_tokens                 ?? 0), 0);
+  const cache_creados = resultados.reduce((s, r) => s + (r?.usage?.cache_creation_input_tokens   ?? 0), 0);
+  const cache_leidos  = resultados.reduce((s, r) => s + (r?.usage?.cache_read_input_tokens       ?? 0), 0);
+
+  const aprobadas       = vacantes.filter((_, i) => resultados[i]?.resultado?.aprobar ?? true);
+  const n_rechazadas_ia = vacantes.length - aprobadas.length;
+
+  return {
+    aprobadas,
+    n_rechazadas_ia,
+    metricas: { peticiones, tokens_input, tokens_output, cache_creados, cache_leidos },
+  };
+}
+
+// ── Recuperación de salario vía IA (cuando el regex no lo extrajo) ─────────
+
+const SYSTEM_PROMPT_SALARIO = readFileSync(join(__dirname, '../prompts/extraccion_salario.txt'), 'utf-8');
+
+async function extraerSalarioDeVacante(vacante) {
+  const descripcion = (vacante.descripcion_original ?? '').substring(0, 2000);
+
+  const datos = await orChatCompletion({
+    model:      OPENROUTER_MODEL,
+    max_tokens: 20000,
+    reasoning:  { effort: 'xhigh' },
+    messages: [
+      { role: 'system', content: SYSTEM_PROMPT_SALARIO },
+      { role: 'user',   content: `Título: ${vacante.titulo_vacante ?? ''}\n\nDescripción:\n${descripcion}` },
+    ],
+  });
+
+  const textoRespuesta = datos?.choices?.[0]?.message?.content?.trim();
+  if (!textoRespuesta) throw new Error('GLM no devolvió contenido de texto');
+
+  const raw = textoRespuesta.replace(/^```json\s*\n?/, '').replace(/\n?```$/, '');
+  const { prompt_tokens: input_tokens = 0, completion_tokens: output_tokens = 0 } = datos?.usage ?? {};
+
+  return { resultado: JSON.parse(raw), usage: { input_tokens, output_tokens } };
+}
+
+async function extraerSalariosConIA(vacantes) {
+  const resultados = await Promise.all(
+    vacantes.map(async (v) => {
+      try {
+        return await extraerSalarioDeVacante(v);
+      } catch (err) {
+        console.error('[extraccion_salario_ia] error:', err?.message ?? err);
+        return null;
+      }
+    })
+  );
+
+  const peticiones          = resultados.filter(Boolean).length;
+  const tokens_input        = resultados.reduce((s, r) => s + (r?.usage?.input_tokens                  ?? 0), 0);
+  const tokens_output       = resultados.reduce((s, r) => s + (r?.usage?.output_tokens                 ?? 0), 0);
+  const cache_creados       = resultados.reduce((s, r) => s + (r?.usage?.cache_creation_input_tokens   ?? 0), 0);
+  const cache_leidos        = resultados.reduce((s, r) => s + (r?.usage?.cache_read_input_tokens       ?? 0), 0);
+
+  const recuperadas   = [];
+  const noRecuperadas = [];
+  let   n_recuperadas = 0;
+
+  for (let i = 0; i < vacantes.length; i++) {
+    const r = resultados[i];
+    const v = vacantes[i];
+
+    if (r?.resultado?.salario_encontrado && r.resultado.valor_min) {
+      const { valor_min, valor_max, frecuencia } = r.resultado;
+      const promedio       = valor_max ? (valor_min + valor_max) / 2 : valor_min;
+      const valor_mensual  = redondear(frecuencia === 'semanal' ? promedio * SEMANAS_POR_MES : promedio);
+      const salario_valido = valor_mensual >= SALARIO_MINIMO_MENSUAL;
+
+      if (salario_valido) n_recuperadas++;
+
+      recuperadas.push({
+        ...v,
+        salario_mensual:     valor_mensual,
+        frecuencia_original: frecuencia,
+        valor_original:      valor_max ? `${valor_min} - ${valor_max}` : valor_min,
+        estructura_salario:  valor_max ? 'rango' : 'fijo',
+        salario_valido,
+      });
+    } else {
+      noRecuperadas.push(v);
+    }
+  }
+
+  return {
+    recuperadas,
+    noRecuperadas,
+    metricas: { peticiones, tokens_input, tokens_output, cache_creados, cache_leidos, n_recuperadas },
+  };
 }
 
 // ── Handler Glassdoor ──────────────────────────────────────────────────────

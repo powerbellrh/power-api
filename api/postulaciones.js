@@ -23,7 +23,7 @@ import {
   extraerEstadoEvaluacion,
   estadoEvaluacionACalificacion,
   obtenerCalificacionEstadoEvaluacion,
-} from '../lib/utilidades_postulacion.js';
+} from '../lib/evaluacion_postulacion.js';
 import { ttObtener, ttActualizar, ttCrear, mcCrear, mcObtener } from '../lib/clientes_api.js';
 import { orChatCompletion } from '../lib/openrouter.js';
 
