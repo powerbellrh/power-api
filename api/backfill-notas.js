@@ -13,7 +13,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Método no permitido, usa POST' });
 
   const claveApi = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
-  if (claveApi !== process.env.POWERBELL_API_KEY)
+  if (claveApi !== process.env.BACKFILL_SECRET)
     return res.status(401).json({ error: 'Unauthorized' });
 
   const { accion, ids } = req.body ?? {};
