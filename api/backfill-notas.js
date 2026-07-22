@@ -76,7 +76,7 @@ export default async function handler(req, res) {
         console.log(JSON.stringify({ etapa: 'backfill_nota', estado: 'error', postulacion_id: postulacionId, mensaje: e.message }));
       }
 
-      await dormir(400);
+      await dormir(1000);
     }
 
     return res.status(200).json({ total: filas.length, exitosas: exitosas.length, fallidas });
