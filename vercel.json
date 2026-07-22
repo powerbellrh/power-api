@@ -39,9 +39,6 @@
     },
     "api/preguntas.js": {
       "maxDuration": 30
-    },
-    "api/backfill-notas.js": {
-      "maxDuration": 300
     }
   },
   "crons": [
