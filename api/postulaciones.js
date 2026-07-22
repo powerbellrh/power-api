@@ -374,9 +374,9 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
             ...(calificacionNotaEvaluacion != null && { rating: calificacionNotaEvaluacion }),
           },
           relationships: {
-            candidate:         { data: { id: candidateId,             type: 'candidates'       } },
-            user:              { data: { id: TEAMTAILOR_BOT_USER_ID,  type: 'users'            } },
-            'job-application': { data: { id: postulacionId.toString(), type: 'job-applications' } },
+            candidate:        { data: { id: candidateId,             type: 'candidates'       } },
+            user:             { data: { id: TEAMTAILOR_BOT_USER_ID,  type: 'users'            } },
+            job_application:  { data: { id: postulacionId.toString(), type: 'job-applications' } },
           },
         },
       }, true);
@@ -410,9 +410,9 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
             type: 'notes',
             attributes: { note: notaWa },
             relationships: {
-              candidate:         { data: { id: candidateId,             type: 'candidates'       } },
-              user:              { data: { id: TEAMTAILOR_BOT_USER_ID,  type: 'users'            } },
-              'job-application': { data: { id: postulacionId.toString(), type: 'job-applications' } },
+              candidate:        { data: { id: candidateId,             type: 'candidates'       } },
+              user:             { data: { id: TEAMTAILOR_BOT_USER_ID,  type: 'users'            } },
+              job_application:  { data: { id: postulacionId.toString(), type: 'job-applications' } },
             },
           },
         }, true);
@@ -445,9 +445,9 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
             type: 'notes',
             attributes: { note: `❌ Error en evaluación automática [${etapaActual}]: ${error.message}` },
             relationships: {
-              candidate:         { data: { id: candidateId,                type: 'candidates'       } },
-              user:              { data: { id: TEAMTAILOR_BOT_USER_ID,     type: 'users'            } },
-              'job-application': { data: { id: postulacionId.toString(),   type: 'job-applications' } },
+              candidate:        { data: { id: candidateId,                type: 'candidates'       } },
+              user:             { data: { id: TEAMTAILOR_BOT_USER_ID,     type: 'users'            } },
+              job_application:  { data: { id: postulacionId.toString(),   type: 'job-applications' } },
             },
           },
         }, true);
