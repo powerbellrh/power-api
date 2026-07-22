@@ -42,15 +42,21 @@ const AI_CONFIG = {
   OP: { model: OPENROUTER_MODEL_OP, max_tokens: 20000, reasoningEffort: 'high' },
 };
 
-const TEAMTAILOR_BOT_USER_ID = +process.env.AD_TEAMTAILOR_BOT_USER_ID;
+const TEAMTAILOR_BOT_USER_ID              = +process.env.AD_TEAMTAILOR_BOT_USER_ID;
+const TEAMTAILOR_BOT_USER_ID_REEVALUACION = 27789;
 const CUSTOM_FIELD_ID        =  process.env.AD_TEAMTAILOR_CUSTOM_FIELD_ID;
 const MANYCHAT_FLOW_NS       =  process.env.AD_MANYCHAT_FLOW_NS;
+
+const REEVALUACION_PREAMBLE = `NOTA IMPORTANTE: Esta es una REEVALUACIÓN. Ya evaluaste a este candidato anteriormente y le enviaste preguntas personalizadas por WhatsApp; el candidato ya respondió. A continuación se te presentan de nuevo el CV, sus respuestas originales del formulario, y ahora también sus respuestas a las preguntas personalizadas que se le enviaron. Vuelve a evaluar al candidato desde cero, considerando toda esta información combinada. No es necesario volver a generar preguntas nuevas para el candidato, pero de igual forma cierra tu respuesta con el apartado #PREGUNTAS# como se indica abajo (no se usarán, pero el formato de salida debe respetarse).
+
+`;
 
 const MANYCHAT_PHONE_FIELD_ID = +process.env.MANYCHAT_FIELD_PHONE_ID;
 
 const MANYCHAT_FIELDS = {
-  job_title:    +process.env.AD_MANYCHAT_FIELD_JOB_TITLE,
-  candidate_id: +process.env.AD_MANYCHAT_FIELD_CANDIDATE_ID,
+  job_title:      +process.env.AD_MANYCHAT_FIELD_JOB_TITLE,
+  candidate_id:   +process.env.AD_MANYCHAT_FIELD_CANDIDATE_ID,
+  application_id: 14533357,
   question_1:   +process.env.MANYCHAT_FIELD_PREGUNTA_1,
   question_2:   +process.env.MANYCHAT_FIELD_PREGUNTA_2,
   question_3:   +process.env.MANYCHAT_FIELD_PREGUNTA_3,
@@ -123,7 +129,7 @@ async function llamarOpenRouter(peticion) {
   return { resultadoEvaluacion, contenidoPensamiento, tokensEntrada, tokensSalida, tokensCreacionCache: 0, tokensLecturaCache: 0 };
 }
 
-async function enviarWhatsApp({ candidatoNombrePila, candidatoTelefono, candidatoId, tituloVacante, preguntas, vacanteTipo }) {
+async function enviarWhatsApp({ candidatoNombrePila, candidatoTelefono, candidatoId, postulacionId, tituloVacante, preguntas, vacanteTipo }) {
   const telefonoLimpio = limpiarTelefono(candidatoTelefono);
   if (!telefonoLimpio) {
     console.log(JSON.stringify({ etapa: 'whatsapp_integracion', estado: 'saltado', razon: 'sin_telefono' }));
@@ -178,8 +184,9 @@ async function enviarWhatsApp({ candidatoNombrePila, candidatoTelefono, candidat
       await mcCrear('/fb/subscriber/setCustomFields', {
         subscriber_id: idUsuarioMc,
         fields: [
-          { field_id: MANYCHAT_FIELDS.job_title,    field_value: tituloVacante || '' },
-          { field_id: MANYCHAT_FIELDS.candidate_id, field_value: candidatoId.toString() },
+          { field_id: MANYCHAT_FIELDS.job_title,      field_value: tituloVacante || '' },
+          { field_id: MANYCHAT_FIELDS.candidate_id,   field_value: candidatoId.toString() },
+          { field_id: MANYCHAT_FIELDS.application_id, field_value: Number(postulacionId) },
           ...camposPreguntas,
         ],
       });
@@ -194,6 +201,136 @@ async function enviarWhatsApp({ candidatoNombrePila, candidatoTelefono, candidat
   } catch (e) {
     console.log(JSON.stringify({ etapa: 'whatsapp_integracion', estado: 'error', candidato: candidatoNombrePila, candidato_id: candidatoId, mensaje: e.message }));
     return { enviado: false, error: e.message };
+  }
+}
+
+function construirBloqueRespuestasPersonalizadas(respuestas) {
+  if (!respuestas || Object.keys(respuestas).length === 0) return '';
+  let bloque = '**Respuestas a las preguntas personalizadas enviadas por WhatsApp:**\n\n';
+  for (const [pregunta, respuesta] of Object.entries(respuestas)) {
+    bloque += `**${pregunta}**\n${respuesta}\n\n`;
+  }
+  return bloque.trim();
+}
+
+// ============================================================================
+// PROCESAMIENTO EN BACKGROUND — REEVALUACIÓN
+// ============================================================================
+async function procesarReevaluacion(postulacionId, postulacion, supabase) {
+  const {
+    vacante_nombre: tituloVacante,
+    vacante_descripcion: descripcionVacante,
+    vacante_ubicacion: ubicacionVacante,
+    vacante_contexto: contextoVacante,
+    vacante_sueldo: sueldoVacante,
+    candidato_nombre: candidatoNombre,
+    candidato_respuestas: respuestasOriginales,
+    respuestas_preguntas_personalizadas: respuestasPersonalizadas,
+  } = postulacion;
+
+  let etapaActual = 'init';
+  let candidateId = null;
+
+  try {
+    etapaActual = 'datos_candidato';
+    const candidatoCrudo = await ttObtener(`/job-applications/${postulacionId}/candidate`, true);
+    const datosCandidato = candidatoCrudo.data;
+    candidateId          = datosCandidato.id;
+    const urlCurriculum  = datosCandidato.attributes.resume;
+
+    const textoSalarioVacante = sueldoVacante?.sueldo_min
+      ? formatearSalario(sueldoVacante.sueldo_min, sueldoVacante.sueldo_max, sueldoVacante.moneda)
+      : null;
+
+    const bloqueVacante = construirBloqueInfoVacante(tituloVacante, limpiarHtml(descripcionVacante || ''), ubicacionVacante, contextoVacante, textoSalarioVacante);
+    let bloqueCandidato = construirBloqueInfoCandidato(candidatoNombre, respuestasOriginales);
+    const bloqueRespuestasPersonalizadas = construirBloqueRespuestasPersonalizadas(respuestasPersonalizadas);
+    if (bloqueRespuestasPersonalizadas) bloqueCandidato += `\n\n${bloqueRespuestasPersonalizadas}`;
+
+    const fechaActual = new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Mexico_City' });
+    const promptSistemaConFecha = REEVALUACION_PREAMBLE + PROMPTS.AD.replace('{{fecha_actual}}', fechaActual);
+
+    const peticionModelo = construirPeticionOpenRouter(AI_CONFIG.AD, promptSistemaConFecha, bloqueVacante, bloqueCandidato, urlCurriculum, null);
+
+    etapaActual = 'modelo_ia';
+    const { resultadoEvaluacion, contenidoPensamiento, tokensEntrada, tokensSalida } = await llamarOpenRouter(peticionModelo);
+    console.log(JSON.stringify({ etapa: 'reevaluacion_modelo_ia', caracteres: resultadoEvaluacion.length, tokens_input: tokensEntrada, tokens_output: tokensSalida }));
+
+    etapaActual = 'extraccion_resultados';
+    const calificacionGlobal = extraerCalificacion(resultadoEvaluacion);
+    if (calificacionGlobal === null) {
+      console.log(JSON.stringify({ etapa: 'reevaluacion_extraccion_score', estado: 'null', candidato: candidatoNombre }));
+    }
+
+    etapaActual = 'guardar_reevaluacion';
+    const { error: errorGuardado } = await supabase.from('postulaciones').update({
+      evaluacion_pensamiento:  contenidoPensamiento,
+      evaluacion_calificacion: calificacionGlobal,
+      evaluacion_resultado:    resultadoEvaluacion,
+      evaluacion_modelo:       AI_CONFIG.AD.model,
+      reevaluacion_completada: true,
+      tokens_input:            tokensEntrada,
+      tokens_output:           tokensSalida,
+    }).eq('postulacion_id', postulacionId);
+    if (errorGuardado) throw errorGuardado;
+
+    etapaActual = 'actualizar_foto';
+    if (calificacionGlobal !== null) {
+      try {
+        await ttActualizar(`/candidates/${candidateId}`, {
+          data: { id: candidateId.toString(), type: 'candidates', attributes: { picture: obtenerUrlImagenPuntuacion(calificacionGlobal) } },
+        }, true);
+      } catch (e) {
+        console.log(JSON.stringify({ etapa: 'reevaluacion_actualizar_foto', estado: 'error', mensaje: e.message }));
+      }
+    }
+
+    etapaActual = 'crear_nota_tt';
+    const calificacionNotaEvaluacion = obtenerCalificacionEstrellas(calificacionGlobal);
+    try {
+      await ttCrear('/notes', {
+        data: {
+          type: 'notes',
+          attributes: {
+            note: resultadoEvaluacion,
+            ...(calificacionNotaEvaluacion != null && { rating: calificacionNotaEvaluacion }),
+          },
+          relationships: {
+            candidate:       { data: { id: candidateId,              type: 'candidates'       } },
+            user:            { data: { id: TEAMTAILOR_BOT_USER_ID_REEVALUACION, type: 'users' } },
+            job_application: { data: { id: postulacionId.toString(), type: 'job-applications' } },
+          },
+        },
+      }, true);
+      console.log(JSON.stringify({ etapa: 'reevaluacion_completada', estado: 'ok', candidato: candidatoNombre, calificacion: calificacionGlobal }));
+    } catch (e) {
+      console.log(JSON.stringify({ etapa: 'reevaluacion_crear_nota', estado: 'error', mensaje: e.message }));
+    }
+
+  } catch (error) {
+    console.log(JSON.stringify({ etapa: 'reevaluacion_error', etapa_fallida: etapaActual, postulacion_id: postulacionId, mensaje: error.message }));
+    try {
+      await supabase.from('postulaciones').update({
+        reevaluacion_agendada:   false,
+        reevaluacion_completada: false,
+        evaluacion_error:        `[reevaluacion:${etapaActual}] ${error.message}`,
+      }).eq('postulacion_id', postulacionId);
+    } catch (_) {}
+    if (candidateId) {
+      try {
+        await ttCrear('/notes', {
+          data: {
+            type: 'notes',
+            attributes: { note: `❌ Error en reevaluación automática [${etapaActual}]: ${error.message}` },
+            relationships: {
+              candidate:       { data: { id: candidateId,              type: 'candidates'       } },
+              user:            { data: { id: TEAMTAILOR_BOT_USER_ID_REEVALUACION, type: 'users' } },
+              job_application: { data: { id: postulacionId.toString(), type: 'job-applications' } },
+            },
+          },
+        }, true);
+      } catch (_) {}
+    }
   }
 }
 
@@ -391,7 +528,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     let whatsappError   = null;
 
     if (preguntasExtraidasExitosamente) {
-      const resultado = await enviarWhatsApp({ candidatoNombrePila: candidatoNombrePila, candidatoTelefono: candidatoTelefonoTt, candidatoId: candidateId, tituloVacante, preguntas: preguntasExtraidas, vacanteTipo });
+      const resultado = await enviarWhatsApp({ candidatoNombrePila: candidatoNombrePila, candidatoTelefono: candidatoTelefonoTt, candidatoId: candidateId, postulacionId, tituloVacante, preguntas: preguntasExtraidas, vacanteTipo });
       whatsappEnviado = resultado.enviado;
       whatsappError   = resultado.error;
     } else if (!preguntasExtraidasExitosamente) {
@@ -459,22 +596,44 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
 // ============================================================================
 // HANDLER PRINCIPAL
 // ============================================================================
-export default async function handler(req, res) {
-  if (req.method !== 'POST')
-    return res.status(405).json({ error: 'Método no permitido, usa POST' });
 
-  const claveApi = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
-  if (process.env.POWERBELL_API_KEY && claveApi !== process.env.POWERBELL_API_KEY)
-    return res.status(401).json({ error: 'Unauthorized' });
+// Disparo de cola: procesa la reevaluación pendiente respetando el rate limit de TeamTailor.
+// reevaluacion_solicitada y respuestas_preguntas_personalizadas los escribe ManyChat/TeamTailor
+// directamente en Supabase — este endpoint nunca los recibe por HTTP, solo los lee.
+async function manejarProcesamientoReevaluacion(req, res, supabase) {
+  const { reevaluacion: postulacionId } = req.body ?? {};
+  if (!postulacionId) {
+    console.log(JSON.stringify({ etapa: 'reevaluacion_validacion', estado: 'error', mensaje: 'missing reevaluacion field' }));
+    return res.status(400).json({ error: 'Missing reevaluacion field' });
+  }
 
+  const { data: postulacion, error: errorConsulta } = await supabase
+    .from('postulaciones').select('*').eq('postulacion_id', postulacionId).single();
+
+  if (errorConsulta || !postulacion) {
+    console.log(JSON.stringify({ etapa: 'reevaluacion_consulta', estado: 'error', mensaje: 'not found', postulacion_id: postulacionId }));
+    return res.status(404).json({ error: 'Postulacion not found', detail: errorConsulta?.message });
+  }
+
+  const debeProcesar = postulacion.reevaluacion_solicitada && !postulacion.reevaluacion_agendada && !postulacion.reevaluacion_completada;
+  if (!debeProcesar) {
+    console.log(JSON.stringify({ etapa: 'reevaluacion_saltada', postulacion_id: postulacionId, solicitada: postulacion.reevaluacion_solicitada, ya_agendada: postulacion.reevaluacion_agendada, ya_completada: postulacion.reevaluacion_completada }));
+    return res.status(200).json({ status: 'skipped', postulacion_id: postulacionId });
+  }
+
+  await supabase.from('postulaciones').update({ reevaluacion_agendada: true }).eq('postulacion_id', postulacionId);
+  waitUntil(procesarReevaluacion(postulacionId, postulacion, supabase));
+
+  return res.status(202).json({ status: 'processing', postulacion_id: postulacionId });
+}
+
+async function manejarEvaluacion(req, res, supabase) {
   const { postulacion: postulacionId } = req.body ?? {};
   if (!postulacionId) {
     console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing postulacion field' }));
     return res.status(400).json({ error: 'Missing postulacion field' });
   }
   console.log(JSON.stringify({ etapa: 'inicio', postulacion_id: postulacionId }));
-
-  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
   // PASO 1: Obtener registro de postulación
   const { data: postulacion, error: errorConsulta } = await supabase
@@ -494,6 +653,20 @@ export default async function handler(req, res) {
   await supabase.from('postulaciones').update({ evaluacion_agendada: true }).eq('postulacion_id', postulacionId);
   waitUntil(procesarEvaluacion(postulacionId, postulacion, supabase));
 
-  const respuesta = { status: 202, body: { status: 'processing', postulacion_id: postulacionId } };
-  return res.status(respuesta.status).json(respuesta.body);
+  return res.status(202).json({ status: 'processing', postulacion_id: postulacionId });
+}
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST')
+    return res.status(405).json({ error: 'Método no permitido, usa POST' });
+
+  const claveApi = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
+  if (process.env.POWERBELL_API_KEY && claveApi !== process.env.POWERBELL_API_KEY)
+    return res.status(401).json({ error: 'Unauthorized' });
+
+  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const cuerpo   = req.body ?? {};
+
+  if ('reevaluacion' in cuerpo) return manejarProcesamientoReevaluacion(req, res, supabase);
+  return manejarEvaluacion(req, res, supabase);
 }

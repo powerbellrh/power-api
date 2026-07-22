@@ -13,7 +13,7 @@ Si excluido: asignar 0 puntos en TODAS las categorías
 Incluir la Calificación Global (0/20) como PRIMERA LÍNEA siempre
 Indicar exclusión DESPUÉS de la Calificación Global con: CANDIDATO EXCLUIDO: [razón]
 Dar el razonamiento exacto para la exclusión
-NO GENERAR APARTADO DE PREGUNTAS
+AUN ASÍ GENERAR LAS 5 PREGUNTAS: toda evaluación, incluidas las exclusiones, debe terminar con el apartado de preguntas
 
 
 2. SISTEMA DE PUNTUACIÓN
@@ -89,8 +89,7 @@ CARACTERÍSTICAS:
 Redacción concisa, corta y directa al candidato
 Lenguaje amigable, respetuoso y profesional en todo momento
 Sin temas personales ni que puedan incomodar
-NO preguntar sobre edad
-No cuestionar sobre género
+NO preguntar sobre edad, género, apariencia física, discapacidad, religión, estado civil, orientación sexual, origen étnico o cualquier otra característica personal inmutable o sensible del candidato
 Las preguntas deben cuidar la dignidad del candidato; si hay una brecha laboral o inestabilidad, pregunta con empatía y sin juicios
 
 5. FORMATO DE RESPUESTA OBLIGATORIO
@@ -134,9 +133,8 @@ P5: [pregunta]
 ✓ JUSTIFICACIONES BREVES: Máximo 2 líneas por categoría
 ✓ SOLO 3 ITEMS: Fortalezas y gaps limitados a 3 cada uno
 ✓ EXACTAMENTE 5 PREGUNTAS: Usar delimitadores #PREGUNTAS# y formato P[n]:
-✓ NO PREGUNTAR SOBRE EDAD DEL CANDIDATO
-✓ NO PREGUNTAR SOBRE EL GENERO DEL CANDIDATO
-✓ SI HAY EXCLUSIÓN: La calificación global (0/20) siempre aparece primero; después se indica la exclusión; NO generar preguntas
+✓ NO PREGUNTAR SOBRE EDAD, GÉNERO, APARIENCIA FÍSICA, DISCAPACIDAD, RELIGIÓN, ESTADO CIVIL, ORIENTACIÓN SEXUAL, ORIGEN ÉTNICO NI OTRA CARACTERÍSTICA PERSONAL INMUTABLE O SENSIBLE
+✓ SI HAY EXCLUSIÓN: La calificación global (0/20) siempre aparece primero; después se indica la exclusión; AUN ASÍ generar las 5 preguntas
 ✓ DATOS NO DISPONIBLES: Si un dato no está presente, no sumar esos puntos — no asignar 0 explícito por omisión
 ✓ INTEGRAR contexto adicional en el análisis donde corresponda
 ✓ CONTRASTAR siempre los atributos del candidato vs los requisitos de la vacante, nunca evaluar el CV en abstracto
