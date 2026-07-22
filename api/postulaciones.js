@@ -34,12 +34,14 @@ const PROMPTS = {
   OP: readFileSync(join(__dirname, '../prompts/evaluacion_operativa.txt'),      'utf-8'),
 };
 
-const OPENROUTER_MODEL_AD = 'z-ai/glm-5.2';
-const OPENROUTER_MODEL_OP = 'z-ai/glm-5.2';
+const OPENROUTER_MODEL_AD        = 'z-ai/glm-5.2';
+const OPENROUTER_MODEL_OP        = 'z-ai/glm-5.2';
+const OPENROUTER_MODEL_OP_VISION = 'xiaomi/mimo-v2.5'; // GLM no tiene ruta en OpenRouter que acepte imágenes
 
 const AI_CONFIG = {
-  AD: { model: OPENROUTER_MODEL_AD, max_tokens: 20000, reasoningEffort: 'high' },
-  OP: { model: OPENROUTER_MODEL_OP, max_tokens: 20000, reasoningEffort: 'high' },
+  AD:        { model: OPENROUTER_MODEL_AD,        max_tokens: 20000, reasoningEffort: 'high' },
+  OP:        { model: OPENROUTER_MODEL_OP,        max_tokens: 20000, reasoningEffort: 'high' },
+  OP_VISION: { model: OPENROUTER_MODEL_OP_VISION, max_tokens: 20000, reasoningEffort: 'high' },
 };
 
 const TEAMTAILOR_BOT_USER_ID              = +process.env.AD_TEAMTAILOR_BOT_USER_ID;
@@ -414,11 +416,14 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
 
     const esAdministrativa = vacanteTipo === 'AD' || !vacanteTipo;
 
+    // GLM no soporta imágenes en OpenRouter: si el OP depende de la imagen de su historial, usar un modelo con visión
+    const tipoConfigModelo = urlImagenDeRespuestas ? AI_CONFIG.OP_VISION : tipoConfig;
+
     const bloqueVacante   = construirBloqueInfoVacante(tituloVacante, descripcionVacanteLimpia, ubicacionVacante, contextoCampoPersonalizado, textoSalarioVacante);
     const bloqueCandidato = construirBloqueInfoCandidato(candidatoNombre, candidatoRespuestas);
 
     const peticionModelo = construirPeticionOpenRouter(
-      tipoConfig, promptSistemaConFecha, bloqueVacante, bloqueCandidato, urlCurriculum, urlImagenDeRespuestas,
+      tipoConfigModelo, promptSistemaConFecha, bloqueVacante, bloqueCandidato, urlCurriculum, urlImagenDeRespuestas,
     );
 
     // PASO 9: Registrar solicitud en Supabase
@@ -426,15 +431,15 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     await supabase.from('postulaciones').update({
       evaluacion_peticion: JSON.stringify(peticionModelo),
       evaluacion_prompt:   promptSistemaConFecha,
-      evaluacion_modelo:   tipoConfig.model,
+      evaluacion_modelo:   tipoConfigModelo.model,
     }).eq('postulacion_id', postulacionId);
 
-    // PASO 10: Llamar al modelo (OpenRouter: GLM para AD, MiMo para OP)
+    // PASO 10: Llamar al modelo (OpenRouter: GLM para AD, GLM u OP_VISION para OP según si hay imagen)
     etapaActual = 'modelo_ia';
     const { resultadoEvaluacion, contenidoPensamiento, tokensEntrada, tokensSalida, tokensCreacionCache, tokensLecturaCache } =
       await llamarOpenRouter(peticionModelo);
 
-    console.log(JSON.stringify({ etapa: 'modelo_ia', modelo: tipoConfig.model, caracteres: resultadoEvaluacion.length, tokens_input: tokensEntrada, tokens_output: tokensSalida, cache_read: tokensLecturaCache, cache_creation: tokensCreacionCache }));
+    console.log(JSON.stringify({ etapa: 'modelo_ia', modelo: tipoConfigModelo.model, caracteres: resultadoEvaluacion.length, tokens_input: tokensEntrada, tokens_output: tokensSalida, cache_read: tokensLecturaCache, cache_creation: tokensCreacionCache }));
 
     // PASO 11: Extraer calificación y preguntas
     etapaActual       = 'extraccion_resultados';
