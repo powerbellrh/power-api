@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const TAMANO_LOTE   = 5;
 const RETRASO_MS      = 5000;
-const URL_POSTULACIONES = process.env.POSTULACIONES_URL ?? 'https://power-api-nine.vercel.app/postulaciones';
+const URL_POSTULACIONES = process.env.POSTULACIONES_URL ?? 'http://power-api-alpha.vercel.app/postulaciones';
 
 const dormir = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
