@@ -49,7 +49,7 @@ const TEAMTAILOR_BOT_USER_ID_REEVALUACION = 27789;
 const CUSTOM_FIELD_ID        =  process.env.AD_TEAMTAILOR_CUSTOM_FIELD_ID;
 const MANYCHAT_FLOW_NS       =  process.env.AD_MANYCHAT_FLOW_NS;
 
-const REEVALUACION_PREAMBLE = `NOTA IMPORTANTE: Esta es una REEVALUACIÓN. Ya evaluaste a este candidato anteriormente y le enviaste preguntas personalizadas por WhatsApp; el candidato ya respondió. A continuación se te presentan de nuevo el CV, sus respuestas originales del formulario, y ahora también sus respuestas a las preguntas personalizadas que se le enviaron. Vuelve a evaluar al candidato desde cero, considerando toda esta información combinada. No es necesario volver a generar preguntas nuevas para el candidato, pero de igual forma cierra tu respuesta con el apartado #PREGUNTAS# como se indica abajo (no se usarán, pero el formato de salida debe respetarse).
+const REEVALUACION_PREAMBLE = `NOTA IMPORTANTE: Esta es una REEVALUACIÓN. Ya evaluaste a este candidato anteriormente y le enviaste preguntas personalizadas por WhatsApp; el candidato ya respondió. A continuación se te presentan de nuevo el CV, sus respuestas originales del formulario, y ahora también sus respuestas a las preguntas personalizadas que se le enviaron. Vuelve a evaluar al candidato desde cero, considerando toda esta información combinada. IMPORTANTE: ignora por completo la sección "4. ESTRUCTURA DE PREGUNTAS" y el apartado #PREGUNTAS# del formato de respuesta descritos abajo — en una reevaluación NO se generan preguntas nuevas, así que tu respuesta debe terminar en el apartado de Estabilidad, sin incluir #PREGUNTAS# ni ningún listado de preguntas.
 
 `;
 
