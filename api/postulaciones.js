@@ -36,7 +36,7 @@ const PROMPTS = {
 
 const OPENROUTER_MODEL_AD        = 'z-ai/glm-5.2';
 const OPENROUTER_MODEL_OP        = 'z-ai/glm-5.2';
-const OPENROUTER_MODEL_OP_VISION = 'xiaomi/mimo-v2.5'; // GLM no tiene ruta en OpenRouter que acepte imágenes
+const OPENROUTER_MODEL_OP_VISION = 'anthropic/claude-haiku-4.5'; // GLM no tiene ruta en OpenRouter que acepte imágenes
 
 const AI_CONFIG = {
   AD:        { model: OPENROUTER_MODEL_AD,        max_tokens: 20000, reasoningEffort: 'high' },
