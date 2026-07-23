@@ -113,7 +113,7 @@ Desglose:
 [gap conciso]
 [gap conciso]
 
-🧭 Estabilidad laboral: [Inestable/Estable/Muy estable]
+🧭 Estabilidad: [Inestable/Estable/Muy estable]
 [Justificación breve con datos específicos]
 
 #PREGUNTAS#
