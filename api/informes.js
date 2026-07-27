@@ -37,6 +37,8 @@ const INFORME_TOOL = {
     parameters: {
       type: 'object',
       properties: {
+        nombre: { type: 'string', description: 'Nombre completo del candidato, en MAYÚSCULAS, con ortografía y capitalización corregidas si vienen mal escritas. No inventes ni cambies el nombre, solo corrige errores evidentes de captura.' },
+        vacante: { type: 'string', description: 'Nombre de la vacante, en MAYÚSCULAS, con ortografía corregida. Elimina cualquier sufijo o marca interna de republicación o control (ej. "V2", "V3", "REPUBLICACION", "RE-PUBLICACION", códigos de ubicación u otras etiquetas internas), dejando solo el nombre real del puesto.' },
         datos_personales: {
           type: 'object',
           properties: {
@@ -93,7 +95,7 @@ const INFORME_TOOL = {
         },
         comentarios: { type: 'string', description: 'Un solo párrafo, máximo 70 palabras. La última frase siempre debe ser una recomendación explícita de avance en el proceso — este informe solo se genera para candidatos que ya se decidió avanzar.' },
       },
-      required: ['datos_personales', 'trayectoria', 'apego_vacante', 'competencias', 'comentarios'],
+      required: ['nombre', 'vacante', 'datos_personales', 'trayectoria', 'apego_vacante', 'competencias', 'comentarios'],
     },
   },
 };
@@ -171,12 +173,19 @@ function construirBloqueRespuestasCrudas(respuestasPorId) {
   return lineas.length ? lineas.join('\n\n') : '(Sin respuestas disponibles)';
 }
 
-async function obtenerAnalisisEstructurado(respuestasPorId, nombreCandidato, vacante, comentarios) {
+async function obtenerAnalisisEstructurado(respuestasPorId, nombreCandidato, vacante, comentarios, respuestaAnterior) {
   const bloqueCrudo   = construirBloqueRespuestasCrudas(respuestasPorId);
   let mensajeUsuario = `Candidato: ${nombreCandidato}\nVacante: ${vacante}\n\n${bloqueCrudo}`;
 
   if (comentarios) {
-    mensajeUsuario += `\n\n### COMENTARIOS_DE_CORRECCION_DEL_RECLUTADOR\nEste informe ya fue generado previamente y el reclutador solicitó una corrección. Toma muy en cuenta las siguientes indicaciones al generar el nuevo informe, dándoles prioridad sobre el criterio general:\n${comentarios}`;
+    mensajeUsuario += `\n\n### COMENTARIOS_DE_CORRECCION_DEL_RECLUTADOR\nEste informe ya fue generado previamente y el reclutador solicitó una corrección. A continuación tienes el informe anterior (JSON) y los comentarios del reclutador sobre él. Compáralos: corrige ÚNICAMENTE lo que los comentarios indican, exactamente como se indica, y conserva sin cambios todo lo demás del informe anterior.`;
+
+    if (respuestaAnterior) {
+      const informeAnteriorTexto = typeof respuestaAnterior === 'string' ? respuestaAnterior : JSON.stringify(respuestaAnterior);
+      mensajeUsuario += `\n\nInforme anterior:\n${informeAnteriorTexto}`;
+    }
+
+    mensajeUsuario += `\n\nComentarios del reclutador:\n${comentarios}`;
   }
 
   const datos = await orChatCompletion({
@@ -201,6 +210,8 @@ function mapearCamposSimples(analisis, extra) {
   const personales = analisis.datos_personales ?? {};
 
   return {
+    NOMBRE:         limpiarValor(analisis.nombre),
+    VACANTE:        limpiarValor(analisis.vacante),
     ESTADOCIVIL:    limpiarValor(personales.estado_civil),
     EDUCACION:      limpiarValor(personales.educacion),
     DOMICILIO:      limpiarValor(personales.domicilio),
@@ -222,7 +233,7 @@ export default async function handler(req, res) {
   if (process.env.POWERBELL_API_KEY && claveApi !== process.env.POWERBELL_API_KEY)
     return res.status(401).json({ error: 'Unauthorized' });
 
-  const { postulacion: postulacionId, vacante: vacanteId, comentarios } = req.body ?? {};
+  const { postulacion: postulacionId, vacante: vacanteId, comentarios, respuesta_anterior: respuestaAnterior } = req.body ?? {};
   if (!postulacionId || !vacanteId) {
     console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing postulacion or vacante' }));
     return res.status(400).json({ error: "Los campos 'postulacion' y 'vacante' son requeridos" });
@@ -255,12 +266,10 @@ export default async function handler(req, res) {
     const respuestasPorId  = parsearRespuestas(respuestasCrudas);
 
     console.log(JSON.stringify({ etapa: 'analisis_ia', candidato: nombreCompleto, vacante: nombreInterno }));
-    const analisis = await obtenerAnalisisEstructurado(respuestasPorId, nombreCompleto, nombreInterno, comentarios);
+    const analisis = await obtenerAnalisisEstructurado(respuestasPorId, nombreCompleto, nombreInterno, comentarios, respuestaAnterior);
 
     const camposSimples = mapearCamposSimples(analisis, {
-      FOTO:    urlFoto,
-      NOMBRE:  nombreCompleto || '-',
-      VACANTE: nombreInterno.toUpperCase(),
+      FOTO: urlFoto,
     });
 
     console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', candidato: nombreCompleto, postulacion_id: postulacionId }));
