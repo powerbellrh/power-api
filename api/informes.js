@@ -11,7 +11,7 @@ const OPENROUTER_MODEL             = 'anthropic/claude-opus-5';
 
 // Mapeo de preguntas de TeamTailor -> etiqueta legible que se envía al modelo.
 const QUESTION_MAPPING = {
-  '74195':  'LUGAR_NACIMIENTO',
+  '74195':  'FECHA_LUGAR_NACIMIENTO',
   '70845':  'EDAD',
   '73101':  'DOMICILIO',
   '74382':  'ESCOLARIDAD',
@@ -152,10 +152,15 @@ function extraerNombreReclutador(datosVacante) {
 }
 
 function obtenerTextoEdad(respuestasPorId) {
-  const valores = respuestasPorId['70845'];
-  if (!valores) return '-';
-  const match = String(valores[0]).match(/\d+/);
-  return match ? `${match[0]} años` : String(valores[0]);
+  const valoresEdad = respuestasPorId['70845'];
+  const match = valoresEdad ? String(valoresEdad[0]).match(/\d+/) : null;
+  const edadTexto = match ? `${match[0]} años` : (valoresEdad ? String(valoresEdad[0]) : null);
+
+  const valoresNacimiento = respuestasPorId['74195'];
+  const nacimientoTexto = valoresNacimiento ? String(valoresNacimiento[0]).trim() : null;
+
+  if (edadTexto && nacimientoTexto) return `${edadTexto}, ${nacimientoTexto}`;
+  return edadTexto || nacimientoTexto || '-';
 }
 
 function limpiarValor(valor, fallback = '-') {
@@ -168,7 +173,7 @@ function construirBloqueRespuestasCrudas(respuestasPorId) {
   const lineas = [];
 
   for (const [preguntaId, etiqueta] of Object.entries(QUESTION_MAPPING)) {
-    if (etiqueta === 'EDAD') continue;
+    if (etiqueta === 'EDAD' || etiqueta === 'FECHA_LUGAR_NACIMIENTO') continue;
     const valores = respuestasPorId[preguntaId];
     if (!valores?.length) continue;
     const texto = valores.length > 1 ? valores.join('\n') : valores[0];
