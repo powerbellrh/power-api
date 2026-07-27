@@ -140,6 +140,17 @@ function extraerNombreInterno(datosVacante) {
   return attrs['internal-name'] || attrs.title || '-';
 }
 
+function extraerNombreReclutador(datosVacante) {
+  const usuarioId = datosVacante.data?.relationships?.user?.data?.id;
+  if (!usuarioId) return null;
+
+  const usuario = datosVacante.included?.find(item => item.type === 'users' && item.id === usuarioId);
+  if (!usuario) return null;
+
+  const attrs = usuario.attributes ?? {};
+  return attrs.name || `${attrs['first-name'] ?? ''} ${attrs['last-name'] ?? ''}`.trim() || null;
+}
+
 function obtenerTextoEdad(respuestasPorId) {
   const valores = respuestasPorId['70845'];
   if (!valores) return '-';
@@ -242,8 +253,9 @@ export default async function handler(req, res) {
       return res.status(422).json({ error: 'El candidato no tiene foto de perfil' });
     }
 
-    const datosVacante  = await ttObtener(`/jobs/${vacanteId}`, true);
-    const nombreInterno = extraerNombreInterno(datosVacante);
+    const datosVacante   = await ttObtener(`/jobs/${vacanteId}?include=user`, true);
+    const nombreInterno  = extraerNombreInterno(datosVacante);
+    const nombreReclutador = extraerNombreReclutador(datosVacante);
 
     const respuestasCrudas = await obtenerRespuestasCandidato(candidatoId);
     const respuestasPorId  = parsearRespuestas(respuestasCrudas);
@@ -266,6 +278,7 @@ export default async function handler(req, res) {
       apego_vacante: analisis.apego_vacante ?? [],
       competencias:  analisis.competencias ?? [],
       ...(urlCurriculum ? { curriculum: urlCurriculum } : {}),
+      ...(nombreReclutador ? { reclutador: nombreReclutador } : {}),
     });
 
   } catch (error) {
