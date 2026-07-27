@@ -7,7 +7,7 @@ import { orChatCompletion } from '../lib/openrouter.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const PROMPT_ANALISIS_ESTRUCTURADO = readFileSync(join(__dirname, '../prompts/analisis_estructurado.txt'), 'utf-8');
-const OPENROUTER_MODEL             = 'anthropic/claude-opus-4.8';
+const OPENROUTER_MODEL             = 'anthropic/claude-opus-5';
 
 // Mapeo de preguntas de TeamTailor -> etiqueta legible que se envía al modelo.
 const QUESTION_MAPPING = {
@@ -33,64 +33,66 @@ const INFORME_TOOL = {
   type: 'function',
   function: {
     name:        'informe_estructurado',
-    description: 'Entrega el análisis estructurado del candidato para el informe ejecutivo.',
+    description: 'Entrega el análisis estructurado del candidato para el informe ejecutivo de una sola página. Todos los textos deben ser de una sola línea, breves y ejecutivos.',
     parameters: {
       type: 'object',
       properties: {
         datos_personales: {
           type: 'object',
           properties: {
-            lugar_nacimiento: { type: 'string' },
-            estado_civil:     { type: 'string' },
-            educacion:        { type: 'string' },
-            domicilio:        { type: 'string' },
-            ultimo_sueldo:    { type: 'string' },
-            sueldo_deseado:   { type: 'string' },
+            estado_civil:   { type: 'string', description: 'Una sola línea, ej. "Casado(a)".' },
+            educacion:      { type: 'string', description: 'Una sola línea, ej. "Lic. en Administración".' },
+            domicilio:      { type: 'string', description: 'Una sola línea.' },
+            ultimo_sueldo:  { type: 'string', description: 'Una sola línea, ej. "$25,000 MXN mensuales".' },
+            sueldo_deseado: { type: 'string', description: 'Una sola línea.' },
           },
-          required: ['lugar_nacimiento', 'estado_civil', 'educacion', 'domicilio', 'ultimo_sueldo', 'sueldo_deseado'],
+          required: ['estado_civil', 'educacion', 'domicilio', 'ultimo_sueldo', 'sueldo_deseado'],
         },
         trayectoria: {
           type: 'array',
-          description: 'Empleos más recientes primero. Puede tener entre 0 y N elementos, solo los que tengan evidencia real.',
+          description: 'Máximo 2 empleos (idealmente 1: el más reciente y relevante), más reciente primero. Lista vacía si no hay información.',
+          maxItems: 2,
           items: {
             type: 'object',
             properties: {
-              compania: { type: 'string' },
-              periodo:  { type: 'string' },
-              puesto:   { type: 'string' },
-              sueldo:   { type: 'string' },
-              salida:   { type: 'string' },
+              compania: { type: 'string', description: 'Una sola línea.' },
+              periodo:  { type: 'string', description: 'Una sola línea.' },
+              puesto:   { type: 'string', description: 'Una sola línea.' },
+              sueldo:   { type: 'string', description: 'Una sola línea.' },
+              salida:   { type: 'string', description: 'Una sola línea.' },
             },
             required: ['compania', 'periodo', 'puesto', 'sueldo', 'salida'],
           },
         },
-        experiencia_relevante: {
+        apego_vacante: {
           type: 'array',
-          description: 'Áreas de experiencia relevantes detectadas. Puede tener entre 0 y N elementos, solo las que tengan evidencia real.',
+          description: 'Máximo 2 áreas a evaluar (idealmente 1), la evidencia más contundente de apego a la vacante.',
+          maxItems: 2,
           items: {
             type: 'object',
             properties: {
-              area:      { type: 'string' },
-              evidencia: { type: 'string' },
+              area:      { type: 'string', description: '2-5 palabras.' },
+              evidencia: { type: 'string', description: 'Una sola línea (máx. ~15 palabras), un hecho concreto.' },
             },
             required: ['area', 'evidencia'],
           },
         },
         competencias: {
           type: 'array',
-          description: 'Competencias detectadas. Puede tener entre 0 y N elementos, solo las que tengan evidencia real.',
+          description: 'Máximo 2 competencias (idealmente 1), las más relevantes para la vacante.',
+          maxItems: 2,
           items: {
             type: 'object',
             properties: {
-              competencia: { type: 'string' },
+              competencia: { type: 'string', description: 'Nombre corto de la competencia o logro.' },
               nivel:       { type: 'string', enum: ['Básico', 'Intermedio', 'Avanzado', 'Experto'] },
             },
             required: ['competencia', 'nivel'],
           },
         },
-        notas_recomendacion: { type: 'string' },
+        comentarios: { type: 'string', description: 'Un solo párrafo, máximo 60 palabras.' },
       },
-      required: ['datos_personales', 'trayectoria', 'experiencia_relevante', 'competencias', 'notas_recomendacion'],
+      required: ['datos_personales', 'trayectoria', 'apego_vacante', 'competencias', 'comentarios'],
     },
   },
 };
@@ -191,13 +193,12 @@ function mapearCamposSimples(analisis, extra) {
   const personales = analisis.datos_personales ?? {};
 
   return {
-    LUGARDENACIMIENTO: limpiarValor(personales.lugar_nacimiento),
-    'ESTADO CIVIL':    limpiarValor(personales.estado_civil),
-    EDUCACION:         limpiarValor(personales.educacion),
-    DOMICILIO:         limpiarValor(personales.domicilio),
-    ULTIMOSUELDO:      limpiarValor(personales.ultimo_sueldo),
-    SUELDODESEADO:     limpiarValor(personales.sueldo_deseado),
-    NOTAS:             limpiarValor(analisis.notas_recomendacion),
+    ESTADOCIVIL:    limpiarValor(personales.estado_civil),
+    EDUCACION:      limpiarValor(personales.educacion),
+    DOMICILIO:      limpiarValor(personales.domicilio),
+    ULTIMOSUELDO:   limpiarValor(personales.ultimo_sueldo),
+    SUELDODESEADO:  limpiarValor(personales.sueldo_deseado),
+    COMENTARIOS:    limpiarValor(analisis.comentarios),
     ...extra,
   };
 }
@@ -255,10 +256,10 @@ export default async function handler(req, res) {
     console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', candidato: nombreCompleto, postulacion_id: postulacionId }));
 
     return res.status(200).json({
-      simple:                 camposSimples,
-      trayectoria:            analisis.trayectoria ?? [],
-      experiencia_relevante:  analisis.experiencia_relevante ?? [],
-      competencias:           analisis.competencias ?? [],
+      simple:        camposSimples,
+      trayectoria:   analisis.trayectoria ?? [],
+      apego_vacante: analisis.apego_vacante ?? [],
+      competencias:  analisis.competencias ?? [],
     });
 
   } catch (error) {
