@@ -57,7 +57,7 @@ const INFORME_TOOL = {
             properties: {
               compania: { type: 'string', description: 'Una sola línea.' },
               periodo:  { type: 'string', description: 'Una sola línea.' },
-              puesto:   { type: 'string', description: 'Una sola línea.' },
+              puesto:   { type: 'string', description: 'SOLO el nombre del puesto tal cual, lo más corto posible. Nunca incluir área, empresa, giro del negocio ni descripciones adicionales (ej. "Gerente de Ventas", nunca "Gerente de Ventas de la división industrial").' },
               sueldo:   { type: 'string', description: 'Una sola línea.' },
               salida:   { type: 'string', description: 'Una sola línea.' },
             },
@@ -66,21 +66,21 @@ const INFORME_TOOL = {
         },
         apego_vacante: {
           type: 'array',
-          description: 'Máximo 2 áreas a evaluar (idealmente 1), la evidencia más contundente de apego a la vacante.',
-          maxItems: 2,
+          description: 'Hasta 5 áreas a evaluar (idealmente 5, una por cada área central discutida en la entrevista), derivadas directamente de las respuestas del candidato. No repetir áreas equivalentes.',
+          maxItems: 5,
           items: {
             type: 'object',
             properties: {
               area:      { type: 'string', description: '2-5 palabras.' },
-              evidencia: { type: 'string', description: 'Una sola línea (máx. ~15 palabras), un hecho concreto.' },
+              evidencia: { type: 'string', description: 'Una sola línea (máx. ~12 palabras), un hecho concreto.' },
             },
             required: ['area', 'evidencia'],
           },
         },
         competencias: {
           type: 'array',
-          description: 'Máximo 2 competencias (idealmente 1), las más relevantes para la vacante.',
-          maxItems: 2,
+          description: 'Hasta 5 competencias (idealmente 5), las centrales discutidas a lo largo de la entrevista.',
+          maxItems: 5,
           items: {
             type: 'object',
             properties: {
@@ -90,7 +90,7 @@ const INFORME_TOOL = {
             required: ['competencia', 'nivel'],
           },
         },
-        comentarios: { type: 'string', description: 'Un solo párrafo, máximo 60 palabras.' },
+        comentarios: { type: 'string', description: 'Un solo párrafo, máximo 70 palabras. La última frase siempre debe ser una recomendación explícita de avance en el proceso — este informe solo se genera para candidatos que ya se decidió avanzar.' },
       },
       required: ['datos_personales', 'trayectoria', 'apego_vacante', 'competencias', 'comentarios'],
     },

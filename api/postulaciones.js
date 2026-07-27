@@ -34,7 +34,7 @@ const PROMPTS = {
   OP: readFileSync(join(__dirname, '../prompts/evaluacion_operativa.txt'),      'utf-8'),
 };
 
-const OPENROUTER_MODEL_AD        = 'z-ai/glm-5.2';
+const OPENROUTER_MODEL_AD        = 'anthropic/claude-sonnet-5';
 const OPENROUTER_MODEL_OP        = 'z-ai/glm-5.2';
 const OPENROUTER_MODEL_OP_VISION = 'anthropic/claude-haiku-4.5'; // GLM no tiene ruta en OpenRouter que acepte imágenes
 
