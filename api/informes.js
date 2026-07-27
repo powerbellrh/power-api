@@ -45,8 +45,9 @@ const INFORME_TOOL = {
             domicilio:      { type: 'string', description: 'Una sola línea.' },
             ultimo_sueldo:  { type: 'string', description: 'Una sola línea, ej. "$25,000 MXN mensuales". Si el candidato especifica que es nominal o libre, inclúyelo (ej. "$25,000 MXN mensuales nominales").' },
             sueldo_deseado: { type: 'string', description: 'Una sola línea. Si el candidato especifica que es nominal o libre, inclúyelo.' },
+            edad:           { type: 'string', description: 'Formato EXACTO y obligatorio: "<edad> años, <fecha completa en letras> en <ciudad>, <estado>", ej. "31 años, 30 de septiembre de 1990 en Pátzcuaro, Michoacán". Convierte fechas abreviadas o numéricas a formato completo en letras ("03 may 95" → "3 de mayo de 1995") y corrige nombres de lugares (acentos, mayúsculas). Si falta la edad, el lugar o la fecha, omite esa parte pero conserva lo disponible en el mismo formato. Si no hay ningún dato, usa "-".' },
           },
-          required: ['estado_civil', 'educacion', 'domicilio', 'ultimo_sueldo', 'sueldo_deseado'],
+          required: ['estado_civil', 'educacion', 'domicilio', 'ultimo_sueldo', 'sueldo_deseado', 'edad'],
         },
         trayectoria: {
           type: 'array',
@@ -151,18 +152,6 @@ function extraerNombreReclutador(datosVacante) {
   return attrs.name || `${attrs['first-name'] ?? ''} ${attrs['last-name'] ?? ''}`.trim() || null;
 }
 
-function obtenerTextoEdad(respuestasPorId) {
-  const valoresEdad = respuestasPorId['70845'];
-  const match = valoresEdad ? String(valoresEdad[0]).match(/\d+/) : null;
-  const edadTexto = match ? `${match[0]} años` : (valoresEdad ? String(valoresEdad[0]) : null);
-
-  const valoresNacimiento = respuestasPorId['74195'];
-  const nacimientoTexto = valoresNacimiento ? String(valoresNacimiento[0]).trim() : null;
-
-  if (edadTexto && nacimientoTexto) return `${edadTexto}, ${nacimientoTexto}`;
-  return edadTexto || nacimientoTexto || '-';
-}
-
 function limpiarValor(valor, fallback = '-') {
   if (valor == null) return fallback;
   const texto = String(valor).trim();
@@ -173,7 +162,6 @@ function construirBloqueRespuestasCrudas(respuestasPorId) {
   const lineas = [];
 
   for (const [preguntaId, etiqueta] of Object.entries(QUESTION_MAPPING)) {
-    if (etiqueta === 'EDAD' || etiqueta === 'FECHA_LUGAR_NACIMIENTO') continue;
     const valores = respuestasPorId[preguntaId];
     if (!valores?.length) continue;
     const texto = valores.length > 1 ? valores.join('\n') : valores[0];
@@ -218,6 +206,7 @@ function mapearCamposSimples(analisis, extra) {
     DOMICILIO:      limpiarValor(personales.domicilio),
     ULTIMOSUELDO:   limpiarValor(personales.ultimo_sueldo),
     SUELDODESEADO:  limpiarValor(personales.sueldo_deseado),
+    EDAD:           limpiarValor(personales.edad),
     COMENTARIOS:    limpiarValor(analisis.comentarios),
     ...extra,
   };
@@ -271,7 +260,6 @@ export default async function handler(req, res) {
     const camposSimples = mapearCamposSimples(analisis, {
       FOTO:    urlFoto,
       NOMBRE:  nombreCompleto || '-',
-      EDAD:    obtenerTextoEdad(respuestasPorId),
       VACANTE: nombreInterno.toUpperCase(),
     });
 
