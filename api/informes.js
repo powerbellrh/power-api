@@ -167,9 +167,13 @@ function construirBloqueRespuestasCrudas(respuestasPorId) {
   return lineas.length ? lineas.join('\n\n') : '(Sin respuestas disponibles)';
 }
 
-async function obtenerAnalisisEstructurado(respuestasPorId, nombreCandidato, vacante) {
+async function obtenerAnalisisEstructurado(respuestasPorId, nombreCandidato, vacante, comentarios) {
   const bloqueCrudo   = construirBloqueRespuestasCrudas(respuestasPorId);
-  const mensajeUsuario = `Candidato: ${nombreCandidato}\nVacante: ${vacante}\n\n${bloqueCrudo}`;
+  let mensajeUsuario = `Candidato: ${nombreCandidato}\nVacante: ${vacante}\n\n${bloqueCrudo}`;
+
+  if (comentarios) {
+    mensajeUsuario += `\n\n### COMENTARIOS_DE_CORRECCION_DEL_RECLUTADOR\nEste informe ya fue generado previamente y el reclutador solicitó una corrección. Toma muy en cuenta las siguientes indicaciones al generar el nuevo informe, dándoles prioridad sobre el criterio general:\n${comentarios}`;
+  }
 
   const datos = await orChatCompletion({
     model:      OPENROUTER_MODEL,
@@ -213,7 +217,7 @@ export default async function handler(req, res) {
   if (process.env.POWERBELL_API_KEY && claveApi !== process.env.POWERBELL_API_KEY)
     return res.status(401).json({ error: 'Unauthorized' });
 
-  const { postulacion: postulacionId, vacante: vacanteId } = req.body ?? {};
+  const { postulacion: postulacionId, vacante: vacanteId, comentarios } = req.body ?? {};
   if (!postulacionId || !vacanteId) {
     console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing postulacion or vacante' }));
     return res.status(400).json({ error: "Los campos 'postulacion' y 'vacante' son requeridos" });
@@ -231,6 +235,7 @@ export default async function handler(req, res) {
     const apellido      = attrs['last-name']  ?? '';
     const nombreCompleto = `${primerNombre} ${apellido}`.trim();
     const urlFoto        = attrs.picture ?? null;
+    const urlCurriculum  = attrs.resume ?? null;
 
     if (!urlFoto) {
       console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'candidato sin foto de perfil', postulacion_id: postulacionId }));
@@ -244,7 +249,7 @@ export default async function handler(req, res) {
     const respuestasPorId  = parsearRespuestas(respuestasCrudas);
 
     console.log(JSON.stringify({ etapa: 'analisis_ia', candidato: nombreCompleto, vacante: nombreInterno }));
-    const analisis = await obtenerAnalisisEstructurado(respuestasPorId, nombreCompleto, nombreInterno);
+    const analisis = await obtenerAnalisisEstructurado(respuestasPorId, nombreCompleto, nombreInterno, comentarios);
 
     const camposSimples = mapearCamposSimples(analisis, {
       FOTO:    urlFoto,
@@ -260,6 +265,7 @@ export default async function handler(req, res) {
       trayectoria:   analisis.trayectoria ?? [],
       apego_vacante: analisis.apego_vacante ?? [],
       competencias:  analisis.competencias ?? [],
+      ...(urlCurriculum ? { curriculum: urlCurriculum } : {}),
     });
 
   } catch (error) {
