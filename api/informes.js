@@ -234,7 +234,7 @@ async function retocarFoto(urlFoto, candidatoId) {
   const subida = await ttCrear('/uploads', {
     data: {
       type:       'uploads',
-      attributes: { url: uriTransitoria, filename: 'foto_retocada.jpg' },
+      attributes: { url: uriTransitoria },
       relationships: {
         candidate: { data: { type: 'candidates', id: candidatoId } },
       },
