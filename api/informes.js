@@ -2,12 +2,14 @@ import { readFileSync }  from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ttObtener }     from '../lib/clientes_api.js';
-import { orChatCompletion } from '../lib/openrouter.js';
+import { orChatCompletion, orGenerarImagen } from '../lib/openrouter.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const PROMPT_ANALISIS_ESTRUCTURADO = readFileSync(join(__dirname, '../prompts/analisis_estructurado.txt'), 'utf-8');
 const OPENROUTER_MODEL             = 'anthropic/claude-opus-5';
+const OPENROUTER_MODEL_IMAGEN      = 'google/gemini-3.1-flash-lite-image';
+const PROMPT_RETOQUE_FOTO          = 'Mejora la calidad de esta fotografía y hazla más profesional, pero que luzca natural, sin verse alterada ni artificial. Solo dale un retoque profesional sutil.';
 
 // Mapeo de preguntas de TeamTailor -> etiqueta legible que se envía al modelo.
 const QUESTION_MAPPING = {
@@ -206,6 +208,24 @@ async function obtenerAnalisisEstructurado(respuestasPorId, nombreCandidato, vac
   return typeof argumentos === 'string' ? JSON.parse(argumentos) : argumentos;
 }
 
+async function retocarFoto(urlFoto) {
+  const datos = await orGenerarImagen({
+    model:          OPENROUTER_MODEL_IMAGEN,
+    prompt:         PROMPT_RETOQUE_FOTO,
+    resolution:     '512',
+    aspect_ratio:   '1:1',
+    output_format:  'jpeg',
+    input_references: [
+      { type: 'image_url', image_url: { url: urlFoto } },
+    ],
+  });
+
+  const imagen = datos?.data?.[0];
+  if (!imagen?.b64_json) throw new Error('OpenRouter no devolvió una imagen válida');
+
+  return `data:${imagen.media_type ?? 'image/jpeg'};base64,${imagen.b64_json}`;
+}
+
 function mapearCamposSimples(analisis, extra) {
   const personales = analisis.datos_personales ?? {};
 
@@ -233,7 +253,7 @@ export default async function handler(req, res) {
   if (process.env.INFORMES_API_KEY && claveApi !== process.env.INFORMES_API_KEY)
     return res.status(401).json({ error: 'Unauthorized' });
 
-  const { postulacion: postulacionId, vacante: vacanteId, comentarios, respuesta_anterior: respuestaAnterior } = req.body ?? {};
+  const { postulacion: postulacionId, vacante: vacanteId, comentarios, respuesta_anterior: respuestaAnterior, imagen: mejorarFoto } = req.body ?? {};
   if (!postulacionId || !vacanteId) {
     console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing postulacion or vacante' }));
     return res.status(400).json({ error: "Los campos 'postulacion' y 'vacante' son requeridos" });
@@ -268,8 +288,14 @@ export default async function handler(req, res) {
     console.log(JSON.stringify({ etapa: 'analisis_ia', candidato: nombreCompleto, vacante: nombreInterno }));
     const analisis = await obtenerAnalisisEstructurado(respuestasPorId, nombreCompleto, nombreInterno, comentarios, respuestaAnterior);
 
+    let fotoFinal = urlFoto;
+    if (mejorarFoto) {
+      console.log(JSON.stringify({ etapa: 'retoque_foto', candidato: nombreCompleto, postulacion_id: postulacionId }));
+      fotoFinal = await retocarFoto(urlFoto);
+    }
+
     const camposSimples = mapearCamposSimples(analisis, {
-      FOTO: urlFoto,
+      FOTO: fotoFinal,
     });
 
     console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', candidato: nombreCompleto, postulacion_id: postulacionId }));
