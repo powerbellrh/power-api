@@ -225,8 +225,15 @@ async function retocarFoto(urlFoto, candidatoId) {
 
   const bufferImagen = Buffer.from(imagen.b64_json, 'base64');
   const archivoTransitorio = await ttSubirArchivoTransitorio(bufferImagen, 'foto_retocada.jpg', imagen.media_type ?? 'image/jpeg', true);
-  const uriTransitoria = archivoTransitorio?.data?.attributes?.url;
-  if (!uriTransitoria) throw new Error('TeamTailor no devolvió una URI transitoria válida');
+  const uriTransitoria = archivoTransitorio?.data?.attributes?.url
+    ?? archivoTransitorio?.data?.attributes?.uri
+    ?? archivoTransitorio?.data?.id
+    ?? archivoTransitorio?.url
+    ?? archivoTransitorio?.uri;
+  if (!uriTransitoria) {
+    console.log(JSON.stringify({ etapa: 'retoque_foto', estado: 'error', mensaje: 'sin URI transitoria', respuesta_teamtailor: archivoTransitorio }));
+    throw new Error('TeamTailor no devolvió una URI transitoria válida');
+  }
 
   const subida = await ttCrear('/uploads', {
     data: {
@@ -239,7 +246,10 @@ async function retocarFoto(urlFoto, candidatoId) {
   }, true);
 
   const urlFinal = subida?.data?.attributes?.url;
-  if (!urlFinal) throw new Error('TeamTailor no devolvió la URL de la imagen subida');
+  if (!urlFinal) {
+    console.log(JSON.stringify({ etapa: 'retoque_foto', estado: 'error', mensaje: 'sin URL final', respuesta_teamtailor: subida }));
+    throw new Error('TeamTailor no devolvió la URL de la imagen subida');
+  }
 
   return urlFinal;
 }
