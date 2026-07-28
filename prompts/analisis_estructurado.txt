@@ -8,7 +8,9 @@ Tu tarea es sintetizar toda esa información en una única respuesta estructurad
 
 1. **nombre**: nombre completo del candidato en MAYÚSCULAS. Corrige errores evidentes de ortografía o captura, pero nunca inventes ni cambies el nombre real.
 
-2. **vacante**: nombre de la vacante en MAYÚSCULAS, con ortografía corregida. Elimina cualquier sufijo, código o marca interna de republicación/control que no forme parte del nombre real del puesto (ej. "V2", "V3", "REPUBLICACION", códigos o nombres de ubicación agregados al título, etc.). Deja únicamente el nombre real y limpio del puesto.
+2. **cliente** y **vacante**: el nombre crudo de la vacante que recibes sigue la convención "CLIENTE - PUESTO".
+   - cliente: la parte ANTES del primer guion, en MAYÚSCULAS, con ortografía corregida. Si no hay guion, usa "-".
+   - vacante: la parte DESPUÉS del primer guion (o el texto completo si no hay guion), en MAYÚSCULAS, con ortografía corregida. Elimina cualquier sufijo, código o marca interna de republicación/control que no forme parte del nombre real del puesto (ej. "V2", "V3", "REPUBLICACION", códigos o nombres de ubicación agregados al título, etc.). Deja únicamente el nombre real y limpio del puesto.
 
 3. **datos_personales**: estado_civil, educacion, domicilio, ultimo_sueldo, sueldo_deseado, edad.
    - Cada valor debe ser una sola línea corta (ej. "Lic. en Administración", "$25,000 MXN mensuales"). Corrige redacción, ortografía y formato, pero no expliques ni justifiques.

@@ -38,7 +38,8 @@ const INFORME_TOOL = {
       type: 'object',
       properties: {
         nombre: { type: 'string', description: 'Nombre completo del candidato, en MAYÚSCULAS, con ortografía y capitalización corregidas si vienen mal escritas. No inventes ni cambies el nombre, solo corrige errores evidentes de captura.' },
-        vacante: { type: 'string', description: 'Nombre de la vacante, en MAYÚSCULAS, con ortografía corregida. Elimina cualquier sufijo o marca interna de republicación o control (ej. "V2", "V3", "REPUBLICACION", "RE-PUBLICACION", códigos de ubicación u otras etiquetas internas), dejando solo el nombre real del puesto.' },
+        cliente: { type: 'string', description: 'Nombre del cliente, en MAYÚSCULAS. El texto crudo de la vacante sigue la convención "CLIENTE - PUESTO"; toma la parte ANTES del primer guion, corrige su ortografía y elimina espacios sobrantes. Si no hay un guion en el texto crudo, usa "-".' },
+        vacante: { type: 'string', description: 'Nombre de la vacante (el puesto), en MAYÚSCULAS, con ortografía corregida. El texto crudo sigue la convención "CLIENTE - PUESTO"; toma SOLO la parte DESPUÉS del primer guion (si no hay guion, usa el texto completo). Elimina cualquier sufijo o marca interna de republicación o control (ej. "V2", "V3", "REPUBLICACION", "RE-PUBLICACION", códigos de ubicación u otras etiquetas internas), dejando solo el nombre real del puesto.' },
         datos_personales: {
           type: 'object',
           properties: {
@@ -95,7 +96,7 @@ const INFORME_TOOL = {
         },
         comentarios: { type: 'string', description: 'Un solo párrafo, máximo 70 palabras. La última frase siempre debe ser una recomendación explícita de avance en el proceso — este informe solo se genera para candidatos que ya se decidió avanzar.' },
       },
-      required: ['nombre', 'vacante', 'datos_personales', 'trayectoria', 'apego_vacante', 'competencias', 'comentarios'],
+      required: ['nombre', 'cliente', 'vacante', 'datos_personales', 'trayectoria', 'apego_vacante', 'competencias', 'comentarios'],
     },
   },
 };
@@ -211,6 +212,7 @@ function mapearCamposSimples(analisis, extra) {
 
   return {
     NOMBRE:         limpiarValor(analisis.nombre),
+    CLIENTE:        limpiarValor(analisis.cliente),
     VACANTE:        limpiarValor(analisis.vacante),
     ESTADOCIVIL:    limpiarValor(personales.estado_civil),
     EDUCACION:      limpiarValor(personales.educacion),
