@@ -1,7 +1,7 @@
 import { readFileSync }  from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { ttObtener }     from '../lib/clientes_api.js';
+import { ttObtener, ttCrear, ttSubirArchivoTransitorio } from '../lib/clientes_api.js';
 import { orChatCompletion, orGenerarImagen } from '../lib/openrouter.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -208,7 +208,7 @@ async function obtenerAnalisisEstructurado(respuestasPorId, nombreCandidato, vac
   return typeof argumentos === 'string' ? JSON.parse(argumentos) : argumentos;
 }
 
-async function retocarFoto(urlFoto) {
+async function retocarFoto(urlFoto, candidatoId) {
   const datos = await orGenerarImagen({
     model:          OPENROUTER_MODEL_IMAGEN,
     prompt:         PROMPT_RETOQUE_FOTO,
@@ -223,7 +223,25 @@ async function retocarFoto(urlFoto) {
   const imagen = datos?.data?.[0];
   if (!imagen?.b64_json) throw new Error('OpenRouter no devolvió una imagen válida');
 
-  return `data:${imagen.media_type ?? 'image/jpeg'};base64,${imagen.b64_json}`;
+  const bufferImagen = Buffer.from(imagen.b64_json, 'base64');
+  const archivoTransitorio = await ttSubirArchivoTransitorio(bufferImagen, 'foto_retocada.jpg', imagen.media_type ?? 'image/jpeg', true);
+  const uriTransitoria = archivoTransitorio?.data?.attributes?.url;
+  if (!uriTransitoria) throw new Error('TeamTailor no devolvió una URI transitoria válida');
+
+  const subida = await ttCrear('/uploads', {
+    data: {
+      type:       'uploads',
+      attributes: { url: uriTransitoria, filename: 'foto_retocada.jpg' },
+      relationships: {
+        candidate: { data: { type: 'candidates', id: candidatoId } },
+      },
+    },
+  }, true);
+
+  const urlFinal = subida?.data?.attributes?.url;
+  if (!urlFinal) throw new Error('TeamTailor no devolvió la URL de la imagen subida');
+
+  return urlFinal;
 }
 
 function mapearCamposSimples(analisis, extra) {
@@ -291,7 +309,7 @@ export default async function handler(req, res) {
     let fotoFinal = urlFoto;
     if (mejorarFoto) {
       console.log(JSON.stringify({ etapa: 'retoque_foto', candidato: nombreCompleto, postulacion_id: postulacionId }));
-      fotoFinal = await retocarFoto(urlFoto);
+      fotoFinal = await retocarFoto(urlFoto, candidatoId);
     }
 
     const camposSimples = mapearCamposSimples(analisis, {
