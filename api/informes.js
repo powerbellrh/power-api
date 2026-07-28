@@ -212,7 +212,7 @@ async function retocarFoto(urlFoto) {
   const datos = await orGenerarImagen({
     model:          OPENROUTER_MODEL_IMAGEN,
     prompt:         PROMPT_RETOQUE_FOTO,
-    resolution:     '512',
+    resolution:     '1K',
     aspect_ratio:   '1:1',
     output_format:  'jpeg',
     input_references: [
