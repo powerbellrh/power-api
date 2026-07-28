@@ -230,7 +230,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Método no permitido, usa POST' });
 
   const claveApi = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
-  if (process.env.POWERBELL_API_KEY && claveApi !== process.env.POWERBELL_API_KEY)
+  if (process.env.INFORMES_API_KEY && claveApi !== process.env.INFORMES_API_KEY)
     return res.status(401).json({ error: 'Unauthorized' });
 
   const { postulacion: postulacionId, vacante: vacanteId, comentarios, respuesta_anterior: respuestaAnterior } = req.body ?? {};
