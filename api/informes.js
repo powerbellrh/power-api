@@ -208,10 +208,15 @@ async function obtenerAnalisisEstructurado(respuestasPorId, nombreCandidato, vac
   return typeof argumentos === 'string' ? JSON.parse(argumentos) : argumentos;
 }
 
-async function retocarFoto(urlFoto, candidatoId) {
+async function retocarFoto(urlFoto, candidatoId, comentarioImagen) {
+  let prompt = PROMPT_RETOQUE_FOTO;
+  if (comentarioImagen) {
+    prompt += `\n\nEsta foto ya fue retocada previamente y el reclutador solicitó una corrección. Aplica ÚNICAMENTE lo que indican los siguientes comentarios, exactamente como se indica:\n${comentarioImagen}`;
+  }
+
   const datos = await orGenerarImagen({
     model:          OPENROUTER_MODEL_IMAGEN,
-    prompt:         PROMPT_RETOQUE_FOTO,
+    prompt,
     resolution:     '1K',
     aspect_ratio:   '1:1',
     output_format:  'jpeg',
@@ -277,7 +282,7 @@ export default async function handler(req, res) {
   if (process.env.INFORMES_API_KEY && claveApi !== process.env.INFORMES_API_KEY)
     return res.status(401).json({ error: 'Unauthorized' });
 
-  const { postulacion: postulacionId, vacante: vacanteId, comentarios, respuesta_anterior: respuestaAnterior, imagen: mejorarFoto } = req.body ?? {};
+  const { postulacion: postulacionId, vacante: vacanteId, comentarios, respuesta_anterior: respuestaAnterior, imagen: mejorarFoto, imagen_comentario: comentarioImagen } = req.body ?? {};
   if (!postulacionId || !vacanteId) {
     console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing postulacion or vacante' }));
     return res.status(400).json({ error: "Los campos 'postulacion' y 'vacante' son requeridos" });
@@ -315,7 +320,7 @@ export default async function handler(req, res) {
     let fotoFinal = urlFoto;
     if (mejorarFoto) {
       console.log(JSON.stringify({ etapa: 'retoque_foto', candidato: nombreCompleto, postulacion_id: postulacionId }));
-      fotoFinal = await retocarFoto(urlFoto, candidatoId);
+      fotoFinal = await retocarFoto(urlFoto, candidatoId, comentarioImagen);
     }
 
     const camposSimples = mapearCamposSimples(analisis, {
