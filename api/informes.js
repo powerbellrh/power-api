@@ -9,7 +9,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROMPT_ANALISIS_ESTRUCTURADO = readFileSync(join(__dirname, '../prompts/analisis_estructurado.txt'), 'utf-8');
 const OPENROUTER_MODEL             = 'anthropic/claude-opus-5';
 const OPENROUTER_MODEL_IMAGEN      = 'google/gemini-3.1-flash-lite-image';
-const PROMPT_RETOQUE_FOTO          = 'Mejora la calidad de esta fotografía y hazla más profesional, pero que luzca natural, sin verse alterada ni artificial. Solo dale un retoque profesional sutil.';
+const PROMPT_RETOQUE_FOTO          = 'Aplica únicamente retoques ligeros a esta fotografía, en beneficio de la persona, que incrementen ligeramente su imagen corporativa y profesional, y aumenta la resolución/nitidez de la imagen. No alteres ningún rasgo facial de la persona, ni su maquillaje, ni ninguna expresión de su personalidad. Puedes ajustar el encuadre/enmarcado y simular ángulos más profesionales, pero el resultado debe lucir natural, sin verse alterado ni artificial.';
 
 // Mapeo de preguntas de TeamTailor -> etiqueta legible que se envía al modelo.
 const QUESTION_MAPPING = {
@@ -209,6 +209,8 @@ async function obtenerAnalisisEstructurado(respuestasPorId, nombreCandidato, vac
 }
 
 async function retocarFoto(urlFoto, candidatoId, comentarioImagen) {
+  // imagen_comentario funciona como 'comentarios' en el informe de texto: es feedback puntual
+  // del reclutador sobre un retoque previo, que se añade al prompt en vez de reemplazarlo.
   let prompt = PROMPT_RETOQUE_FOTO;
   if (comentarioImagen) {
     prompt += `\n\nEsta foto ya fue retocada previamente y el reclutador solicitó una corrección. Aplica ÚNICAMENTE lo que indican los siguientes comentarios, exactamente como se indica:\n${comentarioImagen}`;
