@@ -1,13 +1,15 @@
 import { readFileSync }  from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { ttObtener }     from '../lib/clientes_api.js';
-import { orChatCompletion } from '../lib/openrouter.js';
+import { ttObtener, ttCrear, ttSubirArchivoTransitorio } from '../lib/clientes_api.js';
+import { orChatCompletion, orGenerarImagen } from '../lib/openrouter.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const PROMPT_ANALISIS_ESTRUCTURADO = readFileSync(join(__dirname, '../prompts/analisis_estructurado.txt'), 'utf-8');
 const OPENROUTER_MODEL             = 'anthropic/claude-opus-5';
+const OPENROUTER_MODEL_IMAGEN      = 'google/gemini-3.1-flash-lite-image';
+const PROMPT_RETOQUE_FOTO          = 'Aplica únicamente retoques ligeros a esta fotografía, en beneficio de la persona, que incrementen ligeramente su imagen corporativa y profesional, y aumenta la resolución/nitidez de la imagen. No alteres ningún rasgo facial de la persona, ni su maquillaje, ni ninguna expresión de su personalidad. Puedes ajustar el encuadre/enmarcado y simular ángulos más profesionales, pero el resultado debe lucir natural, sin verse alterado ni artificial.';
 
 // Mapeo de preguntas de TeamTailor -> etiqueta legible que se envía al modelo.
 const QUESTION_MAPPING = {
@@ -206,6 +208,55 @@ async function obtenerAnalisisEstructurado(respuestasPorId, nombreCandidato, vac
   return typeof argumentos === 'string' ? JSON.parse(argumentos) : argumentos;
 }
 
+async function retocarFoto(urlFoto, candidatoId, comentarioImagen) {
+  // imagen_comentario funciona como 'comentarios' en el informe de texto: es feedback puntual
+  // del reclutador sobre un retoque previo, que se añade al prompt en vez de reemplazarlo.
+  let prompt = PROMPT_RETOQUE_FOTO;
+  if (comentarioImagen) {
+    prompt += `\n\nEsta foto ya fue retocada previamente y el reclutador solicitó una corrección. Aplica ÚNICAMENTE lo que indican los siguientes comentarios, exactamente como se indica:\n${comentarioImagen}`;
+  }
+
+  const datos = await orGenerarImagen({
+    model:          OPENROUTER_MODEL_IMAGEN,
+    prompt,
+    resolution:     '1K',
+    aspect_ratio:   '1:1',
+    output_format:  'jpeg',
+    input_references: [
+      { type: 'image_url', image_url: { url: urlFoto } },
+    ],
+  });
+
+  const imagen = datos?.data?.[0];
+  if (!imagen?.b64_json) throw new Error('OpenRouter no devolvió una imagen válida');
+
+  const bufferImagen = Buffer.from(imagen.b64_json, 'base64');
+  const archivoTransitorio = await ttSubirArchivoTransitorio(bufferImagen, 'foto_retocada.jpg', imagen.media_type ?? 'image/jpeg', true);
+  const uriTransitoria = archivoTransitorio?.uri;
+  if (!uriTransitoria) {
+    console.log(JSON.stringify({ etapa: 'retoque_foto', estado: 'error', mensaje: 'sin URI transitoria', respuesta_teamtailor: archivoTransitorio }));
+    throw new Error('TeamTailor no devolvió una URI transitoria válida');
+  }
+
+  const subida = await ttCrear('/uploads', {
+    data: {
+      type:       'uploads',
+      attributes: { url: uriTransitoria },
+      relationships: {
+        candidate: { data: { type: 'candidates', id: candidatoId } },
+      },
+    },
+  }, true);
+
+  const urlFinal = subida?.data?.attributes?.url;
+  if (!urlFinal) {
+    console.log(JSON.stringify({ etapa: 'retoque_foto', estado: 'error', mensaje: 'sin URL final', respuesta_teamtailor: subida }));
+    throw new Error('TeamTailor no devolvió la URL de la imagen subida');
+  }
+
+  return urlFinal;
+}
+
 function mapearCamposSimples(analisis, extra) {
   const personales = analisis.datos_personales ?? {};
 
@@ -233,7 +284,7 @@ export default async function handler(req, res) {
   if (process.env.INFORMES_API_KEY && claveApi !== process.env.INFORMES_API_KEY)
     return res.status(401).json({ error: 'Unauthorized' });
 
-  const { postulacion: postulacionId, vacante: vacanteId, comentarios, respuesta_anterior: respuestaAnterior } = req.body ?? {};
+  const { postulacion: postulacionId, vacante: vacanteId, comentarios, respuesta_anterior: respuestaAnterior, imagen: mejorarFoto, imagen_comentario: comentarioImagen } = req.body ?? {};
   if (!postulacionId || !vacanteId) {
     console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing postulacion or vacante' }));
     return res.status(400).json({ error: "Los campos 'postulacion' y 'vacante' son requeridos" });
@@ -268,8 +319,14 @@ export default async function handler(req, res) {
     console.log(JSON.stringify({ etapa: 'analisis_ia', candidato: nombreCompleto, vacante: nombreInterno }));
     const analisis = await obtenerAnalisisEstructurado(respuestasPorId, nombreCompleto, nombreInterno, comentarios, respuestaAnterior);
 
+    let fotoFinal = urlFoto;
+    if (mejorarFoto) {
+      console.log(JSON.stringify({ etapa: 'retoque_foto', candidato: nombreCompleto, postulacion_id: postulacionId }));
+      fotoFinal = await retocarFoto(urlFoto, candidatoId, comentarioImagen);
+    }
+
     const camposSimples = mapearCamposSimples(analisis, {
-      FOTO: urlFoto,
+      FOTO: fotoFinal,
     });
 
     console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', candidato: nombreCompleto, postulacion_id: postulacionId }));
