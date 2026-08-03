@@ -2,8 +2,8 @@ import { createClient } from '@supabase/supabase-js';
 import { ttObtener } from '../lib/clientes_api.js';
 import { normalizarTelefonoMx } from '../lib/evaluacion_postulacion.js';
 
-const URL_GENERATE     = 'http://api.powerbellrh.com/api/candidates/generate';
-const URL_FELICITACION = 'http://api.powerbellrh.com/api/candidates/felicitacion';
+const URL_GENERATE     = `${process.env.POWER_API_BASE_URL}/api/credencial`;
+const URL_FELICITACION = `${process.env.POWER_API_BASE_URL}/api/felicitacion`;
 
 const MESES = [
   'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
@@ -103,7 +103,7 @@ async function manejarEnviadoACliente(supabase, data, candidato) {
   try {
     const resp = await fetch(URL_GENERATE, {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.POWERBELL_API_KEY },
       body: JSON.stringify({
         candidato:  parseInt(candidato.id) || candidato.id,
         nombre:     nombreCandidato,
@@ -174,7 +174,7 @@ async function manejarHired(candidato) {
   try {
     const resp = await fetch(URL_FELICITACION, {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.POWERBELL_API_KEY },
       body: JSON.stringify({
         candidato: parseInt(candidato.id) || candidato.id,
         nombre:    candidato.first_name || '',

@@ -11,7 +11,9 @@
     { "source": "/historial",       "destination": "/api/historial"       },
     { "source": "/preguntas",       "destination": "/api/preguntas"       },
     { "source": "/experiencia",     "destination": "/api/experiencia"     },
-    { "source": "/informes",        "destination": "/api/informes"        }
+    { "source": "/informes",        "destination": "/api/informes"        },
+    { "source": "/credencial",      "destination": "/api/credencial"      },
+    { "source": "/felicitacion",    "destination": "/api/felicitacion"    }
   ],
   "functions": {
     "api/estudios.js": {
@@ -43,6 +45,12 @@
     },
     "api/preguntas.js": {
       "maxDuration": 30
+    },
+    "api/credencial.js": {
+      "maxDuration": 60
+    },
+    "api/felicitacion.js": {
+      "maxDuration": 60
     }
   },
   "crons": [
