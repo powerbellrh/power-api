@@ -63,7 +63,7 @@ export default async function handler(req, res) {
     const ruta = `${candidato}/candidato-${candidato}-${Date.now()}.png`;
     const url = await subirYFirmar(BUCKET, ruta, buffer);
 
-    console.log(JSON.stringify({ etapa: 'credencial_generada', estado: 'ok', candidato_id: candidato }));
+    console.log(JSON.stringify({ etapa: 'powerid_generado', estado: 'ok', candidato_id: candidato }));
 
     try {
       await crearNotaTeamtailor(candidato, url);
@@ -73,7 +73,7 @@ export default async function handler(req, res) {
 
     return res.status(201).json({ ok: true, url, action: 'created' });
   } catch (error) {
-    console.log(JSON.stringify({ etapa: 'credencial_generada', estado: 'error', candidato_id: candidato, mensaje: error.message }));
-    return res.status(500).json({ error: 'Error al generar la credencial', details: error.message });
+    console.log(JSON.stringify({ etapa: 'powerid_generado', estado: 'error', candidato_id: candidato, mensaje: error.message }));
+    return res.status(500).json({ error: 'Error al generar el PowerID', details: error.message });
   }
 }

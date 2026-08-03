@@ -12,7 +12,7 @@
     { "source": "/preguntas",       "destination": "/api/preguntas"       },
     { "source": "/experiencia",     "destination": "/api/experiencia"     },
     { "source": "/informes",        "destination": "/api/informes"        },
-    { "source": "/credencial",      "destination": "/api/credencial"      },
+    { "source": "/powerid",         "destination": "/api/powerid"         },
     { "source": "/felicitacion",    "destination": "/api/felicitacion"    }
   ],
   "functions": {
@@ -46,7 +46,7 @@
     "api/preguntas.js": {
       "maxDuration": 30
     },
-    "api/credencial.js": {
+    "api/powerid.js": {
       "maxDuration": 60
     },
     "api/felicitacion.js": {

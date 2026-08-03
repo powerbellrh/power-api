@@ -2,8 +2,8 @@ import { createClient } from '@supabase/supabase-js';
 import { ttObtener } from '../lib/clientes_api.js';
 import { normalizarTelefonoMx } from '../lib/evaluacion_postulacion.js';
 
-const URL_GENERATE     = `${process.env.POWER_API_BASE_URL}/api/credencial`;
-const URL_FELICITACION = `${process.env.POWER_API_BASE_URL}/api/felicitacion`;
+const URL_GENERATE     = 'https://power-api-alpha.vercel.app/api/powerid';
+const URL_FELICITACION = 'https://power-api-alpha.vercel.app/api/felicitacion';
 
 const MESES = [
   'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
