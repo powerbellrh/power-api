@@ -13,7 +13,8 @@
     { "source": "/experiencia",     "destination": "/api/experiencia"     },
     { "source": "/informes",        "destination": "/api/informes"        },
     { "source": "/powerid",         "destination": "/api/powerid"         },
-    { "source": "/felicitacion",    "destination": "/api/felicitacion"    }
+    { "source": "/felicitacion",    "destination": "/api/felicitacion"    },
+    { "source": "/emparejamiento",  "destination": "/api/emparejamiento"  }
   ],
   "functions": {
     "api/estudios.js": {
