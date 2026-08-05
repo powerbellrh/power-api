@@ -90,7 +90,7 @@ const INFORME_TOOL = {
             type: 'object',
             properties: {
               competencia: { type: 'string', description: 'Nombre corto de la competencia o logro.' },
-              nivel:       { type: 'string', enum: ['Básico', 'Intermedio', 'Avanzado', 'Experto'], description: 'Sé riguroso y objetivo, no complaciente: asigna el nivel según evidencia concreta de la entrevista (años reales de práctica, profundidad y autonomía demostrada), no por impresión general del candidato. "Experto" y "Avanzado" deben reservarse para evidencia clara e inequívoca; ante duda, usa el nivel inferior.' },
+              nivel:       { type: 'string', enum: ['Básico', 'Intermedio', 'Avanzado', 'Experto'] },
             },
             required: ['competencia', 'nivel'],
           },
