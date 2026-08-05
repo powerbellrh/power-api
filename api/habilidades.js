@@ -1,8 +1,13 @@
+import { readFileSync }      from 'fs';
+import { fileURLToPath }     from 'url';
+import { dirname, join }     from 'path';
 import { createClient }      from '@supabase/supabase-js';
 import { orChatCompletion }  from '../lib/openrouter.js';
 import { HABILIDADES_REGEX } from '../lib/habilidades_dict.js';
 
-const OPENROUTER_MODEL = 'deepseek/deepseek-v4-flash-0731';
+const __dirname                    = dirname(fileURLToPath(import.meta.url));
+const PROMPT_EXTRACCION_HABILIDADES = readFileSync(join(__dirname, '../prompts/extraccion_habilidades.txt'), 'utf-8');
+const OPENROUTER_MODEL              = 'deepseek/deepseek-v4-flash-0731';
 
 const HABILIDADES_TOOL = {
   type: 'function',
@@ -37,7 +42,7 @@ async function detectarHabilidadesPorLlm(texto) {
   const datos = await orChatCompletion({
     model:      OPENROUTER_MODEL,
     messages: [
-      { role: 'system', content: 'Analiza la experiencia laboral reciente que describe el candidato y extrae únicamente las habilidades de la lista cerrada que apliquen.' },
+      { role: 'system', content: PROMPT_EXTRACCION_HABILIDADES },
       { role: 'user',   content: texto },
     ],
     tools:       [HABILIDADES_TOOL],
