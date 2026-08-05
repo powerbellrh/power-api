@@ -61,7 +61,7 @@ const INFORME_TOOL = {
             type: 'object',
             properties: {
               compania: { type: 'string', description: 'Una sola línea.' },
-              periodo:  { type: 'string', description: 'Una sola línea.' },
+              periodo:  { type: 'string', description: 'Una sola línea. Usa fechas concretas si están disponibles, formato "<Mes> <año> a <Mes> <año>" (ej. "Marzo 2019 a Febrero 2021"), o "<Mes> <año> a la fecha" si sigue vigente. Nunca uses una duración aproximada como "5 años"; solo recurre a eso si no hay ninguna fecha disponible.' },
               puesto:   { type: 'string', description: 'SOLO el nombre del puesto tal cual, lo más corto posible. Nunca incluir área, empresa, giro del negocio ni descripciones adicionales (ej. "Gerente de Ventas", nunca "Gerente de Ventas de la división industrial").' },
               sueldo:   { type: 'string', description: 'Una sola línea. Si el candidato especifica que es nominal o libre, inclúyelo.' },
               salida:   { type: 'string', description: 'Una sola línea.' },
@@ -90,7 +90,7 @@ const INFORME_TOOL = {
             type: 'object',
             properties: {
               competencia: { type: 'string', description: 'Nombre corto de la competencia o logro.' },
-              nivel:       { type: 'string', enum: ['Básico', 'Intermedio', 'Avanzado', 'Experto'] },
+              nivel:       { type: 'string', enum: ['Básico', 'Intermedio', 'Avanzado', 'Experto'], description: 'Sé riguroso y objetivo, no complaciente: asigna el nivel según evidencia concreta de la entrevista (años reales de práctica, profundidad y autonomía demostrada), no por impresión general del candidato. "Experto" y "Avanzado" deben reservarse para evidencia clara e inequívoca; ante duda, usa el nivel inferior.' },
             },
             required: ['competencia', 'nivel'],
           },
