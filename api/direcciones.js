@@ -2,7 +2,7 @@ import { ttCrear, mcCrear } from '../lib/clientes_api.js';
 import { orChatCompletion } from '../lib/openrouter.js';
 import { TEAMTAILOR_ADDRESS_QUESTION_ID, DIRECCIONES_MANYCHAT_FIELD_ADDRESS_ID as MANYCHAT_FIELD_ADDRESS_ID } from '../lib/config.js';
 
-const OPENROUTER_MODEL = 'deepseek/deepseek-v4-flash';
+const OPENROUTER_MODEL = 'deepseek/deepseek-v4-flash-0731';
 
 const SYSTEM_PROMPT_VALIDACION_DIRECCION = `\
 # Rol
