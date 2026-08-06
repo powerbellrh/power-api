@@ -69,6 +69,7 @@ export default async function handler(req, res) {
   const idSuscriptor = cuerpo?.id;
   const mensaje       = cuerpo?.mensaje ?? '';
   const esInicio      = cuerpo?.inicio === true || cuerpo?.inicio === 'true';
+  const esDireccion   = cuerpo?.direccion === true || cuerpo?.direccion === 'true';
 
   if (!idSuscriptor) {
     console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing subscriber id' }));
@@ -77,8 +78,8 @@ export default async function handler(req, res) {
 
   const coincidencia = mensaje.match(/#(\d+)/);
   if (!coincidencia) {
-    console.log(JSON.stringify({ etapa: 'validacion', estado: 'sin_vacante', idSuscriptor, mensaje }));
-    return res.status(200).json({ ok: false, error: 'no job id in message' });
+    console.log(JSON.stringify({ etapa: 'validacion', estado: 'sin_vacante', idSuscriptor, mensaje, esDireccion }));
+    return res.status(esDireccion ? 200 : 404).json({ ok: false, error: 'no job id in message' });
   }
 
   const idVacante = coincidencia[1];
@@ -92,8 +93,8 @@ export default async function handler(req, res) {
   } catch (e) {
     const mensajeError = e?.message ?? '';
     if (mensajeError.includes('404')) {
-      console.log(JSON.stringify({ etapa: 'teamtailor', estado: 'not_found', idVacante }));
-      return res.status(404).json({ ok: false, error: 'job not found' });
+      console.log(JSON.stringify({ etapa: 'teamtailor', estado: 'not_found', idVacante, esDireccion }));
+      return res.status(esDireccion ? 200 : 404).json({ ok: false, error: 'job not found' });
     }
     console.log(JSON.stringify({ etapa: 'teamtailor', estado: 'error', mensaje: mensajeError }));
     return res.status(502).json({ ok: false, error: 'TeamTailor error' });
