@@ -7,6 +7,7 @@ import { HABILIDADES_REGEX } from '../lib/habilidades_dict.js';
 
 const __dirname                     = dirname(fileURLToPath(import.meta.url));
 const PROMPT_EXTRACCION_HABILIDADES = readFileSync(join(__dirname, '../prompts/extraccion_habilidades.txt'), 'utf-8');
+const PROMPT_VERIFICACION_MATCH     = readFileSync(join(__dirname, '../prompts/verificacion_emparejamiento.txt'), 'utf-8');
 const OPENROUTER_MODEL              = 'deepseek/deepseek-v4-flash-0731';
 
 const HABILIDADES_TOOL = {
@@ -56,6 +57,49 @@ async function detectarHabilidadesPorLlm(texto) {
   return argumentos.habilidades ?? [];
 }
 
+async function verificarCompatibilidad(candidato, descripcion) {
+  const prompt = PROMPT_VERIFICACION_MATCH
+    .replace('{{nombre}}',       candidato.nombre       || '(no proporcionado)')
+    .replace('{{ubicacion}}',    candidato.ubicacion     || '(no proporcionado)')
+    .replace('{{escolaridad}}',  candidato.escolaridad   || '(no proporcionado)')
+    .replace('{{expectativa}}',  candidato.expectativa   || '(no proporcionado)')
+    .replace('{{experiencia}}',  candidato.experiencia   || '(no proporcionado)')
+    .replace('{{descripcion}}',  descripcion             || '(sin descripción)');
+
+  const datos = await orChatCompletion({
+    model:      OPENROUTER_MODEL,
+    max_tokens: 300,
+    messages: [
+      { role: 'user', content: prompt },
+    ],
+  });
+
+  const textoRespuesta = datos?.choices?.[0]?.message?.content?.trim();
+  if (!textoRespuesta) throw new Error('OpenRouter no devolvió contenido de texto');
+
+  const inicio = textoRespuesta.indexOf('{');
+  const fin    = textoRespuesta.lastIndexOf('}');
+  if (inicio === -1 || fin === -1) throw new Error('No se encontró JSON en la respuesta de verificación');
+
+  return JSON.parse(textoRespuesta.slice(inicio, fin + 1));
+}
+
+async function verificarRecomendaciones(candidato, vacantesCoincidentes) {
+  const resultados = await Promise.all(
+    vacantesCoincidentes.map(async (vacante) => {
+      try {
+        const { apto } = await verificarCompatibilidad(candidato, vacante.descripcion);
+        return { vacante, apto: apto ?? true };
+      } catch (error) {
+        console.log(JSON.stringify({ etapa: 'verificacion_match', estado: 'error', id_team_tailor: vacante.id_team_tailor, mensaje: error.message }));
+        return { vacante, apto: true };
+      }
+    })
+  );
+
+  return resultados.filter(r => r.apto).map(r => r.vacante);
+}
+
 // ============================================================================
 // HANDLER
 // ============================================================================
@@ -73,7 +117,10 @@ export default async function handler(req, res) {
   }
 
   const cuerpo      = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+  const nombre      = cuerpo?.nombre;
   const ubicacion   = cuerpo?.ubicacion;
+  const escolaridad = cuerpo?.escolaridad;
+  const expectativa = cuerpo?.expectativa;
   const experiencia = cuerpo?.experiencia;
 
   if (!ubicacion || typeof ubicacion !== 'string') {
@@ -115,13 +162,28 @@ export default async function handler(req, res) {
   try {
     const { data: vacantes, error } = await supabase
       .from('vacantes')
-      .select('id_team_tailor, domicilio, habilidades')
+      .select('id_team_tailor, domicilio, habilidades, descripcion')
       .eq('domicilio', ubicacion);
 
     if (error) throw error;
 
-    const idsCoincidentes = vacantes
-      .filter(vacante => habilidadesDetectadas.some(habilidad => vacante.habilidades?.includes(habilidad)))
+    const vacantesCoincidentes = vacantes.filter(
+      vacante => habilidadesDetectadas.some(habilidad => vacante.habilidades?.includes(habilidad))
+    );
+
+    console.log(JSON.stringify({ etapa: 'coincidencias_iniciales', estado: 'ok', coincidencias: vacantesCoincidentes.length }));
+
+    if (vacantesCoincidentes.length === 0) {
+      console.log(JSON.stringify({ etapa: 'completado', estado: 'sin_coincidencias' }));
+      return res.status(200).json({ id_team_tailor: [], uso_ia: usoIa });
+    }
+
+    const candidato = { nombre, ubicacion, escolaridad, expectativa, experiencia };
+    const vacantesVerificadas = await verificarRecomendaciones(candidato, vacantesCoincidentes);
+
+    console.log(JSON.stringify({ etapa: 'verificacion_match', estado: 'ok', antes: vacantesCoincidentes.length, despues: vacantesVerificadas.length }));
+
+    const idsCoincidentes = vacantesVerificadas
       .map(vacante => parseInt(vacante.id_team_tailor, 10))
       .filter(id => Number.isInteger(id));
 
