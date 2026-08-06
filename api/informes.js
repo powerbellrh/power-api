@@ -322,6 +322,16 @@ export default async function handler(req, res) {
       FOTO: fotoFinal,
     });
 
+    // Se vuelve a pedir el CV justo antes de responder: la URL firmada de TeamTailor expira
+    // pronto, y para este punto ya pasó el tiempo del análisis de IA y el posible retoque de foto.
+    let urlCurriculumFinal = urlCurriculum;
+    try {
+      const candidatoFresco = await ttObtener(`/job-applications/${postulacionId}/candidate`, true);
+      urlCurriculumFinal = candidatoFresco.data?.attributes?.resume ?? urlCurriculum;
+    } catch (e) {
+      console.log(JSON.stringify({ etapa: 'refrescar_cv', estado: 'error', mensaje: e.message, postulacion_id: postulacionId }));
+    }
+
     console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', candidato: nombreCompleto, postulacion_id: postulacionId }));
 
     return res.status(200).json({
@@ -329,7 +339,7 @@ export default async function handler(req, res) {
       trayectoria:   analisis.trayectoria ?? [],
       apego_vacante: analisis.apego_vacante ?? [],
       competencias:  analisis.competencias ?? [],
-      ...(urlCurriculum ? { curriculum: urlCurriculum } : {}),
+      ...(urlCurriculumFinal ? { curriculum: urlCurriculumFinal } : {}),
       ...(nombreReclutador ? { reclutador: nombreReclutador } : {}),
     });
 
