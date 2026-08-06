@@ -90,7 +90,8 @@ async function verificarRecomendaciones(candidato, vacantesCoincidentes) {
   const resultados = await Promise.all(
     vacantesCoincidentes.map(async (vacante) => {
       try {
-        const { apto } = await verificarCompatibilidad(candidato, vacante.descripcion);
+        const { apto, motivo } = await verificarCompatibilidad(candidato, vacante.descripcion);
+        console.log(JSON.stringify({ etapa: 'verificacion_match', estado: 'ok', id_team_tailor: vacante.id_team_tailor, apto: apto ?? true, motivo }));
         return { vacante, apto: apto ?? true };
       } catch (error) {
         console.log(JSON.stringify({ etapa: 'verificacion_match', estado: 'error', id_team_tailor: vacante.id_team_tailor, mensaje: error.message }));

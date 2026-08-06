@@ -16,10 +16,10 @@ Descripción: {{descripcion}}
 
 ---
 
-Responde ÚNICAMENTE con un objeto JSON válido, sin texto adicional antes ni después.
+Responde ÚNICAMENTE con un objeto JSON válido, sin texto adicional antes ni después. El campo "motivo" es obligatorio en ambos casos y debe explicar brevemente en qué te basaste (qué dijo el candidato, qué pide la vacante).
 
 Si el candidato es apto para la vacante:
-{"apto": true, "motivo_rechazo": null}
+{"apto": true, "motivo": "descripción breve de por qué encaja"}
 
 Si el candidato no es apto para la vacante:
-{"apto": false, "motivo_rechazo": "descripción breve del motivo"}
+{"apto": false, "motivo": "descripción breve de por qué no encaja"}
