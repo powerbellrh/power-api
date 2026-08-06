@@ -209,6 +209,16 @@ async function obtenerAnalisisEstructurado(respuestasPorId, nombreCandidato, vac
 }
 
 async function retocarFoto(urlFoto, candidatoId) {
+  // TeamTailor sirve estas fotos desde un bucket S3/CloudFront que bloquea peticiones
+  // HEAD (403), y el validador de URLs de OpenRouter/Gemini rechaza la URL cruda por eso
+  // ("Unsupported URL, public internet addresses only") aunque un GET normal sí funciona.
+  // Por eso la descargamos aquí y se la mandamos a OpenRouter como base64 inline.
+  const respuestaFoto = await fetch(urlFoto);
+  if (!respuestaFoto.ok) throw new Error(`No se pudo descargar la foto original (${respuestaFoto.status})`);
+  const tipoFoto = respuestaFoto.headers.get('content-type') || 'image/jpeg';
+  const bufferFotoOriginal = Buffer.from(await respuestaFoto.arrayBuffer());
+  const dataUrlFoto = `data:${tipoFoto};base64,${bufferFotoOriginal.toString('base64')}`;
+
   const datos = await orGenerarImagen({
     model:          OPENROUTER_MODEL_IMAGEN,
     prompt:         PROMPT_RETOQUE_FOTO,
@@ -216,7 +226,7 @@ async function retocarFoto(urlFoto, candidatoId) {
     aspect_ratio:   '1:1',
     output_format:  'jpeg',
     input_references: [
-      { type: 'image_url', image_url: { url: urlFoto } },
+      { type: 'image_url', image_url: { url: dataUrlFoto } },
     ],
   });
 
@@ -315,7 +325,12 @@ export default async function handler(req, res) {
     let fotoFinal = urlFoto;
     if (mejorarFoto) {
       console.log(JSON.stringify({ etapa: 'retoque_foto', candidato: nombreCompleto, postulacion_id: postulacionId }));
-      fotoFinal = await retocarFoto(urlFoto, candidatoId);
+      try {
+        fotoFinal = await retocarFoto(urlFoto, candidatoId);
+      } catch (error) {
+        console.log(JSON.stringify({ etapa: 'retoque_foto', estado: 'error', mensaje: error.message, postulacion_id: postulacionId }));
+        fotoFinal = urlFoto;
+      }
     }
 
     const camposSimples = mapearCamposSimples(analisis, {

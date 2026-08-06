@@ -1,11 +1,10 @@
 import { ttObtener, mcCrear } from '../lib/clientes_api.js';
+import { CAT_MANYCHAT_FIELD_INFO_VACANTE, CAT_MANYCHAT_FIELD_ID_VACANTE, CAT_MANYCHAT_FLOW_NS } from '../lib/config.js';
 
 const CAT_MANYCHAT_FIELDS = {
-  info_vacante: +process.env.CAT_MANYCHAT_FIELD_INFO_VACANTE,
-  id_vacante:   +process.env.CAT_MANYCHAT_FIELD_ID_VACANTE,
+  info_vacante: CAT_MANYCHAT_FIELD_INFO_VACANTE,
+  id_vacante:   CAT_MANYCHAT_FIELD_ID_VACANTE,
 };
-
-const CAT_MANYCHAT_FLOW_NS = process.env.CAT_MANYCHAT_FLOW_NS;
 
 // ============================================================================
 // HELPERS
@@ -78,8 +77,8 @@ export default async function handler(req, res) {
 
   const coincidencia = mensaje.match(/#(\d+)/);
   if (!coincidencia) {
-    console.log(JSON.stringify({ etapa: 'validacion', estado: 'sin_vacante', idSuscriptor, mensaje, esDireccion }));
-    return res.status(esDireccion ? 200 : 404).json({ ok: false, error: 'no job id in message' });
+    console.log(JSON.stringify({ etapa: 'validacion', estado: 'sin_vacante', idSuscriptor, mensaje }));
+    return res.status(200).json({ ok: false, error: 'no job id in message' });
   }
 
   const idVacante = coincidencia[1];
