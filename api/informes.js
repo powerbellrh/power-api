@@ -175,6 +175,31 @@ function construirBloqueRespuestasCrudas(respuestasPorId) {
   return lineas.length ? lineas.join('\n\n') : '(Sin respuestas disponibles)';
 }
 
+// El consumidor (power_informe.py) reenvía como respuesta_anterior el JSON aplanado
+// que este mismo endpoint le devolvió (simple.NOMBRE, simple.ESTADOCIVIL, etc.), no el
+// shape de INFORME_TOOL (nombre, datos_personales.estado_civil, etc.). Hay que reconstruirlo
+// para que el modelo reciba el informe anterior en el mismo formato que debe producir.
+function reconstruirAnalisisPrevio(respuestaAnterior) {
+  const simple = respuestaAnterior.simple ?? {};
+
+  return {
+    nombre:   simple.NOMBRE,
+    cliente:  simple.CLIENTE,
+    vacante:  simple.VACANTE,
+    datos_personales: {
+      estado_civil:   simple.ESTADOCIVIL,
+      educacion:      simple.EDUCACION,
+      domicilio:      simple.DOMICILIO,
+      sueldo_deseado: simple.SUELDODESEADO,
+      edad:           simple.EDAD,
+    },
+    trayectoria:   respuestaAnterior.trayectoria ?? [],
+    apego_vacante: respuestaAnterior.apego_vacante ?? [],
+    competencias:  respuestaAnterior.competencias ?? [],
+    comentarios:   simple.COMENTARIOS,
+  };
+}
+
 async function obtenerAnalisisEstructurado(respuestasPorId, nombreCandidato, vacante, comentarios, respuestaAnterior) {
   const bloqueCrudo   = construirBloqueRespuestasCrudas(respuestasPorId);
   let mensajeUsuario = `Candidato: ${nombreCandidato}\nVacante: ${vacante}\n\n${bloqueCrudo}`;
@@ -182,9 +207,11 @@ async function obtenerAnalisisEstructurado(respuestasPorId, nombreCandidato, vac
   if (comentarios) {
     mensajeUsuario += `\n\n### COMENTARIOS_DE_CORRECCION_DEL_RECLUTADOR\nEste informe ya fue generado previamente y el reclutador solicitó una corrección. A continuación tienes el informe anterior (JSON) y los comentarios del reclutador sobre él. Compáralos: corrige ÚNICAMENTE lo que los comentarios indican, exactamente como se indica, y conserva sin cambios todo lo demás del informe anterior.`;
 
-    if (respuestaAnterior) {
-      const informeAnteriorTexto = typeof respuestaAnterior === 'string' ? respuestaAnterior : JSON.stringify(respuestaAnterior);
+    if (respuestaAnterior && typeof respuestaAnterior === 'object') {
+      const informeAnteriorTexto = JSON.stringify(reconstruirAnalisisPrevio(respuestaAnterior));
       mensajeUsuario += `\n\nInforme anterior:\n${informeAnteriorTexto}`;
+    } else if (respuestaAnterior) {
+      mensajeUsuario += `\n\nInforme anterior:\n${respuestaAnterior}`;
     }
 
     mensajeUsuario += `\n\nComentarios del reclutador:\n${comentarios}`;
