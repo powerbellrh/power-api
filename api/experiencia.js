@@ -1,10 +1,8 @@
 import { ttActualizar, ttCrear, mcCrear } from '../lib/clientes_api.js';
+import { AD_TEAMTAILOR_QUESTION_EXPERIENCIA_ID as TT_PREGUNTA_EXPERIENCIA_ID, MANYCHAT_FIELD_EXPERIENCIA_ID } from '../lib/config.js';
 
 const EXTENSIONES_IMAGEN    = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'];
 const EXTENSIONES_DOCUMENTO = ['doc', 'docx', 'document'];
-
-const TT_PREGUNTA_EXPERIENCIA_ID  = +process.env.AD_TEAMTAILOR_QUESTION_EXPERIENCIA_ID;
-const MANYCHAT_FIELD_EXPERIENCIA_ID = +process.env.MANYCHAT_FIELD_EXPERIENCIA_ID;
 
 const obtenerExtension = (url) => {
   const sinParametros = url.split('?')[0];

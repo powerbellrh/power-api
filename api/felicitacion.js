@@ -1,6 +1,7 @@
 import { generarFelicitacion } from '../lib/canvas_felicitacion.js';
 import { subirYFirmar } from '../lib/storage_powerid.js';
 import { ttCrear } from '../lib/clientes_api.js';
+import { TEAMTAILOR_USER_ID } from '../lib/config.js';
 
 const BUCKET = 'felicitaciones';
 const NOTA_GOOGLE = 'Para nosotros es importante saber cómo te sentiste durante tu proceso, ¿podrías compartirnos tu experiencia sobre nuestro servicio en Google?: https://maps.app.goo.gl/P7Ss6t3jpwRqJWDS7';
@@ -17,7 +18,7 @@ function validarCuerpo(cuerpo) {
 function relacionesNota(candidato) {
   return {
     candidate: { data: { id: String(candidato), type: 'candidates' } },
-    user:      { data: { id: process.env.TEAMTAILOR_USER_ID || '43720', type: 'users' } },
+    user:      { data: { id: TEAMTAILOR_USER_ID, type: 'users' } },
   };
 }
 

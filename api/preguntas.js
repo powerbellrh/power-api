@@ -1,11 +1,12 @@
 import { ttObtener, mcCrear } from '../lib/clientes_api.js';
+import { MANYCHAT_FIELD_PREGUNTA, MANYCHAT_FIELD_PREGUNTA_ID } from '../lib/config.js';
 
 const CAMPOS_PREGUNTA = [
-  { texto: +process.env.MANYCHAT_FIELD_PREGUNTA_1, id: +process.env.MANYCHAT_FIELD_PREGUNTA_1_ID },
-  { texto: +process.env.MANYCHAT_FIELD_PREGUNTA_2, id: +process.env.MANYCHAT_FIELD_PREGUNTA_2_ID },
-  { texto: +process.env.MANYCHAT_FIELD_PREGUNTA_3, id: +process.env.MANYCHAT_FIELD_PREGUNTA_3_ID },
-  { texto: +process.env.MANYCHAT_FIELD_PREGUNTA_4, id: +process.env.MANYCHAT_FIELD_PREGUNTA_4_ID },
-  { texto: +process.env.MANYCHAT_FIELD_PREGUNTA_5, id: +process.env.MANYCHAT_FIELD_PREGUNTA_5_ID },
+  { texto: MANYCHAT_FIELD_PREGUNTA[1], id: MANYCHAT_FIELD_PREGUNTA_ID[1] },
+  { texto: MANYCHAT_FIELD_PREGUNTA[2], id: MANYCHAT_FIELD_PREGUNTA_ID[2] },
+  { texto: MANYCHAT_FIELD_PREGUNTA[3], id: MANYCHAT_FIELD_PREGUNTA_ID[3] },
+  { texto: MANYCHAT_FIELD_PREGUNTA[4], id: MANYCHAT_FIELD_PREGUNTA_ID[4] },
+  { texto: MANYCHAT_FIELD_PREGUNTA[5], id: MANYCHAT_FIELD_PREGUNTA_ID[5] },
 ];
 
 // ============================================================================

@@ -3,9 +3,7 @@ import { fileURLToPath }            from 'url';
 import { dirname, join }            from 'path';
 import { normalizarPrestaciones }   from '../lib/prestaciones.js';
 import { orChatCompletion }         from '../lib/openrouter.js';
-
-const SALARIO_MINIMO_MENSUAL        = parseFloat(process.env.SALARIO_MINIMO_MENSUAL);
-const SEMANAS_POR_MES                = parseFloat(process.env.SEMANAS_POR_MES);
+import { SALARIO_MINIMO_MENSUAL, SEMANAS_POR_MES } from '../lib/config.js';
 const __dirname                     = dirname(fileURLToPath(import.meta.url));
 const PROMPT_CONCLUSIONES           = readFileSync(join(__dirname, '../prompts/conclusiones_ia.txt'), 'utf-8');
 const PROMPT_CONCLUSIONES_GLASSDOOR = readFileSync(join(__dirname, '../prompts/conclusiones_ia_glassdoor.txt'), 'utf-8');

@@ -1,6 +1,7 @@
 import { generarCredencial } from '../lib/canvas_credencial.js';
 import { subirYFirmar } from '../lib/storage_powerid.js';
 import { ttCrear } from '../lib/clientes_api.js';
+import { TEAMTAILOR_USER_ID } from '../lib/config.js';
 
 const BUCKET = 'powerID';
 const REGEX_TELEFONO = /^[0-9+\-\s()]+$/;
@@ -25,7 +26,7 @@ async function crearNotaTeamtailor(candidato, imageUrl) {
       attributes: { note: `PowerID: ${imageUrl}` },
       relationships: {
         candidate: { data: { id: String(candidato), type: 'candidates' } },
-        user:      { data: { id: process.env.TEAMTAILOR_USER_ID || '43720', type: 'users' } },
+        user:      { data: { id: TEAMTAILOR_USER_ID, type: 'users' } },
       },
     },
   });

@@ -1,8 +1,6 @@
 import { ttCrear, mcCrear } from '../lib/clientes_api.js';
 import { orChatCompletion } from '../lib/openrouter.js';
-
-const TEAMTAILOR_ADDRESS_QUESTION_ID       = +process.env.TEAMTAILOR_ADDRESS_QUESTION_ID;
-const MANYCHAT_FIELD_ADDRESS_ID            = +process.env.DIRECCIONES_MANYCHAT_FIELD_ADDRESS_ID;
+import { TEAMTAILOR_ADDRESS_QUESTION_ID, DIRECCIONES_MANYCHAT_FIELD_ADDRESS_ID as MANYCHAT_FIELD_ADDRESS_ID } from '../lib/config.js';
 
 const OPENROUTER_MODEL = 'deepseek/deepseek-v4-flash';
 

@@ -26,6 +26,15 @@ import {
 } from '../lib/evaluacion_postulacion.js';
 import { ttObtener, ttActualizar, ttCrear, mcCrear, mcObtener } from '../lib/clientes_api.js';
 import { orChatCompletion } from '../lib/openrouter.js';
+import {
+  AD_TEAMTAILOR_BOT_USER_ID,
+  AD_TEAMTAILOR_CUSTOM_FIELD_ID,
+  AD_MANYCHAT_FLOW_NS,
+  MANYCHAT_FIELD_PHONE_ID,
+  AD_MANYCHAT_FIELD_JOB_TITLE,
+  AD_MANYCHAT_FIELD_CANDIDATE_ID,
+  MANYCHAT_FIELD_PREGUNTA,
+} from '../lib/config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -44,26 +53,26 @@ const AI_CONFIG = {
   OP_VISION: { model: OPENROUTER_MODEL_OP_VISION, max_tokens: 20000, reasoningEffort: 'high' },
 };
 
-const TEAMTAILOR_BOT_USER_ID              = +process.env.AD_TEAMTAILOR_BOT_USER_ID;
+const TEAMTAILOR_BOT_USER_ID              = AD_TEAMTAILOR_BOT_USER_ID;
 const TEAMTAILOR_BOT_USER_ID_REEVALUACION = 27789;
-const CUSTOM_FIELD_ID        =  process.env.AD_TEAMTAILOR_CUSTOM_FIELD_ID;
-const MANYCHAT_FLOW_NS       =  process.env.AD_MANYCHAT_FLOW_NS;
+const CUSTOM_FIELD_ID        =  AD_TEAMTAILOR_CUSTOM_FIELD_ID;
+const MANYCHAT_FLOW_NS       =  AD_MANYCHAT_FLOW_NS;
 
 const REEVALUACION_PREAMBLE = `NOTA IMPORTANTE: Esta es una REEVALUACIÓN. Ya evaluaste a este candidato anteriormente y le enviaste preguntas personalizadas por WhatsApp; el candidato ya respondió. A continuación se te presentan de nuevo el CV, sus respuestas originales del formulario, y ahora también sus respuestas a las preguntas personalizadas que se le enviaron. Vuelve a evaluar al candidato desde cero, considerando toda esta información combinada. IMPORTANTE: ignora por completo la sección "4. ESTRUCTURA DE PREGUNTAS" y el apartado #PREGUNTAS# del formato de respuesta descritos abajo — en una reevaluación NO se generan preguntas nuevas, así que tu respuesta debe terminar en el apartado de Estabilidad, sin incluir #PREGUNTAS# ni ningún listado de preguntas.
 
 `;
 
-const MANYCHAT_PHONE_FIELD_ID = +process.env.MANYCHAT_FIELD_PHONE_ID;
+const MANYCHAT_PHONE_FIELD_ID = MANYCHAT_FIELD_PHONE_ID;
 
 const MANYCHAT_FIELDS = {
-  job_title:      +process.env.AD_MANYCHAT_FIELD_JOB_TITLE,
-  candidate_id:   +process.env.AD_MANYCHAT_FIELD_CANDIDATE_ID,
+  job_title:      AD_MANYCHAT_FIELD_JOB_TITLE,
+  candidate_id:   AD_MANYCHAT_FIELD_CANDIDATE_ID,
   application_id: 14533357,
-  question_1:   +process.env.MANYCHAT_FIELD_PREGUNTA_1,
-  question_2:   +process.env.MANYCHAT_FIELD_PREGUNTA_2,
-  question_3:   +process.env.MANYCHAT_FIELD_PREGUNTA_3,
-  question_4:   +process.env.MANYCHAT_FIELD_PREGUNTA_4,
-  question_5:   +process.env.MANYCHAT_FIELD_PREGUNTA_5,
+  question_1:   MANYCHAT_FIELD_PREGUNTA[1],
+  question_2:   MANYCHAT_FIELD_PREGUNTA[2],
+  question_3:   MANYCHAT_FIELD_PREGUNTA[3],
+  question_4:   MANYCHAT_FIELD_PREGUNTA[4],
+  question_5:   MANYCHAT_FIELD_PREGUNTA[5],
 };
 
 // ============================================================================
