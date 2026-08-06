@@ -42,6 +42,7 @@ function detectarHabilidadesPorRegex(texto) {
 async function detectarHabilidadesPorLlm(texto) {
   const datos = await orChatCompletion({
     model:      OPENROUTER_MODEL,
+    reasoning:  { enabled: false },
     messages: [
       { role: 'system', content: PROMPT_EXTRACCION_HABILIDADES },
       { role: 'user',   content: texto },
@@ -69,6 +70,7 @@ async function verificarCompatibilidad(candidato, descripcion) {
   const datos = await orChatCompletion({
     model:      OPENROUTER_MODEL,
     max_tokens: 300,
+    reasoning:  { enabled: false },
     messages: [
       { role: 'user', content: prompt },
     ],
