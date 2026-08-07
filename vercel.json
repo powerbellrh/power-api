@@ -2,14 +2,10 @@
   "rewrites": [
     { "source": "/estudios",        "destination": "/api/estudios"        },
     { "source": "/postulaciones",   "destination": "/api/postulaciones"   },
-    { "source": "/catalogo",        "destination": "/api/catalogo"        },
     { "source": "/cola",            "destination": "/api/cola"            },
     { "source": "/bloqueos",        "destination": "/api/bloqueos"        },
     { "source": "/recepcion-postulaciones", "destination": "/api/recepcion-postulaciones" },
-    { "source": "/candidatos",      "destination": "/api/candidatos"      },
-    { "source": "/direcciones",     "destination": "/api/direcciones"     },
     { "source": "/historial",       "destination": "/api/historial"       },
-    { "source": "/preguntas",       "destination": "/api/preguntas"       },
     { "source": "/experiencia",     "destination": "/api/experiencia"     },
     { "source": "/informes",        "destination": "/api/informes"        },
     { "source": "/powerid",         "destination": "/api/powerid"         },
@@ -27,9 +23,6 @@
     "api/postulaciones.js": {
       "maxDuration": 300
     },
-    "api/catalogo.js": {
-      "maxDuration": 30
-    },
     "api/mensajes.js": {
       "maxDuration": 300
     },
@@ -39,16 +32,7 @@
     "api/recepcion-postulaciones.js": {
       "maxDuration": 30
     },
-    "api/candidatos.js": {
-      "maxDuration": 30
-    },
-    "api/direcciones.js": {
-      "maxDuration": 30
-    },
     "api/historial.js": {
-      "maxDuration": 30
-    },
-    "api/preguntas.js": {
       "maxDuration": 30
     },
     "api/powerid.js": {
