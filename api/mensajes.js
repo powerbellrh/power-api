@@ -31,7 +31,7 @@ const MENSAJE_FALLBACK_ERROR = 'Tuvimos un problema para procesar tu mensaje, ¿
 
 const URL_POLITICA_PRIVACIDAD = 'https://careers.powerbellrh.com/data-privacy';
 const CAPTION_POLITICA_PRIVACIDAD = 'Ver política';
-const NOTA_POLITICA_PRIVACIDAD = '_Al continuar estás afirmando tu acuerdo con nuestra política de privacidad';
+const NOTA_POLITICA_PRIVACIDAD = '_Al continuar estás afirmando tu acuerdo con nuestra política de privacidad_';
 
 const URL_VACANTES = 'https://talento.powerbellrh.com/';
 const CAPTION_VACANTES = 'Ver vacantes';
