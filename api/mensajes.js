@@ -30,7 +30,7 @@ const MENSAJE_RECORDATORIO_COMPLETADO = 'Tu postulación ya quedó registrada, u
 const MENSAJE_FALLBACK_ERROR = 'Tuvimos un problema para procesar tu mensaje, ¿podrías escribirlo de nuevo?';
 
 const URL_POLITICA_PRIVACIDAD = 'https://careers.powerbellrh.com/data-privacy';
-const CAPTION_POLITICA_PRIVACIDAD = 'Política de privacidad';
+const CAPTION_POLITICA_PRIVACIDAD = 'Ver política';
 const NOTA_POLITICA_PRIVACIDAD = '_Al continuar con esta información estás afirmando tu acuerdo con nuestra política de privacidad que puedes encontrar en el siguiente enlace_';
 
 const URL_VACANTES = 'https://talento.powerbellrh.com/';
