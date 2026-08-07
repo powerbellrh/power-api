@@ -2,9 +2,10 @@ import { createClient }     from '@supabase/supabase-js';
 import { readFileSync }     from 'fs';
 import { fileURLToPath }    from 'url';
 import { dirname, join }    from 'path';
-import { ttObtener, mcCrear } from '../lib/clientes_api.js';
+import { ttObtener, ttCrear, mcCrear } from '../lib/clientes_api.js';
 import { orChatCompletion } from '../lib/openrouter.js';
 import { limpiarHtmlParaWhatsApp } from '../lib/formato_texto.js';
+import { TEAMTAILOR_ADDRESS_QUESTION_ID, TEAMTAILOR_EDAD_QUESTION_ID } from '../lib/config.js';
 
 const __dirname                      = dirname(fileURLToPath(import.meta.url));
 const PROMPT_AGENTE_CONVERSACIONAL   = readFileSync(join(__dirname, '../prompts/agente_conversacional.txt'), 'utf-8');
@@ -13,11 +14,18 @@ const MC_LIMITE_CARACTERES_TEXTO     = 2000;
 const LIMITE_REINTENTOS              = 5;
 const MAXIMO_PREGUNTAS               = 5;
 const DESPLAZAMIENTO_CDMX_MS         = 6 * 60 * 60 * 1000; // Ciudad de México es UTC-6 todo el año
+const REGEX_VACANTE                  = /#(\d{3,})/; // 3+ dígitos: reduce falsos positivos con números de calle cortos
+const FOTO_PERFIL_DEFAULT            = 'https://i.ibb.co/JwvVrDr0/fotodesconocido.png';
 
+const ID_PREGUNTA_NOMBRE    = 'nombre';
+const ID_PREGUNTA_DOMICILIO = String(TEAMTAILOR_ADDRESS_QUESTION_ID);
+const ID_PREGUNTA_EDAD      = String(TEAMTAILOR_EDAD_QUESTION_ID);
+
+// Preguntas de cajón: siempre se preguntan, siempre primero y en este orden.
 const PREGUNTAS_OBLIGATORIAS = [
-  { id: 'nombre',    texto: '¿Cuál es tu nombre completo?', respuesta: '' },
-  { id: 'domicilio', texto: 'Domicilio completo: calle, colonia y municipio', respuesta: '' },
-  { id: 'edad',      texto: '¿Cuál es tu edad?', respuesta: '' },
+  { id: ID_PREGUNTA_NOMBRE,    texto: '¿Cuál es tu nombre completo?',                   respuesta: '', tipo: 'nombre', enviado: false },
+  { id: ID_PREGUNTA_DOMICILIO, texto: 'Domicilio completo: calle, colonia y municipio', respuesta: '', tipo: 'text',   enviado: false },
+  { id: ID_PREGUNTA_EDAD,      texto: '¿Cuál es tu edad?',                              respuesta: '', tipo: 'number', enviado: false },
 ];
 
 const ACTUALIZAR_PROGRESO_TOOL = {
@@ -132,16 +140,65 @@ async function enviarWhatsApp(idSuscriptor, texto) {
 }
 
 // ============================================================================
+// HELPERS — TeamTailor: candidato / postulación / respuestas
+// ============================================================================
+
+async function crearPostulacionTeamTailor(candidatoId, idVacante) {
+  await ttCrear('/job-applications', {
+    data: {
+      type:       'job-applications',
+      attributes: { sourced: true },
+      relationships: {
+        candidate: { data: { id: candidatoId.toString(), type: 'candidates' } },
+        job:       { data: { id: idVacante.toString(),   type: 'jobs'       } },
+      },
+    },
+  });
+}
+
+async function crearCandidatoTeamTailor(nombre, telefono, idVacante) {
+  const respuestaCandidato = await ttCrear('/candidates', {
+    data: {
+      type: 'candidates',
+      attributes: {
+        'first-name':    nombre,
+        'sourced':       true,
+        'referring-url': 'WhatsApp',
+        'phone':         telefono,
+        'picture':       FOTO_PERFIL_DEFAULT,
+      },
+    },
+  });
+  const candidatoId = respuestaCandidato.data.id;
+
+  await crearPostulacionTeamTailor(candidatoId, idVacante);
+
+  return candidatoId;
+}
+
+async function enviarRespuestaTeamTailor(candidatoId, item) {
+  const atributo = item.tipo === 'number' ? { number: parseInt(item.respuesta, 10) } : { text: item.respuesta };
+
+  await ttCrear('/answers', {
+    data: {
+      type:       'answers',
+      attributes: atributo,
+      relationships: {
+        candidate: { data: { id: candidatoId.toString(), type: 'candidates' } },
+        question:  { data: { id: item.id.toString(),     type: 'questions'  } },
+      },
+    },
+  });
+}
+
+// ============================================================================
 // HELPERS — Preguntas de postulación / agente
 // ============================================================================
 
 async function extraerPreguntasVacante(idVacante) {
   const respuestaTt = await ttObtener(`/jobs/${idVacante}/questions`);
   const preguntas = (respuestaTt.data ?? []).filter(p => p.attributes['question-type'] === 'Text');
-  const preguntasVacante = preguntas.slice(0, MAXIMO_PREGUNTAS).map(p => ({ id: String(p.id), texto: p.attributes.title ?? '', respuesta: '' }));
-
-  // Las preguntas de la vacante llevan prioridad; las generales van al final.
-  return [...preguntasVacante, ...PREGUNTAS_OBLIGATORIAS.map(p => ({ ...p }))];
+  return preguntas.slice(0, MAXIMO_PREGUNTAS).map(p => ({ id: String(p.id), texto: p.attributes.title ?? '', respuesta: '', tipo: 'text', enviado: false }));
 }
 
 function detectarAvance(itemsAnteriores, itemsNuevos) {
@@ -152,12 +209,12 @@ function detectarAvance(itemsAnteriores, itemsNuevos) {
 function normalizarRespuesta(id, respuesta) {
   if (!respuesta) return '';
 
-  if (id === 'edad') {
+  if (id === ID_PREGUNTA_EDAD) {
     const digitos = respuesta.match(/\d{1,3}/);
     return digitos ? digitos[0] : '';
   }
 
-  if (id === 'domicilio') {
+  if (id === ID_PREGUNTA_DOMICILIO) {
     const partes = respuesta.split(',').map(parte => parte.trim()).filter(Boolean);
     return partes.length >= 3 ? respuesta.trim() : '';
   }
@@ -233,58 +290,98 @@ export default async function handler(req, res) {
 
   await agregarMensajeConversacion(supabase, fila, 'usuario', mensaje, { actualizarTimestamp: true });
 
-  // ── Detección de vacante (#id) — envía la info completa y reinicia el progreso ──
-  const coincidencia = mensaje.match(/#(\d+)/);
+  // ── Detección de vacante (#id) — separa vacantes reales de falsos positivos ──
+  // (p. ej. "Calle Independencia #123, colonia Centro") sin romper el flujo del chat.
+  const coincidencia = mensaje.match(REGEX_VACANTE);
   if (coincidencia) {
-    const idVacante = coincidencia[1];
-    console.log(JSON.stringify({ etapa: 'inicio', idSuscriptor, idVacante }));
+    const idVacanteTexto = coincidencia[1];
+    const idVacanteNum   = parseInt(idVacanteTexto, 10);
 
-    let datosVacante;
-    try {
-      const respuestaTt = await ttObtener(`/jobs/${idVacante}`);
-      datosVacante = respuestaTt.data.attributes;
-    } catch (e) {
-      const mensajeError = e?.message ?? '';
-      if (mensajeError.includes('404')) {
-        console.log(JSON.stringify({ etapa: 'teamtailor', estado: 'not_found', idVacante }));
-        return res.status(200).json({ ok: false, error: 'job not found' });
+    if (fila.vacante !== idVacanteNum) {
+      let datosVacante = null;
+      try {
+        const respuestaTt = await ttObtener(`/jobs/${idVacanteTexto}`);
+        datosVacante = respuestaTt.data.attributes;
+      } catch (e) {
+        console.log(JSON.stringify({ etapa: 'deteccion_vacante', estado: 'falso_positivo', texto: coincidencia[0], mensaje: e.message }));
       }
-      console.log(JSON.stringify({ etapa: 'teamtailor', estado: 'error', mensaje: mensajeError }));
-      return res.status(502).json({ ok: false, error: 'TeamTailor error' });
+
+      if (datosVacante) {
+        console.log(JSON.stringify({ etapa: 'inicio', idSuscriptor, idVacante: idVacanteNum }));
+
+        const informacionVacante = limpiarHtmlParaWhatsApp(datosVacante.body);
+        console.log(JSON.stringify({ etapa: 'teamtailor', estado: 'ok', titulo: datosVacante.title, chars: informacionVacante.length }));
+
+        try {
+          await enviarWhatsApp(idSuscriptor, informacionVacante);
+          await agregarMensajeConversacion(supabase, fila, 'agente', informacionVacante);
+          console.log(JSON.stringify({ etapa: 'manychat_envio', estado: 'ok', idVacante: idVacanteNum }));
+        } catch (e) {
+          console.log(JSON.stringify({ etapa: 'manychat_envio', estado: 'error', mensaje: e.message }));
+          return res.status(502).json({ ok: false, error: 'ManyChat error' });
+        }
+
+        let nuevosItemsVacante = [];
+        try {
+          nuevosItemsVacante = await extraerPreguntasVacante(idVacanteTexto);
+        } catch (e) {
+          console.log(JSON.stringify({ etapa: 'teamtailor_preguntas', estado: 'error', mensaje: e.message }));
+        }
+
+        // Las preguntas de cajón siempre van primero; se conserva lo ya respondido antes.
+        const itemsPrevios = fila.preguntas?.items ?? [];
+        const obligatoriasConHistorial = PREGUNTAS_OBLIGATORIAS.map(p => {
+          const previa = itemsPrevios.find(i => i.id === p.id);
+          return previa ? { ...p, respuesta: previa.respuesta, enviado: previa.enviado ?? false } : { ...p };
+        });
+
+        const esRegreso            = fila.vacante != null;
+        const candidatoIdExistente = fila.preguntas?.candidato_id ?? null;
+
+        if (esRegreso && candidatoIdExistente) {
+          try {
+            await crearPostulacionTeamTailor(candidatoIdExistente, idVacanteNum);
+            console.log(JSON.stringify({ etapa: 'postulacion_creada', candidato_id: candidatoIdExistente, idVacante: idVacanteNum }));
+          } catch (e) {
+            console.log(JSON.stringify({ etapa: 'postulacion_creada', estado: 'error', mensaje: e.message }));
+          }
+        }
+
+        fila.vacante    = idVacanteNum;
+        fila.preguntas  = { candidato_id: candidatoIdExistente, items: [...obligatoriasConHistorial, ...nuevosItemsVacante] };
+        fila.reintentos = 0;
+        if (esRegreso) fila.conversacion = null;
+
+        const { error: errorReinicio } = await supabase
+          .from('chatbot')
+          .update({
+            vacante:    fila.vacante,
+            preguntas:  fila.preguntas,
+            reintentos: 0,
+            ...(esRegreso ? { conversacion: null } : {}),
+          })
+          .eq('id', fila.id);
+        if (errorReinicio) console.log(JSON.stringify({ etapa: 'supabase_preguntas', estado: 'error', mensaje: errorReinicio.message }));
+        else console.log(JSON.stringify({ etapa: 'supabase_preguntas', estado: 'ok', idVacante: idVacanteNum, preguntas: fila.preguntas.items.length }));
+
+        if (esRegreso) {
+          const quedanPendientes = fila.preguntas.items.some(item => !item.respuesta);
+          const avisoTexto = quedanPendientes
+            ? 'Voy a usar la información que ya nos habías compartido antes. Solo me faltan algunos datos para tu nueva postulación.'
+            : 'Voy a usar la información que ya nos habías compartido antes para tu nueva postulación.';
+          try {
+            await enviarWhatsApp(idSuscriptor, avisoTexto);
+            await agregarMensajeConversacion(supabase, fila, 'agente', avisoTexto);
+          } catch (e) {
+            console.log(JSON.stringify({ etapa: 'manychat_envio', estado: 'error', mensaje: e.message }));
+          }
+        }
+      }
     }
-
-    const informacionVacante = limpiarHtmlParaWhatsApp(datosVacante.body);
-    console.log(JSON.stringify({ etapa: 'teamtailor', estado: 'ok', titulo: datosVacante.title, chars: informacionVacante.length }));
-
-    try {
-      await enviarWhatsApp(idSuscriptor, informacionVacante);
-      await agregarMensajeConversacion(supabase, fila, 'agente', informacionVacante);
-      console.log(JSON.stringify({ etapa: 'manychat_envio', estado: 'ok', idVacante }));
-    } catch (e) {
-      console.log(JSON.stringify({ etapa: 'manychat_envio', estado: 'error', mensaje: e.message }));
-      return res.status(502).json({ ok: false, error: 'ManyChat error' });
-    }
-
-    let itemsPreguntas = PREGUNTAS_OBLIGATORIAS.map(p => ({ ...p }));
-    try {
-      itemsPreguntas = await extraerPreguntasVacante(idVacante);
-    } catch (e) {
-      console.log(JSON.stringify({ etapa: 'teamtailor_preguntas', estado: 'error', mensaje: e.message }));
-    }
-
-    fila.preguntas  = itemsPreguntas;
-    fila.reintentos = 0;
-
-    const { error: errorReinicio } = await supabase
-      .from('chatbot')
-      .update({ preguntas: fila.preguntas, reintentos: 0 })
-      .eq('id', fila.id);
-    if (errorReinicio) console.log(JSON.stringify({ etapa: 'supabase_preguntas', estado: 'error', mensaje: errorReinicio.message }));
-    else console.log(JSON.stringify({ etapa: 'supabase_preguntas', estado: 'ok', idVacante, preguntas: itemsPreguntas.length }));
   }
 
   // ── Agente conversacional — solo si ya hay una vacante con preguntas cargadas ──
-  const itemsPreguntas = fila.preguntas ?? [];
+  const itemsPreguntas = fila.preguntas?.items ?? [];
   if (itemsPreguntas.length === 0) {
     console.log(JSON.stringify({ etapa: 'agente', estado: 'omitido', razon: 'sin_preguntas_cargadas' }));
     return res.status(200).json({ ok: true, vacante: !!coincidencia });
@@ -312,23 +409,50 @@ export default async function handler(req, res) {
     return { ...item, respuesta: respuestaValidada || item.respuesta };
   });
 
-  const avanzo          = detectarAvance(itemsPreguntas, itemsActualizados);
+  const avanzo           = detectarAvance(itemsPreguntas, itemsActualizados);
   const todasRespondidas = itemsActualizados.every(item => item.respuesta);
   const nuevoReintentos  = avanzo ? 0 : (fila.reintentos ?? 0) + 1;
 
-  let mensajeAgente = (resultadoAgente.mensaje ?? '').slice(0, 250);
+  let mensajeAgente     = (resultadoAgente.mensaje ?? '').slice(0, 250);
   let reintentosFinales = nuevoReintentos;
 
   if (todasRespondidas) {
-    const nombreCandidato = itemsActualizados.find(item => item.id === 'nombre')?.respuesta;
+    const nombreCandidato = itemsActualizados.find(item => item.id === ID_PREGUNTA_NOMBRE)?.respuesta;
     mensajeAgente = generarDespedida(nombreCandidato);
     reintentosFinales = LIMITE_REINTENTOS;
   } else if (nuevoReintentos >= LIMITE_REINTENTOS) {
-    const nombreCandidato = itemsActualizados.find(item => item.id === 'nombre')?.respuesta;
+    const nombreCandidato = itemsActualizados.find(item => item.id === ID_PREGUNTA_NOMBRE)?.respuesta;
     mensajeAgente = generarDespedida(nombreCandidato);
   }
 
-  fila.preguntas  = itemsActualizados;
+  // ── Sincronización con TeamTailor: alta de candidato/postulación + respuestas ──
+  let candidatoId = fila.preguntas?.candidato_id ?? null;
+  const itemNombre = itemsActualizados.find(item => item.id === ID_PREGUNTA_NOMBRE);
+
+  if (!candidatoId && itemNombre?.respuesta && !itemNombre.enviado && fila.vacante) {
+    try {
+      candidatoId = await crearCandidatoTeamTailor(itemNombre.respuesta, telefono, fila.vacante);
+      itemNombre.enviado = true;
+      console.log(JSON.stringify({ etapa: 'candidato_creado', candidato_id: candidatoId, idVacante: fila.vacante }));
+    } catch (e) {
+      console.log(JSON.stringify({ etapa: 'candidato_creado', estado: 'error', mensaje: e.message }));
+    }
+  }
+
+  if (candidatoId) {
+    for (const item of itemsActualizados) {
+      if (item.tipo === 'nombre' || !item.respuesta || item.enviado) continue;
+      try {
+        await enviarRespuestaTeamTailor(candidatoId, item);
+        item.enviado = true;
+        console.log(JSON.stringify({ etapa: 'respuesta_teamtailor', estado: 'ok', candidato_id: candidatoId, id_pregunta: item.id }));
+      } catch (e) {
+        console.log(JSON.stringify({ etapa: 'respuesta_teamtailor', estado: 'error', id_pregunta: item.id, mensaje: e.message }));
+      }
+    }
+  }
+
+  fila.preguntas  = { candidato_id: candidatoId, items: itemsActualizados };
   fila.reintentos = reintentosFinales;
 
   const { error: errorProgreso } = await supabase
