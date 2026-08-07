@@ -25,6 +25,7 @@ const IMAGEN_POWERBOT          = 'https://i.ibb.co/Tq2fTbqr/Power-Bot.png';
 const IMAGEN_SOLICITUD_COMPLETA = 'https://i.ibb.co/p9vf7QX/Solicitud-completada.png';
 const MENSAJE_DESPEDIDA_COMPLETADO = '¡Felicidades! Tu postulación ha sido registrada. Una reclutadora se pondrá en contacto contigo lo más pronto posible 🥳';
 const MENSAJE_RECORDATORIO_COMPLETADO = 'Tu postulación ya quedó registrada, una reclutadora te contactará lo más pronto posible 🙂';
+const MENSAJE_FALLBACK_ERROR = 'Tuvimos un problema para procesar tu mensaje, ¿podrías escribirlo de nuevo?';
 
 const ID_PREGUNTA_NOMBRE    = 'nombre';
 const ID_PREGUNTA_DOMICILIO = String(TEAMTAILOR_ADDRESS_QUESTION_ID);
@@ -570,6 +571,12 @@ export default async function handler(req, res) {
     });
   } catch (e) {
     log('agente_llm', { estado: 'error', error: e.message });
+    try {
+      await enviarWhatsApp(idSuscriptor, MENSAJE_FALLBACK_ERROR);
+      await agregarMensajeConversacion(supabase, fila, 'agente', MENSAJE_FALLBACK_ERROR);
+    } catch (e2) {
+      log('manychat_envio', { estado: 'error', error: e2.message });
+    }
     return res.status(502).json({ ok: false, error: 'OpenRouter error' });
   }
 
