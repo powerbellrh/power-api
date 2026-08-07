@@ -46,7 +46,7 @@ const ID_PREGUNTA_EMPLEO    = String(TEAMTAILOR_EMPLEO_ANTERIOR_QUESTION_ID);
 const PREGUNTAS_OBLIGATORIAS_INICIO = [
   { id: ID_PREGUNTA_NOMBRE,    texto: 'Nombre (nombre solo, o nombre y apellidos, cualquiera está bien)', respuesta: '', tipo: 'nombre', enviado: false },
   { id: ID_PREGUNTA_DOMICILIO, texto: 'Domicilio completo: calle, colonia y municipio',                   respuesta: '', tipo: 'text',   enviado: false },
-  { id: ID_PREGUNTA_EDAD,      texto: '¿Cuál es tu edad?',                                                respuesta: '', tipo: 'number', enviado: false },
+  { id: ID_PREGUNTA_EDAD,      texto: '¿Cuál es tu edad? (por favor respóndeme con una frase completa, por ejemplo: *"Tengo 25 años"*)', respuesta: '', tipo: 'number', enviado: false },
 ];
 
 // Pregunta de cajón que siempre va al final, después de las específicas de la vacante.
