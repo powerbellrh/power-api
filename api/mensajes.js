@@ -22,7 +22,8 @@ const FOTO_PERFIL_HOMBRE       = 'https://i.ibb.co/4RGYgcC4/fotohombre.png';
 const FOTO_PERFIL_MUJER        = 'https://i.ibb.co/6CdjYbv/fotomujer.png';
 const IMAGEN_POWERBOT          = 'https://i.ibb.co/Tq2fTbqr/Power-Bot.png';
 const IMAGEN_SOLICITUD_COMPLETA = 'https://i.ibb.co/p9vf7QX/Solicitud-completada.png';
-const MENSAJE_DESPEDIDA_COMPLETADO = 'Felicidades, tu postulación ha sido registrada en nuestro sistema, así comienza tu camino hacia la contratación! 🥳';
+const MENSAJE_DESPEDIDA_COMPLETADO = '¡Felicidades! Tu postulación ha sido registrada. Una reclutadora se pondrá en contacto contigo lo más pronto posible 🥳';
+const MENSAJE_RECORDATORIO_COMPLETADO = 'Tu postulación ya quedó registrada, una reclutadora te contactará lo más pronto posible 🙂';
 
 const ID_PREGUNTA_NOMBRE    = 'nombre';
 const ID_PREGUNTA_DOMICILIO = String(TEAMTAILOR_ADDRESS_QUESTION_ID);
@@ -30,7 +31,7 @@ const ID_PREGUNTA_EDAD      = String(TEAMTAILOR_EDAD_QUESTION_ID);
 
 // Preguntas de cajón: siempre se preguntan, siempre primero y en este orden.
 const PREGUNTAS_OBLIGATORIAS = [
-  { id: ID_PREGUNTA_NOMBRE,    texto: 'Nombre completo (con al menos un apellido)',     respuesta: '', tipo: 'nombre', enviado: false },
+  { id: ID_PREGUNTA_NOMBRE,    texto: 'Nombre (solo el nombre, sin apellidos)',         respuesta: '', tipo: 'nombre', enviado: false },
   { id: ID_PREGUNTA_DOMICILIO, texto: 'Domicilio completo: calle, colonia y municipio', respuesta: '', tipo: 'text',   enviado: false },
   { id: ID_PREGUNTA_EDAD,      texto: '¿Cuál es tu edad?',                              respuesta: '', tipo: 'number', enviado: false },
 ];
@@ -240,7 +241,7 @@ function normalizarRespuesta(id, respuesta) {
 
   if (id === ID_PREGUNTA_NOMBRE) {
     const partes = respuesta.trim().split(/\s+/).filter(Boolean);
-    return partes.length >= 2 ? respuesta.trim() : '';
+    return partes.length >= 1 ? partes[0] : '';
   }
 
   if (id === ID_PREGUNTA_EDAD) {
@@ -258,7 +259,29 @@ function normalizarRespuesta(id, respuesta) {
 
 function generarDespedida(nombre) {
   const inicio = nombre ? `${nombre}, gracias` : 'Gracias';
-  return `${inicio} por tu tiempo. Una reclutadora se pondrá en contacto contigo pronto para continuar con tu proceso.`.slice(0, 250);
+  return `${inicio} por tu tiempo. Una reclutadora se pondrá en contacto contigo lo más pronto posible para continuar con tu proceso.`.slice(0, 250);
+}
+
+async function formatearVacanteParaWhatsApp(informacionVacante) {
+  try {
+    const datos = await orChatCompletion({
+      model:     OPENROUTER_MODEL,
+      reasoning: { effort: 'low' },
+      messages: [
+        {
+          role:    'system',
+          content: 'Reformatea el siguiente texto de una vacante para que se vea bien en WhatsApp: cada título de sección debe llevar negritas usando asteriscos, por ejemplo *Responsabilidades*. No cambies, resumas, traduzcas ni agregues ninguna palabra del contenido original; solo ajusta el formato.',
+        },
+        { role: 'user', content: informacionVacante },
+      ],
+    });
+
+    const texto = datos?.choices?.[0]?.message?.content?.trim();
+    return texto || informacionVacante;
+  } catch (e) {
+    console.log(JSON.stringify({ etapa: 'formato_vacante', estado: 'error', mensaje: e.message }));
+    return informacionVacante;
+  }
 }
 
 async function generarRespuestaAgente({ items, conversacion }) {
@@ -343,14 +366,15 @@ export default async function handler(req, res) {
       if (datosVacante) {
         console.log(JSON.stringify({ etapa: 'inicio', idSuscriptor, idVacante: idVacanteNum }));
 
-        const informacionVacante = limpiarHtmlParaWhatsApp(datosVacante.body);
+        const informacionVacanteCruda = limpiarHtmlParaWhatsApp(datosVacante.body);
+        const informacionVacante      = await formatearVacanteParaWhatsApp(informacionVacanteCruda);
         console.log(JSON.stringify({ etapa: 'teamtailor', estado: 'ok', titulo: datosVacante.title, chars: informacionVacante.length }));
 
         try {
           await enviarImagenWhatsApp(idSuscriptor, IMAGEN_POWERBOT);
           await agregarMensajeConversacion(supabase, fila, 'agente', '[imagen: PowerBot]');
 
-          const textoInfo = `Aquí tienes la información de la vacante:\n\n${informacionVacante}`;
+          const textoInfo = `Aquí tienes la información de la vacante 👇:\n\n${informacionVacante}`;
           await enviarWhatsApp(idSuscriptor, textoInfo);
           await agregarMensajeConversacion(supabase, fila, 'agente', textoInfo);
           console.log(JSON.stringify({ etapa: 'manychat_envio', estado: 'ok', idVacante: idVacanteNum }));
@@ -420,7 +444,7 @@ export default async function handler(req, res) {
         const nombreYaConocido = fila.preguntas.find(item => item.id === ID_PREGUNTA_NOMBRE)?.respuesta;
         if (!nombreYaConocido) {
           await dormir(3000);
-          const bienvenida = 'Hola, soy el asistente de PowerBell RH. Para empezar tu postulación, cuéntame: ¿cuál es tu nombre completo? Con tu nombre y un apellido es suficiente.';
+          const bienvenida = 'Hola, soy PowerBot, un asistente de IA que te ayudará con tu postulación, para comenzar ¿Podrías darme tu nombre? 🙂';
           try {
             await enviarWhatsApp(idSuscriptor, bienvenida);
             await agregarMensajeConversacion(supabase, fila, 'agente', bienvenida);
@@ -441,6 +465,19 @@ export default async function handler(req, res) {
   if (itemsPreguntas.length === 0) {
     console.log(JSON.stringify({ etapa: 'agente', estado: 'omitido', razon: 'sin_preguntas_cargadas' }));
     return res.status(200).json({ ok: true, vacante: !!coincidencia });
+  }
+
+  const yaCompletado = itemsPreguntas.every(item => item.respuesta);
+  if (yaCompletado) {
+    try {
+      await enviarWhatsApp(idSuscriptor, MENSAJE_RECORDATORIO_COMPLETADO);
+      await agregarMensajeConversacion(supabase, fila, 'agente', MENSAJE_RECORDATORIO_COMPLETADO);
+    } catch (e) {
+      console.log(JSON.stringify({ etapa: 'manychat_envio', estado: 'error', mensaje: e.message }));
+      return res.status(502).json({ ok: false, error: 'ManyChat error' });
+    }
+    console.log(JSON.stringify({ etapa: 'agente', estado: 'completado_recordatorio' }));
+    return res.status(200).json({ ok: true, completado: true });
   }
 
   if ((fila.reintentos ?? 0) >= LIMITE_REINTENTOS) {
