@@ -808,7 +808,7 @@ export default async function handler(req, res) {
 
   const idSuscriptor = cuerpo?.id;
   const telefono      = cuerpo?.telefono != null ? String(cuerpo.telefono) : null;
-  const mensaje        = cuerpo?.mensaje ?? '';
+  const mensaje        = cuerpo?.mensaje != null ? String(cuerpo.mensaje) : '';
 
   const log = (etapa, extra = {}) => console.log(JSON.stringify({ etapa, idSuscriptor, mensajeCandidato: mensaje, ...extra }));
 
