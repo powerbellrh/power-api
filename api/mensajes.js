@@ -2,11 +2,12 @@ import { createClient }     from '@supabase/supabase-js';
 import { readFileSync }     from 'fs';
 import { fileURLToPath }    from 'url';
 import { dirname, join }    from 'path';
-import { ttObtener, ttCrear, mcCrear } from '../lib/clientes_api.js';
+import PDFDocument           from 'pdfkit';
+import { ttObtener, ttCrear, ttSubirArchivoTransitorio, mcCrear } from '../lib/clientes_api.js';
 import { orChatCompletion } from '../lib/openrouter.js';
 import { dormir }           from '../lib/evaluacion_postulacion.js';
 import { limpiarHtmlParaWhatsApp } from '../lib/formato_texto.js';
-import { TEAMTAILOR_ADDRESS_QUESTION_ID, TEAMTAILOR_EDAD_QUESTION_ID } from '../lib/config.js';
+import { TEAMTAILOR_ADDRESS_QUESTION_ID, TEAMTAILOR_EDAD_QUESTION_ID, TEAMTAILOR_EMPLEO_ANTERIOR_QUESTION_ID } from '../lib/config.js';
 
 const __dirname                      = dirname(fileURLToPath(import.meta.url));
 const PROMPT_AGENTE_CONVERSACIONAL   = readFileSync(join(__dirname, '../prompts/agente_conversacional.txt'), 'utf-8');
@@ -28,13 +29,23 @@ const MENSAJE_RECORDATORIO_COMPLETADO = 'Tu postulación ya quedó registrada, u
 const ID_PREGUNTA_NOMBRE    = 'nombre';
 const ID_PREGUNTA_DOMICILIO = String(TEAMTAILOR_ADDRESS_QUESTION_ID);
 const ID_PREGUNTA_EDAD      = String(TEAMTAILOR_EDAD_QUESTION_ID);
+const ID_PREGUNTA_EMPLEO    = String(TEAMTAILOR_EMPLEO_ANTERIOR_QUESTION_ID);
 
-// Preguntas de cajón: siempre se preguntan, siempre primero y en este orden.
-const PREGUNTAS_OBLIGATORIAS = [
+// Preguntas de cajón que siempre van primero, en este orden.
+const PREGUNTAS_OBLIGATORIAS_INICIO = [
   { id: ID_PREGUNTA_NOMBRE,    texto: 'Nombre (solo el nombre, sin apellidos)',         respuesta: '', tipo: 'nombre', enviado: false },
   { id: ID_PREGUNTA_DOMICILIO, texto: 'Domicilio completo: calle, colonia y municipio', respuesta: '', tipo: 'text',   enviado: false },
   { id: ID_PREGUNTA_EDAD,      texto: '¿Cuál es tu edad?',                              respuesta: '', tipo: 'number', enviado: false },
 ];
+
+// Pregunta de cajón que siempre va al final, después de las específicas de la vacante.
+const PREGUNTA_OBLIGATORIA_FIN = {
+  id: ID_PREGUNTA_EMPLEO,
+  texto: 'Último(s) empleo(s): empresa, puesto y actividades (con 1 empleo es suficiente, 2 es lo ideal)',
+  respuesta: '',
+  tipo: 'text',
+  enviado: false,
+};
 
 const ACTUALIZAR_PROGRESO_TOOL = {
   type: 'function',
@@ -206,6 +217,41 @@ async function crearCandidatoTeamTailor(nombre, genero, telefono, idVacante) {
   return candidatoId;
 }
 
+function generarPdfConversacion(conversacion) {
+  return new Promise((resolve, reject) => {
+    const documento = new PDFDocument({ margin: 40 });
+    const bloques = [];
+    documento.on('data', bloque => bloques.push(bloque));
+    documento.on('end', () => resolve(Buffer.concat(bloques)));
+    documento.on('error', reject);
+
+    documento.fontSize(16).text('Conversación', { underline: true });
+    documento.moveDown();
+    documento.fontSize(10).text(conversacion || '(sin mensajes)');
+    documento.end();
+  });
+}
+
+async function subirConversacionTeamTailor(candidatoId, conversacion) {
+  const fecha = timestampCdmx().slice(0, 10);
+  const nombreArchivo = `Conversacion ${fecha}.pdf`;
+
+  const bufferPdf = await generarPdfConversacion(conversacion);
+  const archivoTransitorio = await ttSubirArchivoTransitorio(bufferPdf, nombreArchivo, 'application/pdf', true);
+  const uriTransitoria = archivoTransitorio?.uri;
+  if (!uriTransitoria) throw new Error('TeamTailor no devolvió una URI transitoria válida');
+
+  await ttCrear('/uploads', {
+    data: {
+      type:       'uploads',
+      attributes: { url: uriTransitoria, 'file-name': nombreArchivo },
+      relationships: {
+        candidate: { data: { type: 'candidates', id: candidatoId.toString() } },
+      },
+    },
+  }, true);
+}
+
 async function enviarRespuestaTeamTailor(candidatoId, item) {
   const atributo = item.tipo === 'number' ? { number: parseInt(item.respuesta, 10) } : { text: item.respuesta };
 
@@ -233,7 +279,7 @@ async function extraerPreguntasVacante(idVacante) {
 
 function detectarAvance(itemsAnteriores, itemsNuevos) {
   const respuestaPrevia = new Map(itemsAnteriores.map(p => [p.id, p.respuesta]));
-  return itemsNuevos.some(p => !respuestaPrevia.get(p.id) && p.respuesta);
+  return itemsNuevos.some(p => p.respuesta && p.respuesta !== respuestaPrevia.get(p.id));
 }
 
 function normalizarRespuesta(id, respuesta) {
@@ -390,12 +436,14 @@ export default async function handler(req, res) {
           console.log(JSON.stringify({ etapa: 'teamtailor_preguntas', estado: 'error', mensaje: e.message }));
         }
 
-        // Las preguntas de cajón siempre van primero; se conserva lo ya respondido antes.
+        // Las preguntas de cajón van al inicio y al final; se conserva lo ya respondido antes.
         const itemsPrevios = fila.preguntas ?? [];
-        const obligatoriasConHistorial = PREGUNTAS_OBLIGATORIAS.map(p => {
+        const conHistorial = p => {
           const previa = itemsPrevios.find(i => i.id === p.id);
           return previa ? { ...p, respuesta: previa.respuesta, enviado: previa.enviado ?? false } : { ...p };
-        });
+        };
+        const inicioConHistorial = PREGUNTAS_OBLIGATORIAS_INICIO.map(conHistorial);
+        const finConHistorial    = conHistorial(PREGUNTA_OBLIGATORIA_FIN);
 
         const esRegreso            = fila.vacante != null;
         const candidatoIdExistente = fila.candidato ?? null;
@@ -412,7 +460,7 @@ export default async function handler(req, res) {
         }
 
         fila.vacante    = idVacanteNum;
-        fila.preguntas  = [...obligatoriasConHistorial, ...nuevosItemsVacante];
+        fila.preguntas  = [...inicioConHistorial, ...nuevosItemsVacante, finConHistorial];
         fila.reintentos = 0;
         if (esRegreso) fila.conversacion = null;
 
@@ -558,6 +606,15 @@ export default async function handler(req, res) {
   if (errorProgreso) console.log(JSON.stringify({ etapa: 'supabase_preguntas', estado: 'error', mensaje: errorProgreso.message }));
 
   console.log(JSON.stringify({ etapa: 'agente', estado: 'ok', avanzo, todasRespondidas, reintentos: reintentosFinales }));
+
+  if (todasRespondidas && candidatoId) {
+    try {
+      await subirConversacionTeamTailor(candidatoId, fila.conversacion);
+      console.log(JSON.stringify({ etapa: 'conversacion_pdf', estado: 'ok', candidato_id: candidatoId }));
+    } catch (e) {
+      console.log(JSON.stringify({ etapa: 'conversacion_pdf', estado: 'error', mensaje: e.message }));
+    }
+  }
 
   try {
     if (enviarImagenFinal) {
