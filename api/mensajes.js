@@ -478,9 +478,22 @@ export default async function handler(req, res) {
 
         if (esRegreso) {
           const quedanPendientes = fila.preguntas.some(item => !item.respuesta);
-          const avisoTexto = quedanPendientes
-            ? 'Voy a usar los datos que ya nos habías compartido antes. Solo me faltan algunas cosas para tu nueva postulación.'
-            : 'Voy a usar los datos que ya nos habías compartido antes para tu nueva postulación.';
+
+          if (!quedanPendientes) {
+            const avisoAutomatico = 'Ya contamos con tu información, así que llenamos tu postulación de forma automática. Una reclutadora se pondrá en contacto contigo lo más pronto posible 🙂';
+            try {
+              await enviarWhatsApp(idSuscriptor, avisoAutomatico);
+              await agregarMensajeConversacion(supabase, fila, 'agente', avisoAutomatico);
+            } catch (e) {
+              console.log(JSON.stringify({ etapa: 'manychat_envio', estado: 'error', mensaje: e.message }));
+              return res.status(502).json({ ok: false, error: 'ManyChat error' });
+            }
+
+            console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', idSuscriptor, automatico: true }));
+            return res.status(200).json({ ok: true, vacante: true, automatico: true });
+          }
+
+          const avisoTexto = 'Voy a usar los datos que ya nos habías compartido antes. Solo me faltan algunas cosas para tu nueva postulación.';
           try {
             await enviarWhatsApp(idSuscriptor, avisoTexto);
             await agregarMensajeConversacion(supabase, fila, 'agente', avisoTexto);
@@ -560,7 +573,7 @@ export default async function handler(req, res) {
 
   if (todasRespondidas) {
     mensajeAgente     = MENSAJE_DESPEDIDA_COMPLETADO;
-    reintentosFinales = LIMITE_REINTENTOS;
+    reintentosFinales = 0;
     enviarImagenFinal = IMAGEN_SOLICITUD_COMPLETA;
   } else if (nuevoReintentos >= LIMITE_REINTENTOS) {
     const nombreCandidato = itemsActualizados.find(item => item.id === ID_PREGUNTA_NOMBRE)?.respuesta;
