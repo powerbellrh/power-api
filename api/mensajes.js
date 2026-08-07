@@ -570,11 +570,10 @@ async function detectarYCargarVacante({ supabase, fila, idSuscriptor, telefono, 
   if (!nombreYaConocido) {
     await dormir(3000);
     const bienvenida = 'Hola, soy PowerBot, un asistente de IA que te ayudará con tu postulación, para comenzar ¿Podrías darme tu nombre? 🙂';
+    const bienvenidaConPolitica = `${bienvenida}\n\n${NOTA_POLITICA_PRIVACIDAD}`;
     try {
-      await enviarWhatsApp(idSuscriptor, bienvenida);
-      await agregarMensajeConversacion(supabase, fila, 'agente', bienvenida);
-      await enviarWhatsAppConBoton(idSuscriptor, NOTA_POLITICA_PRIVACIDAD, { caption: CAPTION_POLITICA_PRIVACIDAD, url: URL_POLITICA_PRIVACIDAD });
-      await agregarMensajeConversacion(supabase, fila, 'agente', NOTA_POLITICA_PRIVACIDAD);
+      await enviarWhatsAppConBoton(idSuscriptor, bienvenidaConPolitica, { caption: CAPTION_POLITICA_PRIVACIDAD, url: URL_POLITICA_PRIVACIDAD });
+      await agregarMensajeConversacion(supabase, fila, 'agente', bienvenidaConPolitica);
     } catch (e) {
       log('manychat_envio', { estado: 'error', error: e.message });
       return true;
