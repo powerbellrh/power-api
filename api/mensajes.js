@@ -10,8 +10,15 @@ const __dirname                      = dirname(fileURLToPath(import.meta.url));
 const PROMPT_AGENTE_CONVERSACIONAL   = readFileSync(join(__dirname, '../prompts/agente_conversacional.txt'), 'utf-8');
 const OPENROUTER_MODEL               = 'deepseek/deepseek-v4-flash-0731';
 const MC_LIMITE_CARACTERES_TEXTO     = 2000;
-const LIMITE_REINTENTOS              = 3;
+const LIMITE_REINTENTOS              = 5;
 const MAXIMO_PREGUNTAS               = 5;
+const DESPLAZAMIENTO_CDMX_MS         = 6 * 60 * 60 * 1000; // Ciudad de México es UTC-6 todo el año
+
+const PREGUNTAS_OBLIGATORIAS = [
+  { id: 'nombre',    texto: '¿Cuál es tu nombre completo?', respuesta: '' },
+  { id: 'domicilio', texto: 'Domicilio completo: calle, colonia y municipio', respuesta: '' },
+  { id: 'edad',      texto: '¿Cuál es tu edad?', respuesta: '' },
+];
 
 const ACTUALIZAR_PROGRESO_TOOL = {
   type: 'function',
@@ -31,8 +38,8 @@ const ACTUALIZAR_PROGRESO_TOOL = {
           items: {
             type: 'object',
             properties: {
-              id:        { type: 'integer', description: 'id de la pregunta, tal como se recibió.' },
-              respuesta: { type: 'string',  description: 'Respuesta del candidato. Cadena vacía si aún no se conoce.' },
+              id:        { type: 'string', description: 'id de la pregunta, tal como se recibió.' },
+              respuesta: { type: 'string', description: 'Respuesta del candidato. Cadena vacía si aún no se conoce.' },
             },
             required: ['id', 'respuesta'],
           },
@@ -42,6 +49,14 @@ const ACTUALIZAR_PROGRESO_TOOL = {
     },
   },
 };
+
+// ============================================================================
+// HELPERS — Tiempo
+// ============================================================================
+
+function timestampCdmx() {
+  return new Date(Date.now() - DESPLAZAMIENTO_CDMX_MS).toISOString().replace('Z', '-06:00');
+}
 
 // ============================================================================
 // HELPERS — Supabase
@@ -58,21 +73,24 @@ async function obtenerOCrearContacto(supabase, telefono) {
 
   const { data: creado, error: errorInsercion } = await supabase
     .from('chatbot')
-    .insert({ telefono })
+    .insert({ telefono, creado: timestampCdmx() })
     .select()
     .single();
   if (errorInsercion) throw errorInsercion;
   return creado;
 }
 
-async function agregarMensajeConversacion(supabase, fila, actor, texto) {
-  const linea = `[${new Date().toISOString()}] ${actor}: ${texto}`;
+async function agregarMensajeConversacion(supabase, fila, actor, texto, { actualizarTimestamp = false } = {}) {
+  const linea = `[${timestampCdmx()}] ${actor}: ${texto}`;
   const conversacion = fila.conversacion ? `${fila.conversacion}\n${linea}` : linea;
 
-  const { error } = await supabase.from('chatbot').update({ conversacion }).eq('id', fila.id);
+  const cambios = { conversacion };
+  if (actualizarTimestamp) cambios.actualizado = timestampCdmx();
+
+  const { error } = await supabase.from('chatbot').update(cambios).eq('id', fila.id);
   if (error) console.log(JSON.stringify({ etapa: 'supabase_conversacion', estado: 'error', mensaje: error.message, actor }));
 
-  fila.conversacion = conversacion;
+  Object.assign(fila, cambios);
 }
 
 // ============================================================================
@@ -120,7 +138,10 @@ async function enviarWhatsApp(idSuscriptor, texto) {
 async function extraerPreguntasVacante(idVacante) {
   const respuestaTt = await ttObtener(`/jobs/${idVacante}/questions`);
   const preguntas = (respuestaTt.data ?? []).filter(p => p.attributes['question-type'] === 'Text');
-  return preguntas.slice(0, MAXIMO_PREGUNTAS).map(p => ({ id: +p.id, texto: p.attributes.title ?? '', respuesta: '' }));
+  const preguntasVacante = preguntas.slice(0, MAXIMO_PREGUNTAS).map(p => ({ id: String(p.id), texto: p.attributes.title ?? '', respuesta: '' }));
+
+  // Las preguntas de la vacante llevan prioridad; las generales van al final.
+  return [...preguntasVacante, ...PREGUNTAS_OBLIGATORIAS.map(p => ({ ...p }))];
 }
 
 function detectarAvance(itemsAnteriores, itemsNuevos) {
@@ -128,19 +149,37 @@ function detectarAvance(itemsAnteriores, itemsNuevos) {
   return itemsNuevos.some(p => !respuestaPrevia.get(p.id) && p.respuesta);
 }
 
-async function generarRespuestaAgente({ tituloVacante, descripcionVacante, items, conversacion }) {
+function normalizarRespuesta(id, respuesta) {
+  if (!respuesta) return '';
+
+  if (id === 'edad') {
+    const digitos = respuesta.match(/\d{1,3}/);
+    return digitos ? digitos[0] : '';
+  }
+
+  if (id === 'domicilio') {
+    const partes = respuesta.split(',').map(parte => parte.trim()).filter(Boolean);
+    return partes.length >= 3 ? respuesta.trim() : '';
+  }
+
+  return respuesta.trim();
+}
+
+function generarDespedida(nombre) {
+  const inicio = nombre ? `${nombre}, gracias` : 'Gracias';
+  return `${inicio} por tu tiempo. Una reclutadora se pondrá en contacto contigo pronto para continuar con tu proceso.`.slice(0, 250);
+}
+
+async function generarRespuestaAgente({ items, conversacion }) {
   const listaPreguntas = items
     .map(p => `- (id ${p.id}) ${p.texto} → ${p.respuesta ? `respondida: "${p.respuesta}"` : 'PENDIENTE'}`)
     .join('\n');
 
-  const prompt = PROMPT_AGENTE_CONVERSACIONAL
-    .replace('{{titulo_vacante}}',     tituloVacante || '(sin título)')
-    .replace('{{preguntas}}',          listaPreguntas)
-    .replace('{{descripcion_vacante}}', descripcionVacante || '(sin descripción)');
+  const prompt = PROMPT_AGENTE_CONVERSACIONAL.replace('{{preguntas}}', listaPreguntas);
 
   const datos = await orChatCompletion({
     model:       OPENROUTER_MODEL,
-    reasoning:   { effort: 'low' },
+    reasoning:   { effort: 'medium' },
     messages: [
       { role: 'system', content: prompt },
       { role: 'user',   content: conversacion },
@@ -192,7 +231,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ ok: false, error: 'Supabase error' });
   }
 
-  await agregarMensajeConversacion(supabase, fila, 'usuario', mensaje);
+  await agregarMensajeConversacion(supabase, fila, 'usuario', mensaje, { actualizarTimestamp: true });
 
   // ── Detección de vacante (#id) — envía la info completa y reinicia el progreso ──
   const coincidencia = mensaje.match(/#(\d+)/);
@@ -226,14 +265,14 @@ export default async function handler(req, res) {
       return res.status(502).json({ ok: false, error: 'ManyChat error' });
     }
 
-    let itemsPreguntas = [];
+    let itemsPreguntas = PREGUNTAS_OBLIGATORIAS.map(p => ({ ...p }));
     try {
       itemsPreguntas = await extraerPreguntasVacante(idVacante);
     } catch (e) {
       console.log(JSON.stringify({ etapa: 'teamtailor_preguntas', estado: 'error', mensaje: e.message }));
     }
 
-    fila.preguntas  = { id_vacante: idVacante, titulo: datosVacante.title, descripcion: informacionVacante, items: itemsPreguntas };
+    fila.preguntas  = itemsPreguntas;
     fila.reintentos = 0;
 
     const { error: errorReinicio } = await supabase
@@ -245,7 +284,7 @@ export default async function handler(req, res) {
   }
 
   // ── Agente conversacional — solo si ya hay una vacante con preguntas cargadas ──
-  const itemsPreguntas = fila.preguntas?.items ?? [];
+  const itemsPreguntas = fila.preguntas ?? [];
   if (itemsPreguntas.length === 0) {
     console.log(JSON.stringify({ etapa: 'agente', estado: 'omitido', razon: 'sin_preguntas_cargadas' }));
     return res.status(200).json({ ok: true, vacante: !!coincidencia });
@@ -259,36 +298,47 @@ export default async function handler(req, res) {
   let resultadoAgente;
   try {
     resultadoAgente = await generarRespuestaAgente({
-      tituloVacante:      fila.preguntas.titulo,
-      descripcionVacante: fila.preguntas.descripcion,
-      items:              itemsPreguntas,
-      conversacion:       fila.conversacion,
+      items:        itemsPreguntas,
+      conversacion: fila.conversacion,
     });
   } catch (e) {
     console.log(JSON.stringify({ etapa: 'agente_llm', estado: 'error', mensaje: e.message }));
     return res.status(502).json({ ok: false, error: 'OpenRouter error' });
   }
 
-  const avanzo        = detectarAvance(itemsPreguntas, resultadoAgente.preguntas ?? []);
-  const nuevoReintentos = avanzo ? 0 : (fila.reintentos ?? 0) + 1;
-
   const itemsActualizados = itemsPreguntas.map(item => {
-    const actualizado = resultadoAgente.preguntas?.find(p => p.id === item.id);
-    return { ...item, respuesta: actualizado?.respuesta || item.respuesta };
+    const respuestaCruda = resultadoAgente.preguntas?.find(p => String(p.id) === String(item.id))?.respuesta ?? '';
+    const respuestaValidada = normalizarRespuesta(item.id, respuestaCruda);
+    return { ...item, respuesta: respuestaValidada || item.respuesta };
   });
 
-  fila.preguntas  = { ...fila.preguntas, items: itemsActualizados };
-  fila.reintentos = nuevoReintentos;
+  const avanzo          = detectarAvance(itemsPreguntas, itemsActualizados);
+  const todasRespondidas = itemsActualizados.every(item => item.respuesta);
+  const nuevoReintentos  = avanzo ? 0 : (fila.reintentos ?? 0) + 1;
+
+  let mensajeAgente = (resultadoAgente.mensaje ?? '').slice(0, 250);
+  let reintentosFinales = nuevoReintentos;
+
+  if (todasRespondidas) {
+    const nombreCandidato = itemsActualizados.find(item => item.id === 'nombre')?.respuesta;
+    mensajeAgente = generarDespedida(nombreCandidato);
+    reintentosFinales = LIMITE_REINTENTOS;
+  } else if (nuevoReintentos >= LIMITE_REINTENTOS) {
+    const nombreCandidato = itemsActualizados.find(item => item.id === 'nombre')?.respuesta;
+    mensajeAgente = generarDespedida(nombreCandidato);
+  }
+
+  fila.preguntas  = itemsActualizados;
+  fila.reintentos = reintentosFinales;
 
   const { error: errorProgreso } = await supabase
     .from('chatbot')
-    .update({ preguntas: fila.preguntas, reintentos: nuevoReintentos })
+    .update({ preguntas: fila.preguntas, reintentos: reintentosFinales })
     .eq('id', fila.id);
   if (errorProgreso) console.log(JSON.stringify({ etapa: 'supabase_preguntas', estado: 'error', mensaje: errorProgreso.message }));
 
-  console.log(JSON.stringify({ etapa: 'agente', estado: 'ok', avanzo, reintentos: nuevoReintentos }));
+  console.log(JSON.stringify({ etapa: 'agente', estado: 'ok', avanzo, todasRespondidas, reintentos: reintentosFinales }));
 
-  const mensajeAgente = (resultadoAgente.mensaje ?? '').slice(0, 250);
   try {
     await enviarWhatsApp(idSuscriptor, mensajeAgente);
     await agregarMensajeConversacion(supabase, fila, 'agente', mensajeAgente);
@@ -298,5 +348,5 @@ export default async function handler(req, res) {
   }
 
   console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', idSuscriptor }));
-  return res.status(200).json({ ok: true, vacante: !!coincidencia, avanzo, reintentos: nuevoReintentos });
+  return res.status(200).json({ ok: true, vacante: !!coincidencia, avanzo, todasRespondidas, reintentos: reintentosFinales });
 }
