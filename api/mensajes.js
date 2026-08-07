@@ -217,6 +217,10 @@ async function crearCandidatoTeamTailor(nombre, genero, telefono, idVacante) {
   return candidatoId;
 }
 
+function quitarEmojis(texto) {
+  return texto.replace(/[\p{Extended_Pictographic}️‍]/gu, '');
+}
+
 function generarPdfConversacion(conversacion) {
   return new Promise((resolve, reject) => {
     const documento = new PDFDocument({ margin: 40 });
@@ -227,7 +231,7 @@ function generarPdfConversacion(conversacion) {
 
     documento.fontSize(16).text('Conversación', { underline: true });
     documento.moveDown();
-    documento.fontSize(10).text(conversacion || '(sin mensajes)');
+    documento.fontSize(10).text(quitarEmojis(conversacion || '(sin mensajes)'));
     documento.end();
   });
 }
