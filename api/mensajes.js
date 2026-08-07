@@ -3,6 +3,7 @@ import { readFileSync }     from 'fs';
 import { fileURLToPath }    from 'url';
 import { dirname, join }    from 'path';
 import PDFDocument           from 'pdfkit';
+import { waitUntil }        from '@vercel/functions';
 import { ttObtener, ttCrear, ttSubirArchivoTransitorio, mcCrear } from '../lib/clientes_api.js';
 import { orChatCompletion } from '../lib/openrouter.js';
 import { dormir }           from '../lib/evaluacion_postulacion.js';
@@ -362,31 +363,7 @@ async function generarRespuestaAgente({ items, conversacion }) {
 // HANDLER
 // ============================================================================
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    console.log(JSON.stringify({ etapa: 'request', estado: 'error', mensaje: `method not allowed: ${req.method}` }));
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const claveApi = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
-  if (process.env.POWERBELL_API_KEY && claveApi !== process.env.POWERBELL_API_KEY) {
-    console.log(JSON.stringify({ etapa: 'auth', estado: 'error', mensaje: 'unauthorized' }));
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
-  const cuerpo = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-
-  const idSuscriptor = cuerpo?.id;
-  const telefono      = cuerpo?.telefono != null ? String(cuerpo.telefono) : null;
-  const mensaje        = cuerpo?.mensaje ?? '';
-
-  const log = (etapa, extra = {}) => console.log(JSON.stringify({ etapa, idSuscriptor, mensajeCandidato: mensaje, ...extra }));
-
-  if (!idSuscriptor || !telefono) {
-    log('validacion', { estado: 'error', error: 'missing id or telefono' });
-    return res.status(400).json({ ok: false, error: 'missing id or telefono' });
-  }
-
+async function procesarMensaje({ idSuscriptor, telefono, mensaje, log }) {
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
   let fila;
@@ -394,7 +371,7 @@ export default async function handler(req, res) {
     fila = await obtenerOCrearContacto(supabase, telefono);
   } catch (e) {
     log('supabase_contacto', { estado: 'error', error: e.message });
-    return res.status(500).json({ ok: false, error: 'Supabase error' });
+    return;
   }
 
   await agregarMensajeConversacion(supabase, fila, 'usuario', mensaje, { actualizarTimestamp: true });
@@ -432,7 +409,7 @@ export default async function handler(req, res) {
           log('manychat_envio', { estado: 'ok', idVacante: idVacanteNum });
         } catch (e) {
           log('manychat_envio', { estado: 'error', error: e.message });
-          return res.status(502).json({ ok: false, error: 'ManyChat error' });
+          return;
         }
 
         let nuevosItemsVacante = [];
@@ -492,11 +469,11 @@ export default async function handler(req, res) {
               await agregarMensajeConversacion(supabase, fila, 'agente', avisoAutomatico);
             } catch (e) {
               log('manychat_envio', { estado: 'error', error: e.message });
-              return res.status(502).json({ ok: false, error: 'ManyChat error' });
+              return;
             }
 
             log('completado', { estado: 'ok', automatico: true });
-            return res.status(200).json({ ok: true, vacante: true, automatico: true });
+            return;
           }
 
           const avisoTexto = 'Voy a usar los datos que ya nos habías compartido antes. Solo me faltan algunas cosas para tu nueva postulación.';
@@ -517,11 +494,11 @@ export default async function handler(req, res) {
             await agregarMensajeConversacion(supabase, fila, 'agente', bienvenida);
           } catch (e) {
             log('manychat_envio', { estado: 'error', error: e.message });
-            return res.status(502).json({ ok: false, error: 'ManyChat error' });
+            return;
           }
 
           log('completado', { estado: 'ok', bienvenida: true });
-          return res.status(200).json({ ok: true, vacante: true, bienvenida: true });
+          return;
         }
       }
     }
@@ -538,11 +515,11 @@ export default async function handler(req, res) {
         await agregarMensajeConversacion(supabase, fila, 'agente', presentacion);
       } catch (e) {
         log('manychat_envio', { estado: 'error', error: e.message });
-        return res.status(502).json({ ok: false, error: 'ManyChat error' });
+        return;
       }
     }
     log('agente', { estado: 'omitido', razon: 'sin_preguntas_cargadas', presentacion: !yaSeHabiaPresentado });
-    return res.status(200).json({ ok: true, vacante: !!coincidencia });
+    return;
   }
 
   const yaCompletado = itemsPreguntas.every(item => item.respuesta);
@@ -552,15 +529,15 @@ export default async function handler(req, res) {
       await agregarMensajeConversacion(supabase, fila, 'agente', MENSAJE_RECORDATORIO_COMPLETADO);
     } catch (e) {
       log('manychat_envio', { estado: 'error', error: e.message });
-      return res.status(502).json({ ok: false, error: 'ManyChat error' });
+      return;
     }
     log('agente', { estado: 'completado_recordatorio' });
-    return res.status(200).json({ ok: true, completado: true });
+    return;
   }
 
   if ((fila.reintentos ?? 0) >= LIMITE_REINTENTOS) {
     log('agente', { estado: 'silenciado', reintentos: fila.reintentos });
-    return res.status(200).json({ ok: true, silenciado: true });
+    return;
   }
 
   let resultadoAgente;
@@ -577,7 +554,7 @@ export default async function handler(req, res) {
     } catch (e2) {
       log('manychat_envio', { estado: 'error', error: e2.message });
     }
-    return res.status(502).json({ ok: false, error: 'OpenRouter error' });
+    return;
   }
 
   const itemsActualizados = itemsPreguntas.map(item => {
@@ -661,9 +638,42 @@ export default async function handler(req, res) {
     await agregarMensajeConversacion(supabase, fila, 'agente', mensajeAgente);
   } catch (e) {
     log('manychat_envio', { estado: 'error', error: e.message });
-    return res.status(502).json({ ok: false, error: 'ManyChat error' });
+    return;
   }
 
   log('completado', { estado: 'ok' });
-  return res.status(200).json({ ok: true, vacante: !!coincidencia, avanzo, todasRespondidas, reintentos: reintentosFinales });
+  return;
+}
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    console.log(JSON.stringify({ etapa: 'request', estado: 'error', mensaje: `method not allowed: ${req.method}` }));
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const claveApi = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
+  if (process.env.POWERBELL_API_KEY && claveApi !== process.env.POWERBELL_API_KEY) {
+    console.log(JSON.stringify({ etapa: 'auth', estado: 'error', mensaje: 'unauthorized' }));
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const cuerpo = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+
+  const idSuscriptor = cuerpo?.id;
+  const telefono      = cuerpo?.telefono != null ? String(cuerpo.telefono) : null;
+  const mensaje        = cuerpo?.mensaje ?? '';
+
+  const log = (etapa, extra = {}) => console.log(JSON.stringify({ etapa, idSuscriptor, mensajeCandidato: mensaje, ...extra }));
+
+  if (!idSuscriptor || !telefono) {
+    log('validacion', { estado: 'error', error: 'missing id or telefono' });
+    return res.status(400).json({ ok: false, error: 'missing id or telefono' });
+  }
+
+  // Fire-and-forget: se responde de inmediato a ManyChat y el procesamiento
+  // (llamadas a OpenRouter, TeamTailor, envíos de WhatsApp) sigue en segundo
+  // plano, sin que ManyChat tenga que esperar los ~5-60s que puede tardar.
+  waitUntil(procesarMensaje({ idSuscriptor, telefono, mensaje, log }));
+
+  return res.status(202).json({ ok: true, processing: true });
 }
