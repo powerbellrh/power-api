@@ -35,7 +35,7 @@ const NOTA_POLITICA_PRIVACIDAD = '_Al continuar estás afirmando tu acuerdo con 
 
 const URL_VACANTES = 'https://talento.powerbellrh.com/';
 const CAPTION_VACANTES = 'Ver vacantes';
-const NOTA_VACANTES = 'Puedes checar nuestras vacantes activas con el siguiente enlace 🙂';
+const NOTA_VACANTES = 'Puedes checar nuestras vacantes activas con el siguiente enlace 👇';
 
 const ID_PREGUNTA_NOMBRE    = 'nombre';
 const ID_PREGUNTA_DOMICILIO = String(TEAMTAILOR_ADDRESS_QUESTION_ID);
