@@ -14,7 +14,8 @@
     { "source": "/informes",        "destination": "/api/informes"        },
     { "source": "/powerid",         "destination": "/api/powerid"         },
     { "source": "/felicitacion",    "destination": "/api/felicitacion"    },
-    { "source": "/emparejamiento",  "destination": "/api/emparejamiento"  }
+    { "source": "/emparejamiento",  "destination": "/api/emparejamiento"  },
+    { "source": "/mensajes",        "destination": "/api/mensajes"        }
   ],
   "functions": {
     "api/estudios.js": {
@@ -27,6 +28,9 @@
       "maxDuration": 300
     },
     "api/catalogo.js": {
+      "maxDuration": 30
+    },
+    "api/mensajes.js": {
       "maxDuration": 30
     },
     "api/cola.js": {
