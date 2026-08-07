@@ -317,7 +317,7 @@ async function formatearVacanteParaWhatsApp(informacionVacante, log) {
   try {
     const datos = await orChatCompletion({
       model:     OPENROUTER_MODEL,
-      reasoning: { effort: 'low' },
+      reasoning: { enabled: false },
       messages: [
         {
           role:    'system',
