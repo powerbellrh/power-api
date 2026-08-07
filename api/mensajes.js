@@ -219,6 +219,25 @@ async function crearCandidatoTeamTailor(nombre, genero, telefono, idVacante) {
   return candidatoId;
 }
 
+function esRegistroNoEncontrado(e) {
+  return /404/.test(e.message) && /Record not found/i.test(e.message);
+}
+
+// Si el candidato ya no existe en TeamTailor (p. ej. se borró manualmente),
+// lo vuelve a crear con los datos que ya tenemos y reintenta la operación una vez.
+async function conCandidatoValido(candidatoIdActual, ejecutar, { nombre, genero, telefono, idVacante, log }) {
+  try {
+    return { candidatoId: candidatoIdActual, resultado: await ejecutar(candidatoIdActual) };
+  } catch (e) {
+    if (!esRegistroNoEncontrado(e) || !nombre || !idVacante) throw e;
+
+    const nuevoCandidatoId = await crearCandidatoTeamTailor(nombre, genero, telefono, idVacante);
+    log('candidato_recreado', { estado: 'ok', candidato_id_anterior: candidatoIdActual, candidato_id: nuevoCandidatoId, idVacante });
+
+    return { candidatoId: nuevoCandidatoId, resultado: await ejecutar(nuevoCandidatoId) };
+  }
+}
+
 function quitarEmojis(texto) {
   return texto.replace(/[\p{Extended_Pictographic}️‍]/gu, '');
 }
@@ -383,35 +402,39 @@ async function procesarMensaje({ idSuscriptor, telefono, mensaje, log }) {
     const idVacanteTexto = coincidencia[1];
     const idVacanteNum   = parseInt(idVacanteTexto, 10);
 
-    if (fila.vacante !== idVacanteNum) {
-      let datosVacante = null;
+    let datosVacante = null;
+    try {
+      const respuestaTt = await ttObtener(`/jobs/${idVacanteTexto}`);
+      datosVacante = respuestaTt.data.attributes;
+    } catch (e) {
+      log('deteccion_vacante', { estado: 'falso_positivo', texto: coincidencia[0], error: e.message });
+    }
+
+    if (datosVacante) {
+      // Si pide la misma vacante que ya tiene cargada, igual se le vuelve a mandar
+      // la info completa (imagen + descripción); solo se evita reiniciar preguntas
+      // y volver a crear la postulación cuando es exactamente la misma vacante.
+      const esVacanteNueva = fila.vacante !== idVacanteNum;
+      log('inicio', { idVacante: idVacanteNum, vacanteNueva: esVacanteNueva });
+
+      const informacionVacanteCruda = limpiarHtmlParaWhatsApp(datosVacante.body);
+      const informacionVacante      = await formatearVacanteParaWhatsApp(informacionVacanteCruda, log);
+      log('teamtailor', { estado: 'ok', titulo: datosVacante.title, chars: informacionVacante.length });
+
       try {
-        const respuestaTt = await ttObtener(`/jobs/${idVacanteTexto}`);
-        datosVacante = respuestaTt.data.attributes;
+        await enviarImagenWhatsApp(idSuscriptor, IMAGEN_POWERBOT);
+        await agregarMensajeConversacion(supabase, fila, 'agente', '[imagen: PowerBot]');
+
+        const textoInfo = `Aquí tienes la información de la vacante 👇:\n\n${informacionVacante}`;
+        await enviarWhatsApp(idSuscriptor, textoInfo);
+        await agregarMensajeConversacion(supabase, fila, 'agente', textoInfo);
+        log('manychat_envio', { estado: 'ok', idVacante: idVacanteNum });
       } catch (e) {
-        log('deteccion_vacante', { estado: 'falso_positivo', texto: coincidencia[0], error: e.message });
+        log('manychat_envio', { estado: 'error', error: e.message });
+        return;
       }
 
-      if (datosVacante) {
-        log('inicio', { idVacante: idVacanteNum });
-
-        const informacionVacanteCruda = limpiarHtmlParaWhatsApp(datosVacante.body);
-        const informacionVacante      = await formatearVacanteParaWhatsApp(informacionVacanteCruda, log);
-        log('teamtailor', { estado: 'ok', titulo: datosVacante.title, chars: informacionVacante.length });
-
-        try {
-          await enviarImagenWhatsApp(idSuscriptor, IMAGEN_POWERBOT);
-          await agregarMensajeConversacion(supabase, fila, 'agente', '[imagen: PowerBot]');
-
-          const textoInfo = `Aquí tienes la información de la vacante 👇:\n\n${informacionVacante}`;
-          await enviarWhatsApp(idSuscriptor, textoInfo);
-          await agregarMensajeConversacion(supabase, fila, 'agente', textoInfo);
-          log('manychat_envio', { estado: 'ok', idVacante: idVacanteNum });
-        } catch (e) {
-          log('manychat_envio', { estado: 'error', error: e.message });
-          return;
-        }
-
+      if (esVacanteNueva) {
         let nuevosItemsVacante = [];
         try {
           nuevosItemsVacante = await extraerPreguntasVacante(idVacanteTexto);
@@ -430,13 +453,20 @@ async function procesarMensaje({ idSuscriptor, telefono, mensaje, log }) {
 
         const esRegreso            = fila.vacante != null;
         const candidatoIdExistente = fila.candidato ?? null;
+        const nombreConocido       = itemsPrevios.find(item => item.id === ID_PREGUNTA_NOMBRE)?.respuesta;
 
         // Reutiliza el candidato ya existente en TeamTailor (columna `candidato`)
-        // en vez de crear uno nuevo para la misma persona.
+        // en vez de crear uno nuevo para la misma persona; si ya no existe en
+        // TeamTailor, se recrea con los datos que ya tenemos.
         if (esRegreso && candidatoIdExistente) {
           try {
-            await crearPostulacionTeamTailor(candidatoIdExistente, idVacanteNum);
-            log('postulacion_creada', { estado: 'ok', candidato_id: candidatoIdExistente, idVacante: idVacanteNum });
+            const { candidatoId: candidatoIdValido } = await conCandidatoValido(
+              candidatoIdExistente,
+              id => crearPostulacionTeamTailor(id, idVacanteNum),
+              { nombre: nombreConocido, genero: null, telefono, idVacante: idVacanteNum, log },
+            );
+            fila.candidato = candidatoIdValido;
+            log('postulacion_creada', { estado: 'ok', candidato_id: candidatoIdValido, idVacante: idVacanteNum });
           } catch (e) {
             log('postulacion_creada', { estado: 'error', error: e.message });
           }
@@ -453,6 +483,7 @@ async function procesarMensaje({ idSuscriptor, telefono, mensaje, log }) {
             vacante:    fila.vacante,
             preguntas:  fila.preguntas,
             reintentos: 0,
+            candidato:  fila.candidato ?? null,
             ...(esRegreso ? { conversacion: null } : {}),
           })
           .eq('id', fila.id);
@@ -484,22 +515,24 @@ async function procesarMensaje({ idSuscriptor, telefono, mensaje, log }) {
             log('manychat_envio', { estado: 'error', error: e.message });
           }
         }
+      } else {
+        log('info_reenviada', { estado: 'ok', idVacante: idVacanteNum });
+      }
 
-        const nombreYaConocido = fila.preguntas.find(item => item.id === ID_PREGUNTA_NOMBRE)?.respuesta;
-        if (!nombreYaConocido) {
-          await dormir(3000);
-          const bienvenida = 'Hola, soy PowerBot, un asistente de IA que te ayudará con tu postulación, para comenzar ¿Podrías darme tu nombre? 🙂';
-          try {
-            await enviarWhatsApp(idSuscriptor, bienvenida);
-            await agregarMensajeConversacion(supabase, fila, 'agente', bienvenida);
-          } catch (e) {
-            log('manychat_envio', { estado: 'error', error: e.message });
-            return;
-          }
-
-          log('completado', { estado: 'ok', bienvenida: true });
+      const nombreYaConocido = fila.preguntas.find(item => item.id === ID_PREGUNTA_NOMBRE)?.respuesta;
+      if (!nombreYaConocido) {
+        await dormir(3000);
+        const bienvenida = 'Hola, soy PowerBot, un asistente de IA que te ayudará con tu postulación, para comenzar ¿Podrías darme tu nombre? 🙂';
+        try {
+          await enviarWhatsApp(idSuscriptor, bienvenida);
+          await agregarMensajeConversacion(supabase, fila, 'agente', bienvenida);
+        } catch (e) {
+          log('manychat_envio', { estado: 'error', error: e.message });
           return;
         }
+
+        log('completado', { estado: 'ok', bienvenida: true });
+        return;
       }
     }
   }
@@ -599,7 +632,12 @@ async function procesarMensaje({ idSuscriptor, telefono, mensaje, log }) {
     for (const item of itemsActualizados) {
       if (item.tipo === 'nombre' || !item.respuesta || item.enviado) continue;
       try {
-        await enviarRespuestaTeamTailor(candidatoId, item);
+        const { candidatoId: candidatoIdValido } = await conCandidatoValido(
+          candidatoId,
+          id => enviarRespuestaTeamTailor(id, item),
+          { nombre: itemNombre?.respuesta, genero, telefono, idVacante: fila.vacante, log },
+        );
+        candidatoId = candidatoIdValido;
         item.enviado = true;
         log('respuesta_teamtailor', { estado: 'ok', candidato_id: candidatoId, id_pregunta: item.id });
       } catch (e) {
@@ -622,7 +660,15 @@ async function procesarMensaje({ idSuscriptor, telefono, mensaje, log }) {
 
   if (todasRespondidas && candidatoId) {
     try {
-      await subirConversacionTeamTailor(candidatoId, fila.conversacion);
+      const { candidatoId: candidatoIdValido } = await conCandidatoValido(
+        candidatoId,
+        id => subirConversacionTeamTailor(id, fila.conversacion),
+        { nombre: itemNombre?.respuesta, genero, telefono, idVacante: fila.vacante, log },
+      );
+      if (candidatoIdValido !== candidatoId) {
+        candidatoId = candidatoIdValido;
+        await supabase.from('chatbot').update({ candidato: candidatoId }).eq('id', fila.id);
+      }
       log('conversacion_pdf', { estado: 'ok', candidato_id: candidatoId });
     } catch (e) {
       log('conversacion_pdf', { estado: 'error', error: e.message });
