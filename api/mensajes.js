@@ -523,7 +523,18 @@ export default async function handler(req, res) {
   // ── Agente conversacional — solo si ya hay una vacante con preguntas cargadas ──
   const itemsPreguntas = fila.preguntas ?? [];
   if (itemsPreguntas.length === 0) {
-    console.log(JSON.stringify({ etapa: 'agente', estado: 'omitido', razon: 'sin_preguntas_cargadas' }));
+    const yaSeHabiaPresentado = (fila.conversacion ?? '').includes('] agente:');
+    if (!yaSeHabiaPresentado) {
+      const presentacion = 'Hola, soy PowerBot, una inteligencia artificial de PowerBell RH, una agencia de reclutamiento con base en Guadalajara. ¿En qué puedo ayudarte? Un reclutador podrá atenderte lo más pronto posible.';
+      try {
+        await enviarWhatsApp(idSuscriptor, presentacion);
+        await agregarMensajeConversacion(supabase, fila, 'agente', presentacion);
+      } catch (e) {
+        console.log(JSON.stringify({ etapa: 'manychat_envio', estado: 'error', mensaje: e.message }));
+        return res.status(502).json({ ok: false, error: 'ManyChat error' });
+      }
+    }
+    console.log(JSON.stringify({ etapa: 'agente', estado: 'omitido', razon: 'sin_preguntas_cargadas', presentacion: !yaSeHabiaPresentado }));
     return res.status(200).json({ ok: true, vacante: !!coincidencia });
   }
 
