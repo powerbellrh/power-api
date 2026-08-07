@@ -612,11 +612,10 @@ async function procesarCandidatoSinVacante({ supabase, fila, idSuscriptor, log }
     respuestaAgente = MENSAJE_FALLBACK_ERROR;
   }
 
+  const mensajeConEnlace = `${respuestaAgente}\n\n${NOTA_VACANTES}`;
   try {
-    await enviarWhatsApp(idSuscriptor, respuestaAgente);
-    await agregarMensajeConversacion(supabase, fila, 'agente', respuestaAgente);
-    await enviarWhatsAppConBoton(idSuscriptor, NOTA_VACANTES, { caption: CAPTION_VACANTES, url: URL_VACANTES });
-    await agregarMensajeConversacion(supabase, fila, 'agente', NOTA_VACANTES);
+    await enviarWhatsAppConBoton(idSuscriptor, mensajeConEnlace, { caption: CAPTION_VACANTES, url: URL_VACANTES });
+    await agregarMensajeConversacion(supabase, fila, 'agente', mensajeConEnlace);
   } catch (e) {
     log('manychat_envio', { estado: 'error', error: e.message });
     return;
@@ -632,11 +631,10 @@ async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor, telef
 
   const yaCompletado = itemsPreguntas.every(item => item.respuesta);
   if (yaCompletado) {
+    const recordatorioConEnlace = `${MENSAJE_RECORDATORIO_COMPLETADO}\n\n${NOTA_VACANTES}`;
     try {
-      await enviarWhatsApp(idSuscriptor, MENSAJE_RECORDATORIO_COMPLETADO);
-      await agregarMensajeConversacion(supabase, fila, 'agente', MENSAJE_RECORDATORIO_COMPLETADO);
-      await enviarWhatsAppConBoton(idSuscriptor, NOTA_VACANTES, { caption: CAPTION_VACANTES, url: URL_VACANTES });
-      await agregarMensajeConversacion(supabase, fila, 'agente', NOTA_VACANTES);
+      await enviarWhatsAppConBoton(idSuscriptor, recordatorioConEnlace, { caption: CAPTION_VACANTES, url: URL_VACANTES });
+      await agregarMensajeConversacion(supabase, fila, 'agente', recordatorioConEnlace);
     } catch (e) {
       log('manychat_envio', { estado: 'error', error: e.message });
       return;
