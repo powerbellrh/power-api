@@ -586,23 +586,11 @@ async function detectarYCargarVacante({ supabase, fila, idSuscriptor, telefono, 
   return false;
 }
 
-// Candidato sin vacante cargada (o cuyo flujo de preguntas aún no existe): se le
-// presenta PowerBot una sola vez y luego se responden sus dudas generales sobre
-// PowerBell RH con el agente de preguntas generales, siempre invitándolo a ver
+// Candidato sin vacante cargada (o cuyo flujo de preguntas aún no existe): se
+// responden sus dudas generales sobre PowerBell RH con el agente de preguntas
+// generales (que ya incluye el saludo), siempre invitándolo a ver
 // las vacantes activas.
 async function procesarCandidatoSinVacante({ supabase, fila, idSuscriptor, log }) {
-  const yaSeHabiaPresentado = (fila.conversacion ?? '').includes('] agente:');
-  if (!yaSeHabiaPresentado) {
-    const presentacion = 'Hola, soy PowerBot, una inteligencia artificial de PowerBell RH, una agencia de reclutamiento con base en Guadalajara. ¿En qué puedo ayudarte? Un reclutador podrá atenderte lo más pronto posible.';
-    try {
-      await enviarWhatsApp(idSuscriptor, presentacion);
-      await agregarMensajeConversacion(supabase, fila, 'agente', presentacion);
-    } catch (e) {
-      log('manychat_envio', { estado: 'error', error: e.message });
-      return;
-    }
-  }
-
   let respuestaAgente;
   try {
     respuestaAgente = await generarRespuestaAgenteGeneral(fila.conversacion);
@@ -620,7 +608,7 @@ async function procesarCandidatoSinVacante({ supabase, fila, idSuscriptor, log }
     return;
   }
 
-  log('agente_general', { estado: 'ok', presentacion: !yaSeHabiaPresentado });
+  log('agente_general', { estado: 'ok' });
 }
 
 // Candidato con una vacante y preguntas de postulación cargadas: avanza el flujo de
