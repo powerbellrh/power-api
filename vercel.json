@@ -31,7 +31,7 @@
       "maxDuration": 30
     },
     "api/mensajes.js": {
-      "maxDuration": 30
+      "maxDuration": 300
     },
     "api/cola.js": {
       "maxDuration": 60
