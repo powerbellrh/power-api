@@ -311,7 +311,7 @@ function generarDespedida(nombre) {
   return `${inicio} por tu tiempo. Una reclutadora se pondrá en contacto contigo lo más pronto posible para continuar con tu proceso.`.slice(0, 250);
 }
 
-async function formatearVacanteParaWhatsApp(informacionVacante) {
+async function formatearVacanteParaWhatsApp(informacionVacante, log) {
   try {
     const datos = await orChatCompletion({
       model:     OPENROUTER_MODEL,
@@ -328,7 +328,7 @@ async function formatearVacanteParaWhatsApp(informacionVacante) {
     const texto = datos?.choices?.[0]?.message?.content?.trim();
     return texto || informacionVacante;
   } catch (e) {
-    console.log(JSON.stringify({ etapa: 'formato_vacante', estado: 'error', mensaje: e.message }));
+    log('formato_vacante', { estado: 'error', error: e.message });
     return informacionVacante;
   }
 }
@@ -379,8 +379,10 @@ export default async function handler(req, res) {
   const telefono      = cuerpo?.telefono != null ? String(cuerpo.telefono) : null;
   const mensaje        = cuerpo?.mensaje ?? '';
 
+  const log = (etapa, extra = {}) => console.log(JSON.stringify({ etapa, idSuscriptor, mensajeCandidato: mensaje, ...extra }));
+
   if (!idSuscriptor || !telefono) {
-    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing id or telefono' }));
+    log('validacion', { estado: 'error', error: 'missing id or telefono' });
     return res.status(400).json({ ok: false, error: 'missing id or telefono' });
   }
 
@@ -390,7 +392,7 @@ export default async function handler(req, res) {
   try {
     fila = await obtenerOCrearContacto(supabase, telefono);
   } catch (e) {
-    console.log(JSON.stringify({ etapa: 'supabase_contacto', estado: 'error', mensaje: e.message }));
+    log('supabase_contacto', { estado: 'error', error: e.message });
     return res.status(500).json({ ok: false, error: 'Supabase error' });
   }
 
@@ -409,15 +411,15 @@ export default async function handler(req, res) {
         const respuestaTt = await ttObtener(`/jobs/${idVacanteTexto}`);
         datosVacante = respuestaTt.data.attributes;
       } catch (e) {
-        console.log(JSON.stringify({ etapa: 'deteccion_vacante', estado: 'falso_positivo', texto: coincidencia[0], mensaje: e.message }));
+        log('deteccion_vacante', { estado: 'falso_positivo', texto: coincidencia[0], error: e.message });
       }
 
       if (datosVacante) {
-        console.log(JSON.stringify({ etapa: 'inicio', idSuscriptor, idVacante: idVacanteNum }));
+        log('inicio', { idVacante: idVacanteNum });
 
         const informacionVacanteCruda = limpiarHtmlParaWhatsApp(datosVacante.body);
-        const informacionVacante      = await formatearVacanteParaWhatsApp(informacionVacanteCruda);
-        console.log(JSON.stringify({ etapa: 'teamtailor', estado: 'ok', titulo: datosVacante.title, chars: informacionVacante.length }));
+        const informacionVacante      = await formatearVacanteParaWhatsApp(informacionVacanteCruda, log);
+        log('teamtailor', { estado: 'ok', titulo: datosVacante.title, chars: informacionVacante.length });
 
         try {
           await enviarImagenWhatsApp(idSuscriptor, IMAGEN_POWERBOT);
@@ -426,9 +428,9 @@ export default async function handler(req, res) {
           const textoInfo = `Aquí tienes la información de la vacante 👇:\n\n${informacionVacante}`;
           await enviarWhatsApp(idSuscriptor, textoInfo);
           await agregarMensajeConversacion(supabase, fila, 'agente', textoInfo);
-          console.log(JSON.stringify({ etapa: 'manychat_envio', estado: 'ok', idVacante: idVacanteNum }));
+          log('manychat_envio', { estado: 'ok', idVacante: idVacanteNum });
         } catch (e) {
-          console.log(JSON.stringify({ etapa: 'manychat_envio', estado: 'error', mensaje: e.message }));
+          log('manychat_envio', { estado: 'error', error: e.message });
           return res.status(502).json({ ok: false, error: 'ManyChat error' });
         }
 
@@ -436,7 +438,7 @@ export default async function handler(req, res) {
         try {
           nuevosItemsVacante = await extraerPreguntasVacante(idVacanteTexto);
         } catch (e) {
-          console.log(JSON.stringify({ etapa: 'teamtailor_preguntas', estado: 'error', mensaje: e.message }));
+          log('teamtailor_preguntas', { estado: 'error', error: e.message });
         }
 
         // Las preguntas de cajón van al inicio y al final; se conserva lo ya respondido antes.
@@ -456,9 +458,9 @@ export default async function handler(req, res) {
         if (esRegreso && candidatoIdExistente) {
           try {
             await crearPostulacionTeamTailor(candidatoIdExistente, idVacanteNum);
-            console.log(JSON.stringify({ etapa: 'postulacion_creada', candidato_id: candidatoIdExistente, idVacante: idVacanteNum }));
+            log('postulacion_creada', { estado: 'ok', candidato_id: candidatoIdExistente, idVacante: idVacanteNum });
           } catch (e) {
-            console.log(JSON.stringify({ etapa: 'postulacion_creada', estado: 'error', mensaje: e.message }));
+            log('postulacion_creada', { estado: 'error', error: e.message });
           }
         }
 
@@ -476,8 +478,8 @@ export default async function handler(req, res) {
             ...(esRegreso ? { conversacion: null } : {}),
           })
           .eq('id', fila.id);
-        if (errorReinicio) console.log(JSON.stringify({ etapa: 'supabase_preguntas', estado: 'error', mensaje: errorReinicio.message }));
-        else console.log(JSON.stringify({ etapa: 'supabase_preguntas', estado: 'ok', idVacante: idVacanteNum, preguntas: fila.preguntas.length }));
+        if (errorReinicio) log('supabase_preguntas', { estado: 'error', error: errorReinicio.message });
+        else log('supabase_preguntas', { estado: 'ok', idVacante: idVacanteNum, preguntas: fila.preguntas.length });
 
         if (esRegreso) {
           const quedanPendientes = fila.preguntas.some(item => !item.respuesta);
@@ -488,11 +490,11 @@ export default async function handler(req, res) {
               await enviarWhatsApp(idSuscriptor, avisoAutomatico);
               await agregarMensajeConversacion(supabase, fila, 'agente', avisoAutomatico);
             } catch (e) {
-              console.log(JSON.stringify({ etapa: 'manychat_envio', estado: 'error', mensaje: e.message }));
+              log('manychat_envio', { estado: 'error', error: e.message });
               return res.status(502).json({ ok: false, error: 'ManyChat error' });
             }
 
-            console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', idSuscriptor, automatico: true }));
+            log('completado', { estado: 'ok', automatico: true });
             return res.status(200).json({ ok: true, vacante: true, automatico: true });
           }
 
@@ -501,7 +503,7 @@ export default async function handler(req, res) {
             await enviarWhatsApp(idSuscriptor, avisoTexto);
             await agregarMensajeConversacion(supabase, fila, 'agente', avisoTexto);
           } catch (e) {
-            console.log(JSON.stringify({ etapa: 'manychat_envio', estado: 'error', mensaje: e.message }));
+            log('manychat_envio', { estado: 'error', error: e.message });
           }
         }
 
@@ -513,11 +515,11 @@ export default async function handler(req, res) {
             await enviarWhatsApp(idSuscriptor, bienvenida);
             await agregarMensajeConversacion(supabase, fila, 'agente', bienvenida);
           } catch (e) {
-            console.log(JSON.stringify({ etapa: 'manychat_envio', estado: 'error', mensaje: e.message }));
+            log('manychat_envio', { estado: 'error', error: e.message });
             return res.status(502).json({ ok: false, error: 'ManyChat error' });
           }
 
-          console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', idSuscriptor, bienvenida: true }));
+          log('completado', { estado: 'ok', bienvenida: true });
           return res.status(200).json({ ok: true, vacante: true, bienvenida: true });
         }
       }
@@ -534,11 +536,11 @@ export default async function handler(req, res) {
         await enviarWhatsApp(idSuscriptor, presentacion);
         await agregarMensajeConversacion(supabase, fila, 'agente', presentacion);
       } catch (e) {
-        console.log(JSON.stringify({ etapa: 'manychat_envio', estado: 'error', mensaje: e.message }));
+        log('manychat_envio', { estado: 'error', error: e.message });
         return res.status(502).json({ ok: false, error: 'ManyChat error' });
       }
     }
-    console.log(JSON.stringify({ etapa: 'agente', estado: 'omitido', razon: 'sin_preguntas_cargadas', presentacion: !yaSeHabiaPresentado }));
+    log('agente', { estado: 'omitido', razon: 'sin_preguntas_cargadas', presentacion: !yaSeHabiaPresentado });
     return res.status(200).json({ ok: true, vacante: !!coincidencia });
   }
 
@@ -548,15 +550,15 @@ export default async function handler(req, res) {
       await enviarWhatsApp(idSuscriptor, MENSAJE_RECORDATORIO_COMPLETADO);
       await agregarMensajeConversacion(supabase, fila, 'agente', MENSAJE_RECORDATORIO_COMPLETADO);
     } catch (e) {
-      console.log(JSON.stringify({ etapa: 'manychat_envio', estado: 'error', mensaje: e.message }));
+      log('manychat_envio', { estado: 'error', error: e.message });
       return res.status(502).json({ ok: false, error: 'ManyChat error' });
     }
-    console.log(JSON.stringify({ etapa: 'agente', estado: 'completado_recordatorio' }));
+    log('agente', { estado: 'completado_recordatorio' });
     return res.status(200).json({ ok: true, completado: true });
   }
 
   if ((fila.reintentos ?? 0) >= LIMITE_REINTENTOS) {
-    console.log(JSON.stringify({ etapa: 'agente', estado: 'silenciado', reintentos: fila.reintentos }));
+    log('agente', { estado: 'silenciado', reintentos: fila.reintentos });
     return res.status(200).json({ ok: true, silenciado: true });
   }
 
@@ -567,7 +569,7 @@ export default async function handler(req, res) {
       conversacion: fila.conversacion,
     });
   } catch (e) {
-    console.log(JSON.stringify({ etapa: 'agente_llm', estado: 'error', mensaje: e.message }));
+    log('agente_llm', { estado: 'error', error: e.message });
     return res.status(502).json({ ok: false, error: 'OpenRouter error' });
   }
 
@@ -603,9 +605,9 @@ export default async function handler(req, res) {
     try {
       candidatoId = await crearCandidatoTeamTailor(itemNombre.respuesta, genero, telefono, fila.vacante);
       itemNombre.enviado = true;
-      console.log(JSON.stringify({ etapa: 'candidato_creado', candidato_id: candidatoId, idVacante: fila.vacante, genero }));
+      log('candidato_creado', { estado: 'ok', candidato_id: candidatoId, idVacante: fila.vacante, genero });
     } catch (e) {
-      console.log(JSON.stringify({ etapa: 'candidato_creado', estado: 'error', mensaje: e.message }));
+      log('candidato_creado', { estado: 'error', error: e.message });
     }
   }
 
@@ -615,9 +617,9 @@ export default async function handler(req, res) {
       try {
         await enviarRespuestaTeamTailor(candidatoId, item);
         item.enviado = true;
-        console.log(JSON.stringify({ etapa: 'respuesta_teamtailor', estado: 'ok', candidato_id: candidatoId, id_pregunta: item.id }));
+        log('respuesta_teamtailor', { estado: 'ok', candidato_id: candidatoId, id_pregunta: item.id });
       } catch (e) {
-        console.log(JSON.stringify({ etapa: 'respuesta_teamtailor', estado: 'error', id_pregunta: item.id, mensaje: e.message }));
+        log('respuesta_teamtailor', { estado: 'error', id_pregunta: item.id, error: e.message });
       }
     }
   }
@@ -630,16 +632,16 @@ export default async function handler(req, res) {
     .from('chatbot')
     .update({ preguntas: fila.preguntas, candidato: candidatoId, reintentos: reintentosFinales })
     .eq('id', fila.id);
-  if (errorProgreso) console.log(JSON.stringify({ etapa: 'supabase_preguntas', estado: 'error', mensaje: errorProgreso.message }));
+  if (errorProgreso) log('supabase_preguntas', { estado: 'error', error: errorProgreso.message });
 
-  console.log(JSON.stringify({ etapa: 'agente', estado: 'ok', avanzo, todasRespondidas, reintentos: reintentosFinales }));
+  log('agente', { estado: 'ok', avanzo, todasRespondidas, reintentos: reintentosFinales });
 
   if (todasRespondidas && candidatoId) {
     try {
       await subirConversacionTeamTailor(candidatoId, fila.conversacion);
-      console.log(JSON.stringify({ etapa: 'conversacion_pdf', estado: 'ok', candidato_id: candidatoId }));
+      log('conversacion_pdf', { estado: 'ok', candidato_id: candidatoId });
     } catch (e) {
-      console.log(JSON.stringify({ etapa: 'conversacion_pdf', estado: 'error', mensaje: e.message }));
+      log('conversacion_pdf', { estado: 'error', error: e.message });
     }
   }
 
@@ -651,10 +653,10 @@ export default async function handler(req, res) {
     await enviarWhatsApp(idSuscriptor, mensajeAgente);
     await agregarMensajeConversacion(supabase, fila, 'agente', mensajeAgente);
   } catch (e) {
-    console.log(JSON.stringify({ etapa: 'manychat_envio', estado: 'error', mensaje: e.message }));
+    log('manychat_envio', { estado: 'error', error: e.message });
     return res.status(502).json({ ok: false, error: 'ManyChat error' });
   }
 
-  console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', idSuscriptor }));
+  log('completado', { estado: 'ok' });
   return res.status(200).json({ ok: true, vacante: !!coincidencia, avanzo, todasRespondidas, reintentos: reintentosFinales });
 }
