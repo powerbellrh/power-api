@@ -314,7 +314,28 @@ export default async function handler(req, res) {
   if (process.env.INFORMES_API_KEY && claveApi !== process.env.INFORMES_API_KEY)
     return res.status(401).json({ error: 'Unauthorized' });
 
-  const { postulacion: postulacionId, vacante: vacanteId, comentarios, respuesta_anterior: respuestaAnterior, imagen: mejorarFoto } = req.body ?? {};
+  const { postulacion: postulacionId, vacante: vacanteId, comentarios, respuesta_anterior: respuestaAnterior, imagen: mejorarFoto, cv: soloCurriculum } = req.body ?? {};
+
+  if (soloCurriculum) {
+    if (!postulacionId) {
+      console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing postulacion' }));
+      return res.status(400).json({ error: "El campo 'postulacion' es requerido" });
+    }
+
+    try {
+      const candidatoCrudo = await ttObtener(`/job-applications/${postulacionId}/candidate`, true);
+      const urlCurriculum = candidatoCrudo.data?.attributes?.resume ?? null;
+      if (!urlCurriculum)
+        return res.status(422).json({ error: 'El candidato no tiene CV' });
+
+      console.log(JSON.stringify({ etapa: 'refrescar_cv', estado: 'ok', postulacion_id: postulacionId }));
+      return res.status(200).json({ curriculum: urlCurriculum });
+    } catch (error) {
+      console.log(JSON.stringify({ etapa: 'error', estado: 'error', postulacion_id: postulacionId, mensaje: error.message }));
+      return res.status(500).json({ error: error.message });
+    }
+  }
+
   if (!postulacionId || !vacanteId) {
     console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing postulacion or vacante' }));
     return res.status(400).json({ error: "Los campos 'postulacion' y 'vacante' son requeridos" });
