@@ -43,13 +43,13 @@ const PROMPTS = {
   OP: readFileSync(join(__dirname, '../prompts/evaluacion_operativa.txt'),      'utf-8'),
 };
 
-const OPENROUTER_MODEL_AD        = 'z-ai/glm-5.2';
-const OPENROUTER_MODEL_OP        = 'z-ai/glm-5.2';
+const OPENROUTER_MODEL_AD        = 'deepseek/deepseek-v4-flash-0731';
+const OPENROUTER_MODEL_OP        = 'deepseek/deepseek-v4-flash-0731';
 const OPENROUTER_MODEL_OP_VISION = 'anthropic/claude-haiku-4.5'; // GLM no tiene ruta en OpenRouter que acepte imágenes
 
 const AI_CONFIG = {
-  AD:        { model: OPENROUTER_MODEL_AD,        max_tokens: 20000, reasoningEffort: 'high' },
-  OP:        { model: OPENROUTER_MODEL_OP,        max_tokens: 20000, reasoningEffort: 'high' },
+  AD:        { model: OPENROUTER_MODEL_AD,        max_tokens: 20000, reasoningEffort: 'max' },
+  OP:        { model: OPENROUTER_MODEL_OP,        max_tokens: 20000, reasoningEffort: 'max' },
   OP_VISION: { model: OPENROUTER_MODEL_OP_VISION, max_tokens: 20000, reasoningEffort: 'high' },
 };
 
