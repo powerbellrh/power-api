@@ -83,7 +83,7 @@ function detectarDomicilioPorRegex(texto) {
 async function detectarDomicilioPorLlm(texto) {
   const datos = await orChatCompletion({
     model:      OPENROUTER_MODEL,
-    reasoning:  { effort: 'low' },
+    reasoning:  { enabled: false },
     messages: [
       { role: 'system', content: PROMPT_NORMALIZACION_DOMICILIO },
       { role: 'user',   content: texto },
