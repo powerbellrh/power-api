@@ -138,6 +138,8 @@ async function verificarCompatibilidad(candidato, descripcion) {
     .replace('{{escolaridad}}',  '(no proporcionado)')
     .replace('{{expectativa}}',  candidato.expectativa === true ? 'tiene expectativa de sueldo' : candidato.expectativa === false ? 'sin expectativa de sueldo particular' : '(no proporcionado)')
     .replace('{{experiencia}}',  candidato.experiencia   || '(no proporcionado)')
+    .replace('{{rolar_turno}}',  typeof candidato.rolarTurno === 'boolean' ? (candidato.rolarTurno ? 'sí' : 'no') : '(no proporcionado)')
+    .replace('{{acceso}}',       typeof candidato.acceso === 'boolean' ? (candidato.acceso ? 'sí' : 'no') : '(no proporcionado)')
     .replace('{{descripcion}}',  descripcion             || '(sin descripción)');
 
   const datos = await orChatCompletion({
@@ -199,6 +201,8 @@ export default async function handler(req, res) {
   const domicilio   = cuerpo?.domicilio;
   const expectativa = cuerpo?.expectativa;
   const experiencia = cuerpo?.experiencia;
+  const rolarTurno  = cuerpo?.rolar_turno;
+  const acceso      = cuerpo?.acceso;
 
   if (!domicilio || typeof domicilio !== 'string') {
     console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing domicilio field' }));
@@ -264,7 +268,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ id_team_tailor: [], uso_ia: usoIa });
     }
 
-    const candidato = { nombre, domicilio: domicilioNormalizado ?? domicilio, expectativa, experiencia };
+    const candidato = { nombre, domicilio: domicilioNormalizado ?? domicilio, expectativa, experiencia, rolarTurno, acceso };
     const vacantesVerificadas = await verificarRecomendaciones(candidato, vacantesCoincidentes);
 
     console.log(JSON.stringify({ etapa: 'verificacion_match', estado: 'ok', antes: vacantesCoincidentes.length, despues: vacantesVerificadas.length }));
