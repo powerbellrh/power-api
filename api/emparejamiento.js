@@ -145,7 +145,7 @@ async function verificarCompatibilidad(candidato, descripcion) {
   const datos = await orChatCompletion({
     model:      OPENROUTER_MODEL,
     max_tokens: 300,
-    reasoning:  { enabled: false },
+    reasoning:  { effort: 'low' },
     messages: [
       { role: 'user', content: prompt },
     ],
