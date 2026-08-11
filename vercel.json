@@ -23,6 +23,9 @@
     "api/postulaciones.js": {
       "maxDuration": 300
     },
+    "api/probar-evaluacion.js": {
+      "maxDuration": 300
+    },
     "api/mensajes.js": {
       "maxDuration": 300
     },
