@@ -38,7 +38,7 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const PROMPTS = {
+export const PROMPTS = {
   AD: readFileSync(join(__dirname, '../prompts/evaluacion_administrativa.txt'), 'utf-8'),
   OP: readFileSync(join(__dirname, '../prompts/evaluacion_operativa.txt'),      'utf-8'),
 };
@@ -47,7 +47,7 @@ const OPENROUTER_MODEL_AD        = 'deepseek/deepseek-v4-flash-0731';
 const OPENROUTER_MODEL_OP        = 'deepseek/deepseek-v4-flash-0731';
 const OPENROUTER_MODEL_OP_VISION = 'anthropic/claude-haiku-4.5'; // GLM no tiene ruta en OpenRouter que acepte imágenes
 
-const AI_CONFIG = {
+export const AI_CONFIG = {
   AD:        { model: OPENROUTER_MODEL_AD,        max_tokens: 20000, reasoningEffort: 'max' },
   OP:        { model: OPENROUTER_MODEL_OP,        max_tokens: 20000, reasoningEffort: 'max' },
   OP_VISION: { model: OPENROUTER_MODEL_OP_VISION, max_tokens: 20000, reasoningEffort: 'high' },
@@ -96,7 +96,7 @@ async function obtenerContextoCampoPersonalizado(vacanteId) {
   }
 }
 
-function construirPeticionOpenRouter(tipoConfig, promptSistema, bloqueVacante, bloqueCandidato, urlCurriculum, urlImagen) {
+export function construirPeticionOpenRouter(tipoConfig, promptSistema, bloqueVacante, bloqueCandidato, urlCurriculum, urlImagen) {
   const adjuntoImagen  = urlImagen ? [{ type: 'image_url', image_url: { url: urlImagen } }] : [];
   const adjuntoArchivo = !urlImagen && urlCurriculum?.trim()
     ? [{ type: 'file', file: { filename: 'curriculum.pdf', file_data: urlCurriculum } }]
