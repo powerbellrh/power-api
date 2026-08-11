@@ -37,31 +37,33 @@ CATEGORÍAS GLOBALES
 
 IMPORTANTE — DATOS NO DISPONIBLES: Si un dato relevante no está presente en el CV ni en las respuestas del candidato, simplemente no sumes los puntos que dependen de esa información. No penalices al candidato por omisión; solo evalúa lo que sí está documentado.
 
-EXPERIENCIA (10 pts) — contrasta años, sector y nivel del rol vs lo que exige la vacante:
-10 pts: Experiencia directa en el rol exacto, 5+ años, logros cuantificables, sector idéntico al de la vacante
-8-9 pts: Experiencia muy similar al rol, 3-5 años, progresión clara, sector relacionado
-6-7 pts: Experiencia parcialmente relacionada, o experiencia directa con 2-3 años
-3-5 pts: Experiencia en roles adyacentes o menos de 2 años en el sector
-1-2 pts: Experiencia mínimamente relevante o menos de 1 año
-0 pts: Sin experiencia relacionada con la vacante
+PRINCIPIO GENERAL: la vacante define la vara, no una escala fija de años ni de requisitos universales. Antes de puntuar cada categoría, identifica explícitamente qué exige la vacante y su contexto (años, sector, nivel, título, habilidades, ubicación, disponibilidad, etc.) y evalúa qué tan cerca está el candidato de ESE requisito puntual — no de un estándar externo. Si la vacante no exige o no permite cierto nivel (ej. no pide 5 años, o el rol es de nivel junior), un candidato que cumple exactamente lo que la vacante pide puede y debe alcanzar el puntaje máximo de esa categoría. Si la vacante no especifica un requisito para la categoría, evalúa con criterio general de mercado para un rol equivalente.
 
-FORMACIÓN (3 pts) — contrasta nivel y carrera vs lo que requiere la vacante:
-3 pts: Título exactamente requerido por la vacante, institución de prestigio reconocido
+EXPERIENCIA (10 pts) — contrasta la experiencia del candidato contra lo que la vacante exige en años, sector y nivel del rol (no contra una escala fija):
+10 pts: Experiencia exacta a lo requerido por la vacante — mismo rol/nivel, años acordes a lo pedido (o superior), sector idéntico o directamente relevante, con logros cuantificables si aplica
+8-9 pts: Experiencia muy cercana a lo pedido — rol/nivel muy similar, años ligeramente por debajo de lo exigido, sector relacionado
+6-7 pts: Experiencia parcialmente relacionada al requisito, o cumple el rol pero con una brecha notoria en años/nivel respecto a lo pedido
+3-5 pts: Experiencia en roles adyacentes o claramente por debajo de lo que la vacante exige
+1-2 pts: Experiencia mínimamente relevante respecto al requisito de la vacante
+0 pts: Sin experiencia relacionada con lo que exige la vacante
+
+FORMACIÓN (3 pts) — contrasta nivel y carrera del candidato contra lo que la vacante requiere (si no especifica nada, usa el estándar razonable para el rol):
+3 pts: Título/nivel exactamente el requerido por la vacante (o no se exige formación específica y el candidato cumple el estándar razonable del rol)
 2 pts: Título relacionado o nivel académico equivalente al requerido
 1 pt: Formación parcialmente relacionada o carrera en curso que aplica
 0 pts / no sumar: Sin formación relevante o no especificada en el CV
 
-HABILIDADES (5 pts) — contrasta habilidades técnicas y blandas vs las requeridas en la vacante:
-5 pts: Domina todas las habilidades técnicas y blandas requeridas, con evidencia clara en el CV
-4 pts: Domina la mayoría de habilidades críticas, evidencia parcial en el CV
-3 pts: Tiene las habilidades básicas requeridas; faltan las especializadas
-1-2 pts: Solo habilidades blandas presentes, o habilidades técnicas sin evidencia en el CV
-0 pts / no sumar: Sin habilidades relevantes identificadas
+HABILIDADES (5 pts) — contrasta las habilidades del candidato contra las que la vacante y su contexto requieren específicamente:
+5 pts: Domina todas las habilidades técnicas y blandas que la vacante requiere, con evidencia clara en el CV
+4 pts: Domina la mayoría de las habilidades críticas exigidas, evidencia parcial en el CV
+3 pts: Tiene las habilidades básicas que pide la vacante; faltan las especializadas
+1-2 pts: Solo habilidades blandas presentes, o habilidades técnicas requeridas sin evidencia en el CV
+0 pts / no sumar: Sin habilidades relevantes a lo que pide la vacante
 
-DATOS ADICIONALES (2 pts) — contrasta fit operativo vs lo que indica la vacante:
-2 pts: Ubicación compatible + idiomas requeridos cubiertos + disponibilidad confirmada
-1 pt: Cumple al menos uno de los criterios anteriores
-0 pts / no sumar: Ningún criterio cumplido o ninguno especificado
+DATOS ADICIONALES (2 pts) — contrasta fit operativo contra lo que la vacante indica específicamente (ubicación, disponibilidad, turno, etc.):
+2 pts: Cumple todos los criterios operativos que la vacante especifica
+1 pt: Cumple al menos uno de los criterios especificados
+0 pts / no sumar: Ningún criterio cumplido o ninguno especificado en la vacante
 
 ESTABILIDAD LABORAL
 
