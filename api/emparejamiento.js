@@ -8,7 +8,43 @@ import { HABILIDADES_REGEX } from '../lib/habilidades_dict.js';
 const __dirname                     = dirname(fileURLToPath(import.meta.url));
 const PROMPT_EXTRACCION_HABILIDADES = readFileSync(join(__dirname, '../prompts/extraccion_habilidades.txt'), 'utf-8');
 const PROMPT_VERIFICACION_MATCH     = readFileSync(join(__dirname, '../prompts/verificacion_emparejamiento.txt'), 'utf-8');
+const PROMPT_NORMALIZACION_DOMICILIO = readFileSync(join(__dirname, '../prompts/normalizacion_domicilio.txt'), 'utf-8');
 const OPENROUTER_MODEL              = 'deepseek/deepseek-v4-flash-0731';
+
+const DOMICILIOS_VALIDOS = [
+  'Zapopan, Jalisco',
+  'Guadalajara, Jalisco',
+  'Tlaquepaque, Jalisco',
+  'El Salto, Jalisco',
+  'Tlajomulco, Jalisco',
+];
+
+const DOMICILIO_REGEX = {
+  'Zapopan, Jalisco':      /zapopan/i,
+  'Guadalajara, Jalisco':  /guadalajara/i,
+  'Tlaquepaque, Jalisco':  /tlaquepaque/i,
+  'El Salto, Jalisco':     /el salto/i,
+  'Tlajomulco, Jalisco':   /tlajomulco/i,
+};
+
+const DOMICILIO_TOOL = {
+  type: 'function',
+  function: {
+    name: 'normalizar_domicilio',
+    description: 'Determina a cuál de los municipios permitidos corresponde el domicilio del candidato.',
+    parameters: {
+      type: 'object',
+      properties: {
+        domicilio: {
+          type: 'string',
+          enum: [...DOMICILIOS_VALIDOS, 'NO_DETERMINADO'],
+          description: 'Municipio inferido, o NO_DETERMINADO si no hay información suficiente.',
+        },
+      },
+      required: ['domicilio'],
+    },
+  },
+};
 
 const HABILIDADES_TOOL = {
   type: 'function',
@@ -39,6 +75,43 @@ function detectarHabilidadesPorRegex(texto) {
     .map(([habilidad]) => habilidad);
 }
 
+function detectarDomicilioPorRegex(texto) {
+  const encontrado = Object.entries(DOMICILIO_REGEX).find(([, regex]) => regex.test(texto));
+  return encontrado?.[0] ?? null;
+}
+
+async function detectarDomicilioPorLlm(texto) {
+  const datos = await orChatCompletion({
+    model:      OPENROUTER_MODEL,
+    reasoning:  { effort: 'low' },
+    messages: [
+      { role: 'system', content: PROMPT_NORMALIZACION_DOMICILIO },
+      { role: 'user',   content: texto },
+    ],
+    tools:       [DOMICILIO_TOOL],
+    tool_choice: { type: 'function', function: { name: 'normalizar_domicilio' } },
+  });
+
+  const llamada = datos?.choices?.[0]?.message?.tool_calls?.find(c => c.function?.name === 'normalizar_domicilio');
+  if (!llamada) throw new Error('OpenRouter no devolvió una respuesta estructurada válida');
+
+  const argumentos = typeof llamada.function.arguments === 'string' ? JSON.parse(llamada.function.arguments) : llamada.function.arguments;
+  return argumentos.domicilio === 'NO_DETERMINADO' ? null : argumentos.domicilio;
+}
+
+async function normalizarDomicilio(texto) {
+  const porRegex = detectarDomicilioPorRegex(texto);
+  if (porRegex) return { domicilio: porRegex, origen: 'regex' };
+
+  try {
+    const porLlm = await detectarDomicilioPorLlm(texto);
+    return { domicilio: porLlm, origen: 'llm' };
+  } catch (error) {
+    console.log(JSON.stringify({ etapa: 'normalizacion_domicilio', estado: 'error', mensaje: error.message }));
+    return { domicilio: null, origen: 'error' };
+  }
+}
+
 async function detectarHabilidadesPorLlm(texto) {
   const datos = await orChatCompletion({
     model:      OPENROUTER_MODEL,
@@ -61,9 +134,9 @@ async function detectarHabilidadesPorLlm(texto) {
 async function verificarCompatibilidad(candidato, descripcion) {
   const prompt = PROMPT_VERIFICACION_MATCH
     .replace('{{nombre}}',       candidato.nombre       || '(no proporcionado)')
-    .replace('{{ubicacion}}',    candidato.ubicacion     || '(no proporcionado)')
-    .replace('{{escolaridad}}',  candidato.escolaridad   || '(no proporcionado)')
-    .replace('{{expectativa}}',  candidato.expectativa   || '(no proporcionado)')
+    .replace('{{ubicacion}}',    candidato.domicilio     || '(no proporcionado)')
+    .replace('{{escolaridad}}',  '(no proporcionado)')
+    .replace('{{expectativa}}',  candidato.expectativa === true ? 'tiene expectativa de sueldo' : candidato.expectativa === false ? 'sin expectativa de sueldo particular' : '(no proporcionado)')
     .replace('{{experiencia}}',  candidato.experiencia   || '(no proporcionado)')
     .replace('{{descripcion}}',  descripcion             || '(sin descripción)');
 
@@ -121,14 +194,15 @@ export default async function handler(req, res) {
 
   const cuerpo      = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
   const nombre      = cuerpo?.nombre;
-  const ubicacion   = cuerpo?.ubicacion;
-  const escolaridad = cuerpo?.escolaridad;
+  const telefono    = cuerpo?.telefono;
+  const edad        = cuerpo?.edad;
+  const domicilio   = cuerpo?.domicilio;
   const expectativa = cuerpo?.expectativa;
   const experiencia = cuerpo?.experiencia;
 
-  if (!ubicacion || typeof ubicacion !== 'string') {
-    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing ubicacion field' }));
-    return res.status(400).json({ error: 'missing ubicacion field' });
+  if (!domicilio || typeof domicilio !== 'string') {
+    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing domicilio field' }));
+    return res.status(400).json({ error: 'missing domicilio field' });
   }
 
   if (!experiencia || typeof experiencia !== 'string') {
@@ -136,7 +210,11 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'missing experiencia field' });
   }
 
-  console.log(JSON.stringify({ etapa: 'inicio', ubicacion, chars: experiencia.length }));
+  console.log(JSON.stringify({ etapa: 'inicio', domicilio, chars: experiencia.length }));
+
+  const { domicilio: domicilioNormalizado, origen: origenDomicilio } = await normalizarDomicilio(domicilio);
+
+  console.log(JSON.stringify({ etapa: 'normalizacion_domicilio', estado: 'ok', origen: origenDomicilio, domicilio: domicilioNormalizado }));
 
   let habilidadesDetectadas = detectarHabilidadesPorRegex(experiencia);
   let origenDeteccion = 'regex';
@@ -153,7 +231,7 @@ export default async function handler(req, res) {
 
   console.log(JSON.stringify({ etapa: 'deteccion', estado: 'ok', origen: origenDeteccion, habilidades: habilidadesDetectadas }));
 
-  const usoIa = origenDeteccion === 'llm';
+  const usoIa = origenDeteccion === 'llm' || origenDomicilio === 'llm';
 
   if (habilidadesDetectadas.length === 0) {
     console.log(JSON.stringify({ etapa: 'completado', estado: 'sin_habilidades' }));
@@ -163,10 +241,15 @@ export default async function handler(req, res) {
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
   try {
-    const { data: vacantes, error } = await supabase
+    let consulta = supabase
       .from('vacantes')
-      .select('id_team_tailor, domicilio, habilidades, descripcion')
-      .eq('domicilio', ubicacion);
+      .select('id_team_tailor, domicilio, habilidades, descripcion');
+
+    if (domicilioNormalizado) {
+      consulta = consulta.eq('domicilio', domicilioNormalizado);
+    }
+
+    const { data: vacantes, error } = await consulta;
 
     if (error) throw error;
 
@@ -181,7 +264,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ id_team_tailor: [], uso_ia: usoIa });
     }
 
-    const candidato = { nombre, ubicacion, escolaridad, expectativa, experiencia };
+    const candidato = { nombre, domicilio: domicilioNormalizado ?? domicilio, expectativa, experiencia };
     const vacantesVerificadas = await verificarRecomendaciones(candidato, vacantesCoincidentes);
 
     console.log(JSON.stringify({ etapa: 'verificacion_match', estado: 'ok', antes: vacantesCoincidentes.length, despues: vacantesVerificadas.length }));
