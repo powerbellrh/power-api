@@ -1,7 +1,7 @@
 {
   "rewrites": [
     { "source": "/estudios",        "destination": "/api/estudios"        },
-    { "source": "/postulaciones",   "destination": "/api/postulaciones"   },
+    { "source": "/evaluaciones",    "destination": "/api/evaluaciones"    },
     { "source": "/cola",            "destination": "/api/cola"            },
     { "source": "/bloqueos",        "destination": "/api/bloqueos"        },
     { "source": "/recepcion-postulaciones", "destination": "/api/recepcion-postulaciones" },
@@ -20,10 +20,7 @@
     "api/informes.js": {
       "maxDuration": 300
     },
-    "api/postulaciones.js": {
-      "maxDuration": 300
-    },
-    "api/probar-evaluacion.js": {
+    "api/evaluaciones.js": {
       "maxDuration": 300
     },
     "api/mensajes.js": {

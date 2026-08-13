@@ -1,9 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
-import { POSTULACIONES_URL } from '../lib/config.js';
+import { EVALUACIONES_URL } from '../lib/config.js';
 
 const TAMANO_LOTE   = 5;
 const RETRASO_MS      = 5000;
-const URL_POSTULACIONES = POSTULACIONES_URL;
+const URL_EVALUACIONES = EVALUACIONES_URL;
 
 const dormir = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -15,7 +15,7 @@ export default async function handler(req, res) {
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
   const { data: pendientesEvaluacion, error: errorConsultaEvaluacion } = await supabase
-    .from('postulaciones')
+    .from('evaluaciones')
     .select('postulacion_id')
     .eq('evaluacion_agendada', false)
     .order('evaluacion_fecha', { ascending: true })
@@ -27,7 +27,7 @@ export default async function handler(req, res) {
   }
 
   const { data: pendientesReevaluacion, error: errorConsultaReevaluacion } = await supabase
-    .from('postulaciones')
+    .from('evaluaciones')
     .select('postulacion_id')
     .eq('reevaluacion_solicitada', true)
     .eq('reevaluacion_agendada', false)
@@ -40,8 +40,8 @@ export default async function handler(req, res) {
   }
 
   const trabajos = [
-    ...(pendientesEvaluacion   ?? []).map(r => ({ url: URL_POSTULACIONES, body: { postulacion:   r.postulacion_id }, id: r.postulacion_id, tipo: 'evaluacion'   })),
-    ...(pendientesReevaluacion ?? []).map(r => ({ url: URL_POSTULACIONES, body: { reevaluacion:   r.postulacion_id }, id: r.postulacion_id, tipo: 'reevaluacion' })),
+    ...(pendientesEvaluacion   ?? []).map(r => ({ url: URL_EVALUACIONES, body: { postulacion:   r.postulacion_id }, id: r.postulacion_id, tipo: 'evaluacion'   })),
+    ...(pendientesReevaluacion ?? []).map(r => ({ url: URL_EVALUACIONES, body: { reevaluacion:   r.postulacion_id }, id: r.postulacion_id, tipo: 'reevaluacion' })),
   ];
 
   if (trabajos.length === 0) {

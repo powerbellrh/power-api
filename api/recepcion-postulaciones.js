@@ -29,7 +29,7 @@ export default async function handler(req, res) {
   // PASO 2: Encolar la postulación en Supabase (los datos de vacante y respuestas los completa cola)
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-  const { error: errorInsercion } = await supabase.from('postulaciones').insert([{
+  const { error: errorInsercion } = await supabase.from('evaluaciones').insert([{
     postulacion_id:        postulacionId,
     candidato_nombre:      nombreCompleto,
     candidato_telefono:    telefonoLimpio,

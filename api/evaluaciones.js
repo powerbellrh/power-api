@@ -274,7 +274,7 @@ async function procesarReevaluacion(postulacionId, postulacion, supabase) {
     }
 
     etapaActual = 'guardar_reevaluacion';
-    const { error: errorGuardado } = await supabase.from('postulaciones').update({
+    const { error: errorGuardado } = await supabase.from('evaluaciones').update({
       evaluacion_pensamiento:  contenidoPensamiento,
       evaluacion_calificacion: calificacionGlobal,
       evaluacion_resultado:    resultadoEvaluacion,
@@ -321,7 +321,7 @@ async function procesarReevaluacion(postulacionId, postulacion, supabase) {
   } catch (error) {
     console.log(JSON.stringify({ etapa: 'reevaluacion_error', etapa_fallida: etapaActual, postulacion_id: postulacionId, mensaje: error.message }));
     try {
-      await supabase.from('postulaciones').update({
+      await supabase.from('evaluaciones').update({
         reevaluacion_agendada:   false,
         reevaluacion_completada: false,
         evaluacion_error:        `[reevaluacion:${etapaActual}] ${error.message}`,
@@ -392,7 +392,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     if (!urlCurriculum?.trim()) {
       if (vacanteTipo !== 'OP') {
         console.log(JSON.stringify({ etapa: 'no_resume', candidato: candidatoNombre, accion: 'registro_eliminado' }));
-        await supabase.from('postulaciones').delete().eq('postulacion_id', postulacionId);
+        await supabase.from('evaluaciones').delete().eq('postulacion_id', postulacionId);
         return;
       }
       console.log(JSON.stringify({ etapa: 'no_resume', candidato: candidatoNombre, accion: 'continuar_sin_cv', tipo: 'OP' }));
@@ -410,7 +410,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
 
     // PASO 7: Guardar datos de TeamTailor en Supabase
     etapaActual = 'guardar_datos_tt';
-    await supabase.from('postulaciones').update({
+    await supabase.from('evaluaciones').update({
       vacante_nombre:       tituloVacante,
       vacante_descripcion:  descripcionVacanteLimpia,
       vacante_ubicacion:    ubicacionVacante,
@@ -437,7 +437,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
 
     // PASO 9: Registrar solicitud en Supabase
     etapaActual = 'guardar_peticion_modelo';
-    await supabase.from('postulaciones').update({
+    await supabase.from('evaluaciones').update({
       evaluacion_peticion: JSON.stringify(peticionModelo),
       evaluacion_prompt:   promptSistemaConFecha,
       evaluacion_modelo:   tipoConfigModelo.model,
@@ -486,7 +486,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
 
     // PASO 12: Guardar resultados de la evaluación
     etapaActual = 'guardar_evaluacion';
-    const { error: errorGuardado } = await supabase.from('postulaciones').update({
+    const { error: errorGuardado } = await supabase.from('evaluaciones').update({
       evaluacion_pensamiento:  contenidoPensamiento,
       evaluacion_calificacion: calificacionGlobal,
       evaluacion_resultado:    resultadoEvaluacion,
@@ -575,14 +575,14 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
 
     // PASO 17: Guardar estado de WhatsApp
     etapaActual = 'guardar_estado_wa';
-    await supabase.from('postulaciones').update({ whatsapp_enviado: whatsappEnviado, whatsapp_error: whatsappError }).eq('postulacion_id', postulacionId);
+    await supabase.from('evaluaciones').update({ whatsapp_enviado: whatsappEnviado, whatsapp_error: whatsappError }).eq('postulacion_id', postulacionId);
 
     console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', candidato: candidatoNombrePila, vacante: tituloVacante, calificacion: calificacionGlobal, whatsapp: whatsappEnviado ? 'ok' : whatsappError }));
 
   } catch (error) {
     console.log(JSON.stringify({ etapa: 'error', estado: 'error', etapa_fallida: etapaActual, postulacion_id: postulacionId, mensaje: error.message }));
     try {
-      await supabase.from('postulaciones').update({
+      await supabase.from('evaluaciones').update({
         evaluacion_agendada:   false,
         evaluacion_completada: false,
         evaluacion_fecha:      new Date().toISOString(),
@@ -622,7 +622,7 @@ async function manejarProcesamientoReevaluacion(req, res, supabase) {
   }
 
   const { data: postulacion, error: errorConsulta } = await supabase
-    .from('postulaciones').select('*').eq('postulacion_id', postulacionId).single();
+    .from('evaluaciones').select('*').eq('postulacion_id', postulacionId).single();
 
   if (errorConsulta || !postulacion) {
     console.log(JSON.stringify({ etapa: 'reevaluacion_consulta', estado: 'error', mensaje: 'not found', postulacion_id: postulacionId }));
@@ -635,7 +635,7 @@ async function manejarProcesamientoReevaluacion(req, res, supabase) {
     return res.status(200).json({ status: 'skipped', postulacion_id: postulacionId });
   }
 
-  await supabase.from('postulaciones').update({ reevaluacion_agendada: true }).eq('postulacion_id', postulacionId);
+  await supabase.from('evaluaciones').update({ reevaluacion_agendada: true }).eq('postulacion_id', postulacionId);
   waitUntil(procesarReevaluacion(postulacionId, postulacion, supabase));
 
   return res.status(202).json({ status: 'processing', postulacion_id: postulacionId });
@@ -651,7 +651,7 @@ async function manejarEvaluacion(req, res, supabase) {
 
   // PASO 1: Obtener registro de postulación
   const { data: postulacion, error: errorConsulta } = await supabase
-    .from('postulaciones').select('*').eq('postulacion_id', postulacionId).single();
+    .from('evaluaciones').select('*').eq('postulacion_id', postulacionId).single();
 
   if (errorConsulta || !postulacion) {
     console.log(JSON.stringify({ etapa: 'consulta_postulacion', estado: 'error', mensaje: 'not found', postulacion_id: postulacionId }));
@@ -664,7 +664,7 @@ async function manejarEvaluacion(req, res, supabase) {
   }
 
   // PASO 2: Marcar como en proceso y disparar trabajo en background
-  await supabase.from('postulaciones').update({ evaluacion_agendada: true }).eq('postulacion_id', postulacionId);
+  await supabase.from('evaluaciones').update({ evaluacion_agendada: true }).eq('postulacion_id', postulacionId);
   waitUntil(procesarEvaluacion(postulacionId, postulacion, supabase));
 
   return res.status(202).json({ status: 'processing', postulacion_id: postulacionId });
