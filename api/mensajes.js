@@ -14,7 +14,6 @@ const __dirname                      = dirname(fileURLToPath(import.meta.url));
 const PROMPT_AGENTE_CONVERSACIONAL   = readFileSync(join(__dirname, '../prompts/agente_conversacional.txt'), 'utf-8');
 const PROMPT_AGENTE_GENERAL          = readFileSync(join(__dirname, '../prompts/agente_general.txt'), 'utf-8');
 const OPENROUTER_MODEL               = 'deepseek/deepseek-v4-flash-0731';
-const MC_LIMITE_CARACTERES_TEXTO     = 2000;
 const LIMITE_REINTENTOS              = 5;
 const MAXIMO_PREGUNTAS               = 5;
 const DESPLAZAMIENTO_CDMX_MS         = 6 * 60 * 60 * 1000; // Ciudad de México es UTC-6 todo el año
@@ -23,19 +22,21 @@ const REGEX_VACANTE                  = /#(\d{6,})/; // los ids de vacante tienen
 const FOTO_PERFIL_DEFAULT      = 'https://i.ibb.co/JwvVrDr0/fotodesconocido.png';
 const FOTO_PERFIL_HOMBRE       = 'https://i.ibb.co/4RGYgcC4/fotohombre.png';
 const FOTO_PERFIL_MUJER        = 'https://i.ibb.co/6CdjYbv/fotomujer.png';
-const IMAGEN_POWERBOT          = 'https://i.ibb.co/Tq2fTbqr/Power-Bot.png';
-const IMAGEN_SOLICITUD_COMPLETA = 'https://i.ibb.co/p9vf7QX/Solicitud-completada.png';
 const MENSAJE_DESPEDIDA_COMPLETADO = '¡Felicidades! Tu postulación ha sido registrada. Una reclutadora se pondrá en contacto contigo lo más pronto posible 🥳';
 const MENSAJE_RECORDATORIO_COMPLETADO = 'Tu postulación ya quedó registrada, una reclutadora te contactará lo más pronto posible 🙂';
 const MENSAJE_FALLBACK_ERROR = 'Tuvimos un problema para procesar tu mensaje, ¿podrías escribirlo de nuevo?';
+const MENSAJE_LIMITE_PREGUNTAS_GENERALES = 'Para dudas más específicas, una reclutadora podrá ayudarte con más detalle 🙂';
 
-const URL_POLITICA_PRIVACIDAD = 'https://careers.powerbellrh.com/data-privacy';
-const CAPTION_POLITICA_PRIVACIDAD = 'Ver política';
-const NOTA_POLITICA_PRIVACIDAD = '_Al continuar estás afirmando tu acuerdo con nuestra política de privacidad_';
+// Mensaje que ManyChat manda automáticamente 1s después del primer mensaje del
+// candidato (incluye saludo y consentimiento de privacidad); no lo enviamos
+// nosotros, pero se registra en la conversación para mantener el historial completo.
+const MENSAJE_BIENVENIDA_MANYCHAT = 'Hola 👋 Soy PowerBot, una IA de PowerBell RH.\n\nUsamos tu número y los datos que nos compartas para completar tu postulación a esta vacante. Puedes consultar nuestro aviso de privacidad presionando el boton de abajo 👇\n\n_Si prefieres eliminar tu información, puedes escribir BAJA en cualquier momento 😊_\n\nhttps://careers.powerbellrh.com/privacy-policy';
 
 const URL_VACANTES = 'https://talento.powerbellrh.com/';
-const CAPTION_VACANTES = 'Ver vacantes';
 const NOTA_VACANTES = 'Puedes checar nuestras vacantes activas con el siguiente enlace 👇';
+
+const FLOW_NS_RESPUESTA          = 'content20260807162104_695716';
+const ID_CAMPO_MENSAJE_CANDIDATO = 14851295;
 
 const ID_PREGUNTA_NOMBRE    = 'nombre';
 const ID_PREGUNTA_DOMICILIO = String(TEAMTAILOR_ADDRESS_QUESTION_ID);
@@ -105,9 +106,9 @@ function timestampCdmx() {
 // HELPERS — Supabase
 // ============================================================================
 
-// No se guarda el teléfono hasta que el candidato da su nombre (ver `nombreConocido`
-// en procesarCandidatoConVacante), así que mientras tanto la fila se localiza por
-// `manychat` (id de suscriptor); una vez conocido el teléfono, se busca por ese primero.
+// El teléfono se guarda desde el primer mensaje (el consentimiento de privacidad ya
+// se resuelve del lado de ManyChat antes de llegar aquí), así que la fila se puede
+// localizar por `telefono` o por `manychat` (id de suscriptor) indistintamente.
 async function obtenerOCrearContacto(supabase, idSuscriptor, telefono) {
   const { data: porTelefono, error: errorPorTelefono } = await supabase
     .from('chatbot')
@@ -115,7 +116,7 @@ async function obtenerOCrearContacto(supabase, idSuscriptor, telefono) {
     .eq('telefono', telefono)
     .maybeSingle();
   if (errorPorTelefono) throw errorPorTelefono;
-  if (porTelefono) return porTelefono;
+  if (porTelefono) return { fila: porTelefono, esNuevo: false };
 
   const { data: porSuscriptor, error: errorPorSuscriptor } = await supabase
     .from('chatbot')
@@ -123,15 +124,26 @@ async function obtenerOCrearContacto(supabase, idSuscriptor, telefono) {
     .eq('manychat', idSuscriptor)
     .maybeSingle();
   if (errorPorSuscriptor) throw errorPorSuscriptor;
-  if (porSuscriptor) return porSuscriptor;
+  if (porSuscriptor) {
+    if (porSuscriptor.telefono) return { fila: porSuscriptor, esNuevo: false };
+
+    const { data: actualizado, error: errorTelefono } = await supabase
+      .from('chatbot')
+      .update({ telefono })
+      .eq('id', porSuscriptor.id)
+      .select()
+      .single();
+    if (errorTelefono) throw errorTelefono;
+    return { fila: actualizado, esNuevo: false };
+  }
 
   const { data: creado, error: errorInsercion } = await supabase
     .from('chatbot')
-    .insert({ manychat: idSuscriptor, creado: timestampCdmx() })
+    .insert({ manychat: idSuscriptor, telefono, creado: timestampCdmx() })
     .select()
     .single();
   if (errorInsercion) throw errorInsercion;
-  return creado;
+  return { fila: creado, esNuevo: true };
 }
 
 async function agregarMensajeConversacion(supabase, fila, actor, texto, { actualizarTimestamp = false } = {}) {
@@ -151,67 +163,18 @@ async function agregarMensajeConversacion(supabase, fila, actor, texto, { actual
 // HELPERS — Texto / ManyChat
 // ============================================================================
 
-function trocearTexto(texto, limite = MC_LIMITE_CARACTERES_TEXTO) {
-  const parrafos = texto.split('\n');
-  const bloques = [];
-  let actual = '';
-
-  for (const parrafo of parrafos) {
-    const candidato = actual ? `${actual}\n${parrafo}` : parrafo;
-    if (candidato.length > limite && actual) {
-      bloques.push(actual);
-      actual = parrafo;
-    } else {
-      actual = candidato;
-    }
-  }
-  if (actual) bloques.push(actual);
-
-  return bloques;
-}
-
-async function enviarWhatsApp(idSuscriptor, texto) {
-  await mcCrear('/fb/sending/sendContent', {
+// Guarda la respuesta de la IA en el campo personalizado "Mensaje para el candidato"
+// y dispara el flujo de ManyChat que se lo muestra al candidato (imágenes y botones
+// del flujo ya están definidos del lado de ManyChat).
+async function enviarRespuestaCandidato(idSuscriptor, texto) {
+  await mcCrear('/fb/subscriber/setCustomField', {
     subscriber_id: idSuscriptor,
-    data: {
-      version: 'v2',
-      content: {
-        type:          'whatsapp',
-        messages:      trocearTexto(texto).map(bloque => ({ type: 'text', text: bloque })),
-        actions:       [],
-        quick_replies: [],
-      },
-    },
+    field_id:      ID_CAMPO_MENSAJE_CANDIDATO,
+    field_value:   texto,
   });
-}
-
-async function enviarWhatsAppConBoton(idSuscriptor, texto, { caption, url }) {
-  await mcCrear('/fb/sending/sendContent', {
+  await mcCrear('/fb/sending/sendFlow', {
     subscriber_id: idSuscriptor,
-    data: {
-      version: 'v2',
-      content: {
-        type:          'whatsapp',
-        messages:      [{ type: 'text', text: texto, buttons: [{ type: 'url', caption, url }] }],
-        actions:       [],
-        quick_replies: [],
-      },
-    },
-  });
-}
-
-async function enviarImagenWhatsApp(idSuscriptor, url) {
-  await mcCrear('/fb/sending/sendContent', {
-    subscriber_id: idSuscriptor,
-    data: {
-      version: 'v2',
-      content: {
-        type:          'whatsapp',
-        messages:      [{ type: 'image', url }],
-        actions:       [],
-        quick_replies: [],
-      },
-    },
+    flow_ns:       FLOW_NS_RESPUESTA,
   });
 }
 
@@ -465,11 +428,8 @@ async function detectarYCargarVacante({ supabase, fila, idSuscriptor, telefono, 
   log('teamtailor', { estado: 'ok', titulo: datosVacante.title, chars: informacionVacante.length });
 
   try {
-    await enviarImagenWhatsApp(idSuscriptor, IMAGEN_POWERBOT);
-    await agregarMensajeConversacion(supabase, fila, 'agente', '[imagen: PowerBot]');
-
     const textoInfo = `Aquí tienes la información de la vacante 👇:\n\n${informacionVacante}`;
-    await enviarWhatsApp(idSuscriptor, textoInfo);
+    await enviarRespuestaCandidato(idSuscriptor, textoInfo);
     await agregarMensajeConversacion(supabase, fila, 'agente', textoInfo);
     log('manychat_envio', { estado: 'ok', idVacante: idVacanteNum });
   } catch (e) {
@@ -539,7 +499,7 @@ async function detectarYCargarVacante({ supabase, fila, idSuscriptor, telefono, 
       if (!quedanPendientes) {
         const avisoAutomatico = 'Ya contamos con tu información, así que llenamos tu postulación de forma automática. Una reclutadora se pondrá en contacto contigo lo más pronto posible 🙂';
         try {
-          await enviarWhatsApp(idSuscriptor, avisoAutomatico);
+          await enviarRespuestaCandidato(idSuscriptor, avisoAutomatico);
           await agregarMensajeConversacion(supabase, fila, 'agente', avisoAutomatico);
         } catch (e) {
           log('manychat_envio', { estado: 'error', error: e.message });
@@ -552,7 +512,7 @@ async function detectarYCargarVacante({ supabase, fila, idSuscriptor, telefono, 
 
       const avisoTexto = 'Voy a usar los datos que ya nos habías compartido antes. Solo me faltan algunas cosas para tu nueva postulación.';
       try {
-        await enviarWhatsApp(idSuscriptor, avisoTexto);
+        await enviarRespuestaCandidato(idSuscriptor, avisoTexto);
         await agregarMensajeConversacion(supabase, fila, 'agente', avisoTexto);
       } catch (e) {
         log('manychat_envio', { estado: 'error', error: e.message });
@@ -569,11 +529,10 @@ async function detectarYCargarVacante({ supabase, fila, idSuscriptor, telefono, 
   const nombreYaConocido = fila.preguntas.find(item => item.id === ID_PREGUNTA_NOMBRE)?.respuesta;
   if (!nombreYaConocido) {
     await dormir(3000);
-    const bienvenida = 'Hola, soy PowerBot, un asistente de IA que te ayudará con tu postulación, para comenzar ¿Podrías darme tu nombre? 🙂';
-    const bienvenidaConPolitica = `${bienvenida}\n\n${NOTA_POLITICA_PRIVACIDAD}`;
+    const bienvenida = 'Para comenzar, ¿podrías darme tu nombre? 🙂';
     try {
-      await enviarWhatsAppConBoton(idSuscriptor, bienvenidaConPolitica, { caption: CAPTION_POLITICA_PRIVACIDAD, url: URL_POLITICA_PRIVACIDAD });
-      await agregarMensajeConversacion(supabase, fila, 'agente', bienvenidaConPolitica);
+      await enviarRespuestaCandidato(idSuscriptor, bienvenida);
+      await agregarMensajeConversacion(supabase, fila, 'agente', bienvenida);
     } catch (e) {
       log('manychat_envio', { estado: 'error', error: e.message });
       return true;
@@ -588,9 +547,23 @@ async function detectarYCargarVacante({ supabase, fila, idSuscriptor, telefono, 
 
 // Candidato sin vacante cargada (o cuyo flujo de preguntas aún no existe): se
 // responden sus dudas generales sobre PowerBell RH con el agente de preguntas
-// generales (que ya incluye el saludo), siempre invitándolo a ver
-// las vacantes activas.
+// generales, siempre invitándolo a ver las vacantes activas. Igual que en el
+// flujo de postulación, después de 5 reintentos sin avance se corta al LLM y
+// se manda una respuesta fija.
 async function procesarCandidatoSinVacante({ supabase, fila, idSuscriptor, log }) {
+  if ((fila.reintentos ?? 0) >= LIMITE_REINTENTOS) {
+    const mensajeLimite = `${MENSAJE_LIMITE_PREGUNTAS_GENERALES}\n\n${NOTA_VACANTES}\n${URL_VACANTES}`;
+    try {
+      await enviarRespuestaCandidato(idSuscriptor, mensajeLimite);
+      await agregarMensajeConversacion(supabase, fila, 'agente', mensajeLimite);
+    } catch (e) {
+      log('manychat_envio', { estado: 'error', error: e.message });
+      return;
+    }
+    log('agente_general', { estado: 'limite_reintentos', reintentos: fila.reintentos });
+    return;
+  }
+
   let respuestaAgente;
   try {
     respuestaAgente = await generarRespuestaAgenteGeneral(fila.conversacion);
@@ -599,16 +572,21 @@ async function procesarCandidatoSinVacante({ supabase, fila, idSuscriptor, log }
     respuestaAgente = MENSAJE_FALLBACK_ERROR;
   }
 
-  const mensajeConEnlace = `${respuestaAgente}\n\n${NOTA_VACANTES}`;
+  const mensajeConEnlace = `${respuestaAgente}\n\n${NOTA_VACANTES}\n${URL_VACANTES}`;
   try {
-    await enviarWhatsAppConBoton(idSuscriptor, mensajeConEnlace, { caption: CAPTION_VACANTES, url: URL_VACANTES });
+    await enviarRespuestaCandidato(idSuscriptor, mensajeConEnlace);
     await agregarMensajeConversacion(supabase, fila, 'agente', mensajeConEnlace);
   } catch (e) {
     log('manychat_envio', { estado: 'error', error: e.message });
     return;
   }
 
-  log('agente_general', { estado: 'ok' });
+  const nuevosReintentos = (fila.reintentos ?? 0) + 1;
+  fila.reintentos = nuevosReintentos;
+  const { error } = await supabase.from('chatbot').update({ reintentos: nuevosReintentos }).eq('id', fila.id);
+  if (error) log('supabase_preguntas', { estado: 'error', error: error.message });
+
+  log('agente_general', { estado: 'ok', reintentos: nuevosReintentos });
 }
 
 // Candidato con una vacante y preguntas de postulación cargadas: avanza el flujo de
@@ -616,17 +594,47 @@ async function procesarCandidatoSinVacante({ supabase, fila, idSuscriptor, log }
 async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor, telefono, log }) {
   const itemsPreguntas = fila.preguntas;
 
+  // Postulación ya completada: responde sus dudas con el agente general (el mismo
+  // que atiende a candidatos sin vacante) recordándole que ya quedó registrada,
+  // hasta 5 reintentos; después de eso se corta al LLM y se manda el recordatorio fijo.
   const yaCompletado = itemsPreguntas.every(item => item.respuesta);
   if (yaCompletado) {
-    const recordatorioConEnlace = `${MENSAJE_RECORDATORIO_COMPLETADO}\n\n${NOTA_VACANTES}`;
+    if ((fila.reintentos ?? 0) >= LIMITE_REINTENTOS) {
+      const recordatorioConEnlace = `${MENSAJE_RECORDATORIO_COMPLETADO}\n\n${NOTA_VACANTES}\n${URL_VACANTES}`;
+      try {
+        await enviarRespuestaCandidato(idSuscriptor, recordatorioConEnlace);
+        await agregarMensajeConversacion(supabase, fila, 'agente', recordatorioConEnlace);
+      } catch (e) {
+        log('manychat_envio', { estado: 'error', error: e.message });
+        return;
+      }
+      log('agente', { estado: 'completado_limite_reintentos', reintentos: fila.reintentos });
+      return;
+    }
+
+    let respuestaAgente;
     try {
-      await enviarWhatsAppConBoton(idSuscriptor, recordatorioConEnlace, { caption: CAPTION_VACANTES, url: URL_VACANTES });
-      await agregarMensajeConversacion(supabase, fila, 'agente', recordatorioConEnlace);
+      respuestaAgente = await generarRespuestaAgenteGeneral(fila.conversacion);
+    } catch (e) {
+      log('agente_general_llm', { estado: 'error', error: e.message });
+      respuestaAgente = MENSAJE_FALLBACK_ERROR;
+    }
+
+    const mensajeConRecordatorio = `${respuestaAgente}\n\n${MENSAJE_RECORDATORIO_COMPLETADO}`;
+    try {
+      await enviarRespuestaCandidato(idSuscriptor, mensajeConRecordatorio);
+      await agregarMensajeConversacion(supabase, fila, 'agente', mensajeConRecordatorio);
     } catch (e) {
       log('manychat_envio', { estado: 'error', error: e.message });
       return;
     }
-    log('agente', { estado: 'completado_recordatorio' });
+
+    const nuevosReintentos = (fila.reintentos ?? 0) + 1;
+    fila.reintentos = nuevosReintentos;
+    const { error } = await supabase.from('chatbot').update({ reintentos: nuevosReintentos }).eq('id', fila.id);
+    if (error) log('supabase_preguntas', { estado: 'error', error: error.message });
+
+    log('agente', { estado: 'completado_respuesta', reintentos: nuevosReintentos });
     return;
   }
 
@@ -644,7 +652,7 @@ async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor, telef
   } catch (e) {
     log('agente_llm', { estado: 'error', error: e.message });
     try {
-      await enviarWhatsApp(idSuscriptor, MENSAJE_FALLBACK_ERROR);
+      await enviarRespuestaCandidato(idSuscriptor, MENSAJE_FALLBACK_ERROR);
       await agregarMensajeConversacion(supabase, fila, 'agente', MENSAJE_FALLBACK_ERROR);
     } catch (e2) {
       log('manychat_envio', { estado: 'error', error: e2.message });
@@ -664,12 +672,10 @@ async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor, telef
 
   let mensajeAgente     = (resultadoAgente.mensaje ?? '').slice(0, 250);
   let reintentosFinales = nuevoReintentos;
-  let enviarImagenFinal = null;
 
   if (todasRespondidas) {
     mensajeAgente     = MENSAJE_DESPEDIDA_COMPLETADO;
     reintentosFinales = 0;
-    enviarImagenFinal = IMAGEN_SOLICITUD_COMPLETA;
   } else if (nuevoReintentos >= LIMITE_REINTENTOS) {
     const nombreCandidato = itemsActualizados.find(item => item.id === ID_PREGUNTA_NOMBRE)?.respuesta;
     mensajeAgente = generarDespedida(nombreCandidato);
@@ -679,9 +685,6 @@ async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor, telef
   let candidatoId = fila.candidato ?? null;
   const itemNombre = itemsActualizados.find(item => item.id === ID_PREGUNTA_NOMBRE);
   const genero = resultadoAgente.genero && resultadoAgente.genero !== 'ninguno' ? resultadoAgente.genero : null;
-
-  // El teléfono no se guarda en Supabase hasta que el candidato da su nombre.
-  if (!fila.telefono && itemNombre?.respuesta) fila.telefono = telefono;
 
   if (!candidatoId && itemNombre?.respuesta && !itemNombre.enviado && fila.vacante) {
     try {
@@ -717,7 +720,7 @@ async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor, telef
 
   const { error: errorProgreso } = await supabase
     .from('chatbot')
-    .update({ preguntas: fila.preguntas, candidato: candidatoId, reintentos: reintentosFinales, telefono: fila.telefono ?? null })
+    .update({ preguntas: fila.preguntas, candidato: candidatoId, reintentos: reintentosFinales })
     .eq('id', fila.id);
   if (errorProgreso) log('supabase_preguntas', { estado: 'error', error: errorProgreso.message });
 
@@ -741,11 +744,7 @@ async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor, telef
   }
 
   try {
-    if (enviarImagenFinal) {
-      await enviarImagenWhatsApp(idSuscriptor, enviarImagenFinal);
-      await agregarMensajeConversacion(supabase, fila, 'agente', '[imagen: solicitud completada]');
-    }
-    await enviarWhatsApp(idSuscriptor, mensajeAgente);
+    await enviarRespuestaCandidato(idSuscriptor, mensajeAgente);
     await agregarMensajeConversacion(supabase, fila, 'agente', mensajeAgente);
   } catch (e) {
     log('manychat_envio', { estado: 'error', error: e.message });
@@ -758,15 +757,18 @@ async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor, telef
 async function procesarMensaje({ idSuscriptor, telefono, mensaje, log }) {
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-  let fila;
+  let fila, esNuevo;
   try {
-    fila = await obtenerOCrearContacto(supabase, idSuscriptor, telefono);
+    ({ fila, esNuevo } = await obtenerOCrearContacto(supabase, idSuscriptor, telefono));
   } catch (e) {
     log('supabase_contacto', { estado: 'error', error: e.message });
     return;
   }
 
   await agregarMensajeConversacion(supabase, fila, 'usuario', mensaje, { actualizarTimestamp: true });
+  if (esNuevo) {
+    await agregarMensajeConversacion(supabase, fila, 'agente', MENSAJE_BIENVENIDA_MANYCHAT);
+  }
 
   const respondidoPorDeteccion = await detectarYCargarVacante({ supabase, fila, idSuscriptor, telefono, mensaje, log });
   if (respondidoPorDeteccion) return;
