@@ -505,12 +505,27 @@ async function detectarYCargarVacante({ supabase, fila, idSuscriptor, telefono, 
     const finConHistorial    = conHistorial(PREGUNTA_OBLIGATORIA_FIN);
 
     const esRegreso            = fila.vacante != null;
-    const candidatoIdExistente = fila.candidato ?? null;
+    let   candidatoIdExistente = fila.candidato ?? null;
     const nombreConocido       = itemsPrevios.find(item => item.id === ID_PREGUNTA_NOMBRE)?.respuesta;
 
-    // El candidato ya existe en TeamTailor desde su primer mensaje (columna
-    // `candidato`), así que aquí solo se postula a la vacante nueva; si ya no
-    // existe en TeamTailor, se recrea con los datos que ya tenemos.
+    // El candidato se sube a TeamTailor en cuanto se detecta una vacante (nombre =
+    // teléfono, foto default), igual que el script de migración de rezagados —
+    // que también exige una vacante antes de crear el candidato. Así se evitan
+    // candidatos "huérfanos" sin ninguna postulación.
+    if (!candidatoIdExistente) {
+      try {
+        candidatoIdExistente = await crearCandidatoTeamTailorTemprano(telefono);
+        fila.candidato = candidatoIdExistente;
+        const { error } = await supabase.from('chatbot').update({ candidato: candidatoIdExistente }).eq('id', fila.id);
+        if (error) log('supabase_candidato', { estado: 'error', error: error.message });
+        log('candidato_creado_temprano', { estado: 'ok', candidato_id: candidatoIdExistente });
+      } catch (e) {
+        log('candidato_creado_temprano', { estado: 'error', error: e.message });
+      }
+    }
+
+    // Se postula al candidato a la vacante nueva; si ya no existe en TeamTailor,
+    // se recrea con los datos que ya tenemos.
     if (candidatoIdExistente) {
       try {
         const { candidatoId: candidatoIdValido } = await conCandidatoValido(
@@ -830,20 +845,6 @@ async function procesarMensaje({ idSuscriptor, telefono, mensaje, log }) {
 
   if (REGEX_BAJA.test(mensaje)) {
     await registrarSolicitudEliminacion(supabase, fila, log);
-  }
-
-  // El candidato se sube a TeamTailor desde que llega con su teléfono (antes de
-  // conocer su nombre o vacante), igual que el script que migra a los rezagados.
-  if (!fila.candidato) {
-    try {
-      const candidatoId = await crearCandidatoTeamTailorTemprano(telefono);
-      fila.candidato = candidatoId;
-      const { error } = await supabase.from('chatbot').update({ candidato: candidatoId }).eq('id', fila.id);
-      if (error) log('supabase_candidato', { estado: 'error', error: error.message });
-      log('candidato_creado_temprano', { estado: 'ok', candidato_id: candidatoId });
-    } catch (e) {
-      log('candidato_creado_temprano', { estado: 'error', error: e.message });
-    }
   }
 
   await agregarMensajeConversacion(supabase, fila, 'usuario', mensaje, { actualizarTimestamp: true });
