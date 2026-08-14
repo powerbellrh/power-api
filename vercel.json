@@ -3,7 +3,6 @@
     { "source": "/estudios",        "destination": "/api/estudios"        },
     { "source": "/evaluaciones",    "destination": "/api/evaluaciones"    },
     { "source": "/cola",            "destination": "/api/cola"            },
-    { "source": "/bloqueos",        "destination": "/api/bloqueos"        },
     { "source": "/recepcion-postulaciones", "destination": "/api/recepcion-postulaciones" },
     { "source": "/historial",       "destination": "/api/historial"       },
     { "source": "/experiencia",     "destination": "/api/experiencia"     },
