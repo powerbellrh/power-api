@@ -203,6 +203,7 @@ async function crearPostulaciones(supabase, candidatoId, vacantesVerificadas, da
     id_candidato:        candidatoId,
     id_vacante:          idVacante,
     experiencia_laboral: datosCandidato.experiencia ?? null,
+    sugerida:            true,
   }));
 
   try {
