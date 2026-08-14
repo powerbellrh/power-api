@@ -178,6 +178,43 @@ async function verificarRecomendaciones(candidato, vacantesCoincidentes) {
   return resultados.filter(r => r.apto).map(r => r.vacante);
 }
 
+async function crearPostulaciones(supabase, candidatoId, vacantesVerificadas) {
+  const idsVacantes = [...new Set(vacantesVerificadas.map(vacante => vacante.id))];
+
+  if (idsVacantes.length === 0) {
+    console.log(JSON.stringify({ etapa: 'creacion_postulaciones', estado: 'ok', nuevas: 0, existentes: 0 }));
+    return;
+  }
+
+  try {
+    const { data: postulacionesExistentes, error: errorExistentes } = await supabase
+      .from('postulaciones')
+      .select('id_vacante')
+      .eq('id_candidato', candidatoId)
+      .in('id_vacante', idsVacantes);
+
+    if (errorExistentes) throw errorExistentes;
+
+    const idsExistentes = new Set(postulacionesExistentes.map(postulacion => postulacion.id_vacante));
+    const idsNuevos     = idsVacantes.filter(id => !idsExistentes.has(id));
+
+    if (idsNuevos.length === 0) {
+      console.log(JSON.stringify({ etapa: 'creacion_postulaciones', estado: 'ok', nuevas: 0, existentes: idsExistentes.size }));
+      return;
+    }
+
+    const { error: errorInsercion } = await supabase
+      .from('postulaciones')
+      .insert(idsNuevos.map(idVacante => ({ id_candidato: candidatoId, id_vacante: idVacante })));
+
+    if (errorInsercion) throw errorInsercion;
+
+    console.log(JSON.stringify({ etapa: 'creacion_postulaciones', estado: 'ok', nuevas: idsNuevos.length, existentes: idsExistentes.size, candidato_id: candidatoId, vacantes: idsNuevos }));
+  } catch (error) {
+    console.log(JSON.stringify({ etapa: 'creacion_postulaciones', estado: 'error', mensaje: error.message, candidato_id: candidatoId, vacantes: idsVacantes }));
+  }
+}
+
 // ============================================================================
 // HANDLER
 // ============================================================================
@@ -203,6 +240,12 @@ export default async function handler(req, res) {
   const experiencia = cuerpo?.experiencia;
   const rolarTurno  = cuerpo?.rolar_turno;
   const acceso      = cuerpo?.acceso;
+  const idVacante   = parseInt(cuerpo?.id_vacante, 10);
+
+  if (!telefono || typeof telefono !== 'string') {
+    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing telefono field' }));
+    return res.status(400).json({ error: 'missing telefono field' });
+  }
 
   if (!domicilio || typeof domicilio !== 'string') {
     console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing domicilio field' }));
@@ -214,7 +257,27 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'missing experiencia field' });
   }
 
-  console.log(JSON.stringify({ etapa: 'inicio', domicilio, chars: experiencia.length }));
+  console.log(JSON.stringify({ etapa: 'inicio', telefono, domicilio, chars: experiencia.length, id_vacante: Number.isInteger(idVacante) ? idVacante : null }));
+
+  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+  const { data: candidato, error: errorCandidato } = await supabase
+    .from('candidatos')
+    .select('id')
+    .eq('telefono', telefono)
+    .maybeSingle();
+
+  if (errorCandidato) {
+    console.log(JSON.stringify({ etapa: 'busqueda_candidato', estado: 'error', mensaje: errorCandidato.message, telefono }));
+    return res.status(500).json({ error: errorCandidato.message });
+  }
+
+  if (!candidato) {
+    console.log(JSON.stringify({ etapa: 'busqueda_candidato', estado: 'error', codigo: 404, mensaje: 'candidato no encontrado', telefono }));
+    return res.status(200).json({ id_team_tailor: [], uso_ia: false });
+  }
+
+  console.log(JSON.stringify({ etapa: 'busqueda_candidato', estado: 'ok', candidato_id: candidato.id }));
 
   const { domicilio: domicilioNormalizado, origen: origenDomicilio } = await normalizarDomicilio(domicilio);
 
@@ -242,12 +305,10 @@ export default async function handler(req, res) {
     return res.status(200).json({ id_team_tailor: [], uso_ia: usoIa });
   }
 
-  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-
   try {
     let consulta = supabase
       .from('vacantes')
-      .select('id_team_tailor, domicilio, habilidades, descripcion');
+      .select('id, id_team_tailor, domicilio, habilidades, descripcion');
 
     if (domicilioNormalizado) {
       consulta = consulta.eq('domicilio', domicilioNormalizado);
@@ -258,7 +319,7 @@ export default async function handler(req, res) {
     if (error) throw error;
 
     const vacantesCoincidentes = vacantes.filter(
-      vacante => habilidadesDetectadas.some(habilidad => vacante.habilidades?.includes(habilidad))
+      vacante => vacante.id !== idVacante && habilidadesDetectadas.some(habilidad => vacante.habilidades?.includes(habilidad))
     );
 
     console.log(JSON.stringify({ etapa: 'coincidencias_iniciales', estado: 'ok', coincidencias: vacantesCoincidentes.length }));
@@ -268,8 +329,8 @@ export default async function handler(req, res) {
       return res.status(200).json({ id_team_tailor: [], uso_ia: usoIa });
     }
 
-    const candidato = { nombre, domicilio: domicilioNormalizado ?? domicilio, expectativa, experiencia, rolarTurno, acceso };
-    const vacantesVerificadas = await verificarRecomendaciones(candidato, vacantesCoincidentes);
+    const datosCandidato = { nombre, domicilio: domicilioNormalizado ?? domicilio, expectativa, experiencia, rolarTurno, acceso };
+    const vacantesVerificadas = await verificarRecomendaciones(datosCandidato, vacantesCoincidentes);
 
     console.log(JSON.stringify({ etapa: 'verificacion_match', estado: 'ok', antes: vacantesCoincidentes.length, despues: vacantesVerificadas.length }));
 
@@ -278,6 +339,8 @@ export default async function handler(req, res) {
       .filter(id => Number.isInteger(id));
 
     const idsUnicos = [...new Set(idsCoincidentes)];
+
+    await crearPostulaciones(supabase, candidato.id, vacantesVerificadas);
 
     console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', coincidencias: idsUnicos.length }));
     return res.status(200).json({ id_team_tailor: idsUnicos, uso_ia: usoIa });
