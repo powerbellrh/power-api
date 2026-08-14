@@ -206,6 +206,8 @@ async function crearPostulaciones(supabase, candidatoId, vacantesVerificadas, da
     id_vacante:           idVacante,
     expectativa_salarial: expectativaSalarial,
     experiencia_laboral:  datosCandidato.experiencia ?? null,
+    preguntas_opcional:   datosCandidato.preguntasOpcional ?? null,
+    id_team_tailor:       datosCandidato.idTeamTailor ?? null,
   }));
 
   try {
@@ -255,6 +257,8 @@ export default async function handler(req, res) {
   const rolarTurno  = cuerpo?.rolar_turno;
   const acceso      = cuerpo?.acceso;
   const idVacante   = parseInt(cuerpo?.id_vacante, 10);
+  const preguntasOpcional = cuerpo?.preguntas_opcional ?? null;
+  const idTeamTailor      = typeof cuerpo?.id_team_tailor === 'string' ? cuerpo.id_team_tailor : null;
 
   if (!telefono || typeof telefono !== 'string') {
     console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing telefono field' }));
@@ -343,7 +347,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ id_team_tailor: [], uso_ia: usoIa });
     }
 
-    const datosCandidato = { nombre, domicilio: domicilioNormalizado ?? domicilio, expectativa, experiencia, rolarTurno, acceso };
+    const datosCandidato = { nombre, domicilio: domicilioNormalizado ?? domicilio, expectativa, experiencia, rolarTurno, acceso, preguntasOpcional, idTeamTailor };
     const vacantesVerificadas = await verificarRecomendaciones(datosCandidato, vacantesCoincidentes);
 
     console.log(JSON.stringify({ etapa: 'verificacion_match', estado: 'ok', antes: vacantesCoincidentes.length, despues: vacantesVerificadas.length }));
