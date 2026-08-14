@@ -65,6 +65,22 @@ const HABILIDADES_TOOL = {
   },
 };
 
+const VERIFICACION_TOOL = {
+  type: 'function',
+  function: {
+    name: 'verificar_compatibilidad',
+    description: 'Determina si el candidato es apto para la vacante con base en su descripción.',
+    parameters: {
+      type: 'object',
+      properties: {
+        apto:   { type: 'boolean', description: 'true si el candidato es apto para la vacante, false si no.' },
+        motivo: { type: 'string',  description: 'Explicación breve de en qué se basó la decisión.' },
+      },
+      required: ['apto', 'motivo'],
+    },
+  },
+};
+
 // ============================================================================
 // HELPERS
 // ============================================================================
@@ -144,21 +160,18 @@ async function verificarCompatibilidad(candidato, descripcion) {
 
   const datos = await orChatCompletion({
     model:      OPENROUTER_MODEL,
-    max_tokens: 300,
-    reasoning:  { effort: 'low' },
+    reasoning:  { enabled: false },
     messages: [
       { role: 'user', content: prompt },
     ],
+    tools:       [VERIFICACION_TOOL],
+    tool_choice: { type: 'function', function: { name: 'verificar_compatibilidad' } },
   });
 
-  const textoRespuesta = datos?.choices?.[0]?.message?.content?.trim();
-  if (!textoRespuesta) throw new Error('OpenRouter no devolvió contenido de texto');
+  const llamada = datos?.choices?.[0]?.message?.tool_calls?.find(c => c.function?.name === 'verificar_compatibilidad');
+  if (!llamada) throw new Error('OpenRouter no devolvió una respuesta estructurada válida');
 
-  const inicio = textoRespuesta.indexOf('{');
-  const fin    = textoRespuesta.lastIndexOf('}');
-  if (inicio === -1 || fin === -1) throw new Error('No se encontró JSON en la respuesta de verificación');
-
-  return JSON.parse(textoRespuesta.slice(inicio, fin + 1));
+  return typeof llamada.function.arguments === 'string' ? JSON.parse(llamada.function.arguments) : llamada.function.arguments;
 }
 
 async function verificarRecomendaciones(candidato, vacantesCoincidentes) {
@@ -178,38 +191,39 @@ async function verificarRecomendaciones(candidato, vacantesCoincidentes) {
   return resultados.filter(r => r.apto).map(r => r.vacante);
 }
 
-async function crearPostulaciones(supabase, candidatoId, vacantesVerificadas) {
+async function crearPostulaciones(supabase, candidatoId, vacantesVerificadas, datosCandidato) {
   const idsVacantes = [...new Set(vacantesVerificadas.map(vacante => vacante.id))];
 
   if (idsVacantes.length === 0) {
-    console.log(JSON.stringify({ etapa: 'creacion_postulaciones', estado: 'ok', nuevas: 0, existentes: 0 }));
+    console.log(JSON.stringify({ etapa: 'creacion_postulaciones', estado: 'ok', nuevas: 0 }));
     return;
   }
 
+  const expectativaSalarial = typeof datosCandidato.expectativa === 'boolean' ? (datosCandidato.expectativa ? 'Si' : 'No') : null;
+
+  const filas = idsVacantes.map(idVacante => ({
+    id_candidato:         candidatoId,
+    id_vacante:           idVacante,
+    expectativa_salarial: expectativaSalarial,
+    experiencia_laboral:  datosCandidato.experiencia ?? null,
+  }));
+
   try {
-    const { data: postulacionesExistentes, error: errorExistentes } = await supabase
+    const { data: postulacionesCreadas, error: errorInsercion } = await supabase
       .from('postulaciones')
-      .select('id_vacante')
-      .eq('id_candidato', candidatoId)
-      .in('id_vacante', idsVacantes);
-
-    if (errorExistentes) throw errorExistentes;
-
-    const idsExistentes = new Set(postulacionesExistentes.map(postulacion => postulacion.id_vacante));
-    const idsNuevos     = idsVacantes.filter(id => !idsExistentes.has(id));
-
-    if (idsNuevos.length === 0) {
-      console.log(JSON.stringify({ etapa: 'creacion_postulaciones', estado: 'ok', nuevas: 0, existentes: idsExistentes.size }));
-      return;
-    }
-
-    const { error: errorInsercion } = await supabase
-      .from('postulaciones')
-      .insert(idsNuevos.map(idVacante => ({ id_candidato: candidatoId, id_vacante: idVacante })));
+      .upsert(filas, { onConflict: 'id_vacante,id_candidato', ignoreDuplicates: true })
+      .select('id, id_vacante');
 
     if (errorInsercion) throw errorInsercion;
 
-    console.log(JSON.stringify({ etapa: 'creacion_postulaciones', estado: 'ok', nuevas: idsNuevos.length, existentes: idsExistentes.size, candidato_id: candidatoId, vacantes: idsNuevos }));
+    console.log(JSON.stringify({
+      etapa:         'creacion_postulaciones',
+      estado:        'ok',
+      nuevas:        postulacionesCreadas.length,
+      existentes:    idsVacantes.length - postulacionesCreadas.length,
+      candidato_id:  candidatoId,
+      postulaciones: postulacionesCreadas,
+    }));
   } catch (error) {
     console.log(JSON.stringify({ etapa: 'creacion_postulaciones', estado: 'error', mensaje: error.message, candidato_id: candidatoId, vacantes: idsVacantes }));
   }
@@ -340,7 +354,7 @@ export default async function handler(req, res) {
 
     const idsUnicos = [...new Set(idsCoincidentes)];
 
-    await crearPostulaciones(supabase, candidato.id, vacantesVerificadas);
+    await crearPostulaciones(supabase, candidato.id, vacantesVerificadas, datosCandidato);
 
     console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', coincidencias: idsUnicos.length }));
     return res.status(200).json({ id_team_tailor: idsUnicos, uso_ia: usoIa });
