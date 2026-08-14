@@ -233,7 +233,7 @@ export default async function handler(req, res) {
 
   const cuerpo      = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
   const nombre      = cuerpo?.nombre;
-  const telefono    = cuerpo?.telefono;
+  const telefono    = cuerpo?.telefono != null ? String(cuerpo.telefono) : cuerpo?.telefono;
   const edad        = cuerpo?.edad;
   const domicilio   = cuerpo?.domicilio;
   const expectativa = cuerpo?.expectativa;
