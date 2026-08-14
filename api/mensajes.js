@@ -4,7 +4,7 @@ import { fileURLToPath }    from 'url';
 import { dirname, join }    from 'path';
 import PDFDocument           from 'pdfkit';
 import { waitUntil }        from '@vercel/functions';
-import { ttObtener, ttCrear, ttSubirArchivoTransitorio, mcCrear } from '../lib/clientes_api.js';
+import { ttObtener, ttActualizar, ttCrear, ttSubirArchivoTransitorio, mcCrear } from '../lib/clientes_api.js';
 import { orChatCompletion } from '../lib/openrouter.js';
 import { dormir }           from '../lib/evaluacion_postulacion.js';
 import { limpiarHtmlParaWhatsApp } from '../lib/formato_texto.js';
@@ -18,6 +18,7 @@ const LIMITE_REINTENTOS              = 5;
 const MAXIMO_PREGUNTAS               = 5;
 const DESPLAZAMIENTO_CDMX_MS         = 6 * 60 * 60 * 1000; // Ciudad de México es UTC-6 todo el año
 const REGEX_VACANTE                  = /#(\d{6,})/; // los ids de vacante tienen 6+ dígitos; evita falsos positivos con números de calle
+const REGEX_BAJA                     = /\bbaja\b/i; // palabra usada para solicitar la eliminación de datos
 
 const FOTO_PERFIL_DEFAULT      = 'https://i.ibb.co/JwvVrDr0/fotodesconocido.png';
 const FOTO_PERFIL_HOMBRE       = 'https://i.ibb.co/4RGYgcC4/fotohombre.png';
@@ -146,6 +147,22 @@ async function obtenerOCrearContacto(supabase, idSuscriptor, telefono) {
   return { fila: creado, esNuevo: true };
 }
 
+// Registra en Supabase el momento en que el candidato pidió eliminar sus datos
+// (palabra clave "BAJA", en cualquier contexto del mensaje).
+async function registrarSolicitudEliminacion(supabase, fila, log) {
+  if (fila.solicitud_eliminacion) return;
+
+  const ahora = timestampCdmx();
+  const { error } = await supabase.from('chatbot').update({ solicitud_eliminacion: ahora }).eq('id', fila.id);
+  if (error) {
+    log('supabase_baja', { estado: 'error', error: error.message });
+    return;
+  }
+
+  fila.solicitud_eliminacion = ahora;
+  log('supabase_baja', { estado: 'ok' });
+}
+
 async function agregarMensajeConversacion(supabase, fila, actor, texto, { actualizarTimestamp = false } = {}) {
   const linea = `[${timestampCdmx()}] ${actor}: ${texto}`;
   const conversacion = fila.conversacion ? `${fila.conversacion}\n${linea}` : linea;
@@ -215,6 +232,39 @@ async function crearCandidatoTeamTailor(nombre, genero, telefono, idVacante) {
   await crearPostulacionTeamTailor(candidatoId, idVacante);
 
   return candidatoId;
+}
+
+// Crea el candidato en TeamTailor desde el primer mensaje, antes de conocer su
+// nombre o la vacante: usa el teléfono como nombre y la foto default, igual que
+// el script de migración de candidatos rezagados.
+async function crearCandidatoTeamTailorTemprano(telefono) {
+  const respuestaCandidato = await ttCrear('/candidates', {
+    data: {
+      type: 'candidates',
+      attributes: {
+        'first-name':    telefono,
+        'sourced':       true,
+        'referring-url': 'WhatsApp',
+        'phone':         telefono,
+        'picture':       FOTO_PERFIL_DEFAULT,
+      },
+    },
+  });
+  return Number(respuestaCandidato.data.id);
+}
+
+// Actualiza el nombre y la foto de un candidato ya creado en TeamTailor una vez
+// que el candidato confirma su nombre (y, de paso, su género aproximado).
+async function actualizarCandidatoTeamTailor(candidatoId, nombre, genero) {
+  const fotoPerfil = genero === 'Mujer' ? FOTO_PERFIL_MUJER : genero === 'Hombre' ? FOTO_PERFIL_HOMBRE : FOTO_PERFIL_DEFAULT;
+
+  await ttActualizar(`/candidates/${candidatoId}`, {
+    data: {
+      type:       'candidates',
+      id:         candidatoId.toString(),
+      attributes: { 'first-name': nombre, 'picture': fotoPerfil },
+    },
+  });
 }
 
 function esRegistroNoEncontrado(e) {
@@ -458,15 +508,15 @@ async function detectarYCargarVacante({ supabase, fila, idSuscriptor, telefono, 
     const candidatoIdExistente = fila.candidato ?? null;
     const nombreConocido       = itemsPrevios.find(item => item.id === ID_PREGUNTA_NOMBRE)?.respuesta;
 
-    // Reutiliza el candidato ya existente en TeamTailor (columna `candidato`)
-    // en vez de crear uno nuevo para la misma persona; si ya no existe en
-    // TeamTailor, se recrea con los datos que ya tenemos.
-    if (esRegreso && candidatoIdExistente) {
+    // El candidato ya existe en TeamTailor desde su primer mensaje (columna
+    // `candidato`), así que aquí solo se postula a la vacante nueva; si ya no
+    // existe en TeamTailor, se recrea con los datos que ya tenemos.
+    if (candidatoIdExistente) {
       try {
         const { candidatoId: candidatoIdValido } = await conCandidatoValido(
           candidatoIdExistente,
           id => crearPostulacionTeamTailor(id, idVacanteNum),
-          { nombre: nombreConocido, genero: null, telefono, idVacante: idVacanteNum, log },
+          { nombre: nombreConocido || telefono, genero: null, telefono, idVacante: idVacanteNum, log },
         );
         fila.candidato = candidatoIdValido;
         log('postulacion_creada', { estado: 'ok', candidato_id: candidatoIdValido, idVacante: idVacanteNum });
@@ -686,13 +736,26 @@ async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor, telef
   const itemNombre = itemsActualizados.find(item => item.id === ID_PREGUNTA_NOMBRE);
   const genero = resultadoAgente.genero && resultadoAgente.genero !== 'ninguno' ? resultadoAgente.genero : null;
 
-  if (!candidatoId && itemNombre?.respuesta && !itemNombre.enviado && fila.vacante) {
+  // El candidato ya existe en TeamTailor desde su primer mensaje (nombre = teléfono,
+  // foto default); aquí solo se actualiza con su nombre real y foto según género. Si
+  // por algún motivo no se creó antes (p. ej. falló esa llamada), se crea aquí como respaldo.
+  if (itemNombre?.respuesta && !itemNombre.enviado) {
     try {
-      candidatoId = await crearCandidatoTeamTailor(itemNombre.respuesta, genero, telefono, fila.vacante);
+      if (candidatoId) {
+        const { candidatoId: candidatoIdValido } = await conCandidatoValido(
+          candidatoId,
+          id => actualizarCandidatoTeamTailor(id, itemNombre.respuesta, genero),
+          { nombre: itemNombre.respuesta, genero, telefono, idVacante: fila.vacante, log },
+        );
+        candidatoId = candidatoIdValido;
+        log('candidato_actualizado', { estado: 'ok', candidato_id: candidatoId, genero });
+      } else if (fila.vacante) {
+        candidatoId = await crearCandidatoTeamTailor(itemNombre.respuesta, genero, telefono, fila.vacante);
+        log('candidato_creado', { estado: 'ok', candidato_id: candidatoId, idVacante: fila.vacante, genero });
+      }
       itemNombre.enviado = true;
-      log('candidato_creado', { estado: 'ok', candidato_id: candidatoId, idVacante: fila.vacante, genero });
     } catch (e) {
-      log('candidato_creado', { estado: 'error', error: e.message });
+      log('candidato_actualizado', { estado: 'error', error: e.message });
     }
   }
 
@@ -763,6 +826,24 @@ async function procesarMensaje({ idSuscriptor, telefono, mensaje, log }) {
   } catch (e) {
     log('supabase_contacto', { estado: 'error', error: e.message });
     return;
+  }
+
+  if (REGEX_BAJA.test(mensaje)) {
+    await registrarSolicitudEliminacion(supabase, fila, log);
+  }
+
+  // El candidato se sube a TeamTailor desde que llega con su teléfono (antes de
+  // conocer su nombre o vacante), igual que el script que migra a los rezagados.
+  if (!fila.candidato) {
+    try {
+      const candidatoId = await crearCandidatoTeamTailorTemprano(telefono);
+      fila.candidato = candidatoId;
+      const { error } = await supabase.from('chatbot').update({ candidato: candidatoId }).eq('id', fila.id);
+      if (error) log('supabase_candidato', { estado: 'error', error: error.message });
+      log('candidato_creado_temprano', { estado: 'ok', candidato_id: candidatoId });
+    } catch (e) {
+      log('candidato_creado_temprano', { estado: 'error', error: e.message });
+    }
   }
 
   await agregarMensajeConversacion(supabase, fila, 'usuario', mensaje, { actualizarTimestamp: true });
