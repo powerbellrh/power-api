@@ -310,7 +310,7 @@ async function procesarReevaluacion(postulacionId, postulacion, supabase) {
           relationships: {
             candidate:       { data: { id: candidateId,              type: 'candidates'       } },
             user:            { data: { id: TEAMTAILOR_BOT_USER_ID_REEVALUACION, type: 'users' } },
-            job_application: { data: { id: postulacionId.toString(), type: 'job-applications' } },
+            job-application: { data: { id: postulacionId.toString(), type: 'job-applications' } },
           },
         },
       }, true);
@@ -337,7 +337,7 @@ async function procesarReevaluacion(postulacionId, postulacion, supabase) {
             relationships: {
               candidate:       { data: { id: candidateId,              type: 'candidates'       } },
               user:            { data: { id: TEAMTAILOR_BOT_USER_ID_REEVALUACION, type: 'users' } },
-              job_application: { data: { id: postulacionId.toString(), type: 'job-applications' } },
+              job-application: { data: { id: postulacionId.toString(), type: 'job-applications' } },
             },
           },
         }, true);
@@ -528,7 +528,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
           relationships: {
             candidate:        { data: { id: candidateId,             type: 'candidates'       } },
             user:             { data: { id: TEAMTAILOR_BOT_USER_ID,  type: 'users'            } },
-            job_application:  { data: { id: postulacionId.toString(), type: 'job-applications' } },
+            job-application:  { data: { id: postulacionId.toString(), type: 'job-applications' } },
           },
         },
       }, true);
@@ -564,7 +564,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
             relationships: {
               candidate:        { data: { id: candidateId,             type: 'candidates'       } },
               user:             { data: { id: TEAMTAILOR_BOT_USER_ID,  type: 'users'            } },
-              job_application:  { data: { id: postulacionId.toString(), type: 'job-applications' } },
+              job-application:  { data: { id: postulacionId.toString(), type: 'job-applications' } },
             },
           },
         }, true);
@@ -581,8 +581,11 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', candidato: candidatoNombrePila, vacante: tituloVacante, calificacion: calificacionGlobal, whatsapp: whatsappEnviado ? 'ok' : whatsappError }));
 
   } catch (error) {
-    const intentosRealizados = postulacion.intentos ?? 0;
-    const quedanIntentos     = intentosRealizados < EVALUACION_MAX_INTENTOS;
+    // Fallo determinístico (PDF corrupto/no extraíble): reintentar no cambia el resultado,
+    // así que se agota el intento de una vez en lugar de esperar EVALUACION_MAX_INTENTOS ciclos.
+    const esCandidatoNoProcesable = error.message.includes('Failed to parse');
+    const intentosRealizados      = esCandidatoNoProcesable ? EVALUACION_MAX_INTENTOS : (postulacion.intentos ?? 0);
+    const quedanIntentos          = intentosRealizados < EVALUACION_MAX_INTENTOS;
     console.log(JSON.stringify({ etapa: 'error', estado: 'error', etapa_fallida: etapaActual, postulacion_id: postulacionId, intentos: intentosRealizados, se_reintentara: quedanIntentos, mensaje: error.message }));
     try {
       await supabase.from('evaluaciones').update({
@@ -590,13 +593,16 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
         evaluacion_completada: false,
         evaluacion_fecha:      new Date().toISOString(),
         evaluacion_error:      `[${etapaActual}] ${error.message}`,
+        ...(esCandidatoNoProcesable && { intentos: EVALUACION_MAX_INTENTOS }),
       }).eq('postulacion_id', postulacionId);
     } catch (_) {}
     if (candidateId) {
       try {
-        const notaIntentos = quedanIntentos
-          ? `❌ Error en evaluación automática [${etapaActual}] (intento ${intentosRealizados}/${EVALUACION_MAX_INTENTOS}, se reintentará): ${error.message}`
-          : `❌ Error en evaluación automática [${etapaActual}] (se agotaron los ${EVALUACION_MAX_INTENTOS} intentos, requiere revisión manual): ${error.message}`;
+        const notaIntentos = esCandidatoNoProcesable
+          ? '✖️ Candidato no procesable'
+          : quedanIntentos
+            ? `❌ Error en evaluación automática [${etapaActual}] (intento ${intentosRealizados}/${EVALUACION_MAX_INTENTOS}, se reintentará): ${error.message}`
+            : `❌ Error en evaluación automática [${etapaActual}] (se agotaron los ${EVALUACION_MAX_INTENTOS} intentos, requiere revisión manual): ${error.message}`;
         await ttCrear('/notes', {
           data: {
             type: 'notes',
@@ -604,7 +610,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
             relationships: {
               candidate:        { data: { id: candidateId,                type: 'candidates'       } },
               user:             { data: { id: TEAMTAILOR_BOT_USER_ID,     type: 'users'            } },
-              job_application:  { data: { id: postulacionId.toString(),   type: 'job-applications' } },
+              job-application:  { data: { id: postulacionId.toString(),   type: 'job-applications' } },
             },
           },
         }, true);
