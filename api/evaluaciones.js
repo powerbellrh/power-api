@@ -310,7 +310,7 @@ async function procesarReevaluacion(postulacionId, postulacion, supabase) {
           relationships: {
             candidate:       { data: { id: candidateId,              type: 'candidates'       } },
             user:            { data: { id: TEAMTAILOR_BOT_USER_ID_REEVALUACION, type: 'users' } },
-            job-application: { data: { id: postulacionId.toString(), type: 'job-applications' } },
+            'job-application': { data: { id: postulacionId.toString(), type: 'job-applications' } },
           },
         },
       }, true);
@@ -337,7 +337,7 @@ async function procesarReevaluacion(postulacionId, postulacion, supabase) {
             relationships: {
               candidate:       { data: { id: candidateId,              type: 'candidates'       } },
               user:            { data: { id: TEAMTAILOR_BOT_USER_ID_REEVALUACION, type: 'users' } },
-              job-application: { data: { id: postulacionId.toString(), type: 'job-applications' } },
+              'job-application': { data: { id: postulacionId.toString(), type: 'job-applications' } },
             },
           },
         }, true);
@@ -528,7 +528,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
           relationships: {
             candidate:        { data: { id: candidateId,             type: 'candidates'       } },
             user:             { data: { id: TEAMTAILOR_BOT_USER_ID,  type: 'users'            } },
-            job-application:  { data: { id: postulacionId.toString(), type: 'job-applications' } },
+            'job-application':  { data: { id: postulacionId.toString(), type: 'job-applications' } },
           },
         },
       }, true);
@@ -564,7 +564,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
             relationships: {
               candidate:        { data: { id: candidateId,             type: 'candidates'       } },
               user:             { data: { id: TEAMTAILOR_BOT_USER_ID,  type: 'users'            } },
-              job-application:  { data: { id: postulacionId.toString(), type: 'job-applications' } },
+              'job-application':  { data: { id: postulacionId.toString(), type: 'job-applications' } },
             },
           },
         }, true);
@@ -610,7 +610,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
             relationships: {
               candidate:        { data: { id: candidateId,                type: 'candidates'       } },
               user:             { data: { id: TEAMTAILOR_BOT_USER_ID,     type: 'users'            } },
-              job-application:  { data: { id: postulacionId.toString(),   type: 'job-applications' } },
+              'job-application':  { data: { id: postulacionId.toString(),   type: 'job-applications' } },
             },
           },
         }, true);
