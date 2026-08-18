@@ -1,9 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
-import { EVALUACIONES_URL } from '../lib/config.js';
+import { EVALUACIONES_URL, EVALUACION_MAX_INTENTOS } from '../lib/config.js';
 
 const TAMANO_LOTE   = 5;
 const RETRASO_MS      = 5000;
 const URL_EVALUACIONES = EVALUACIONES_URL;
+// Debe superar el maxDuration de /api/evaluaciones (300s) para no reintentar un intento aún en curso
+const UMBRAL_ATASCO_MS = 6 * 60 * 1000;
 
 const dormir = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -14,10 +16,16 @@ export default async function handler(req, res) {
 
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
+  // Recupera: (a) nunca agendadas, o (b) agendadas pero atascadas (la función murió por
+  // timeout antes de llegar al catch, así que evaluacion_agendada quedó en true para siempre).
+  // Ambas respetan EVALUACION_MAX_INTENTOS para no reintentar indefinidamente un fallo persistente.
+  const limiteAtasco = new Date(Date.now() - UMBRAL_ATASCO_MS).toISOString();
   const { data: pendientesEvaluacion, error: errorConsultaEvaluacion } = await supabase
     .from('evaluaciones')
     .select('postulacion_id')
-    .eq('evaluacion_agendada', false)
+    .eq('evaluacion_completada', false)
+    .or(`intentos.lt.${EVALUACION_MAX_INTENTOS},intentos.is.null`)
+    .or(`evaluacion_agendada.eq.false,evaluacion_fecha.lt.${limiteAtasco}`)
     .order('evaluacion_fecha', { ascending: true })
     .limit(TAMANO_LOTE);
 

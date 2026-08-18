@@ -34,6 +34,7 @@ import {
   AD_MANYCHAT_FIELD_JOB_TITLE,
   AD_MANYCHAT_FIELD_CANDIDATE_ID,
   MANYCHAT_FIELD_PREGUNTA,
+  EVALUACION_MAX_INTENTOS,
 } from '../lib/config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -580,7 +581,9 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', candidato: candidatoNombrePila, vacante: tituloVacante, calificacion: calificacionGlobal, whatsapp: whatsappEnviado ? 'ok' : whatsappError }));
 
   } catch (error) {
-    console.log(JSON.stringify({ etapa: 'error', estado: 'error', etapa_fallida: etapaActual, postulacion_id: postulacionId, mensaje: error.message }));
+    const intentosRealizados = postulacion.intentos ?? 0;
+    const quedanIntentos     = intentosRealizados < EVALUACION_MAX_INTENTOS;
+    console.log(JSON.stringify({ etapa: 'error', estado: 'error', etapa_fallida: etapaActual, postulacion_id: postulacionId, intentos: intentosRealizados, se_reintentara: quedanIntentos, mensaje: error.message }));
     try {
       await supabase.from('evaluaciones').update({
         evaluacion_agendada:   false,
@@ -591,10 +594,13 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     } catch (_) {}
     if (candidateId) {
       try {
+        const notaIntentos = quedanIntentos
+          ? `❌ Error en evaluación automática [${etapaActual}] (intento ${intentosRealizados}/${EVALUACION_MAX_INTENTOS}, se reintentará): ${error.message}`
+          : `❌ Error en evaluación automática [${etapaActual}] (se agotaron los ${EVALUACION_MAX_INTENTOS} intentos, requiere revisión manual): ${error.message}`;
         await ttCrear('/notes', {
           data: {
             type: 'notes',
-            attributes: { note: `❌ Error en evaluación automática [${etapaActual}]: ${error.message}` },
+            attributes: { note: notaIntentos },
             relationships: {
               candidate:        { data: { id: candidateId,                type: 'candidates'       } },
               user:             { data: { id: TEAMTAILOR_BOT_USER_ID,     type: 'users'            } },
@@ -663,11 +669,24 @@ async function manejarEvaluacion(req, res, supabase) {
     return res.status(400).json({ error: 'Missing vacante_id in record' });
   }
 
-  // PASO 2: Marcar como en proceso y disparar trabajo en background
-  await supabase.from('evaluaciones').update({ evaluacion_agendada: true }).eq('postulacion_id', postulacionId);
-  waitUntil(procesarEvaluacion(postulacionId, postulacion, supabase));
+  const intentosPrevios = postulacion.intentos ?? 0;
+  if (intentosPrevios >= EVALUACION_MAX_INTENTOS) {
+    console.log(JSON.stringify({ etapa: 'max_intentos_alcanzado', postulacion_id: postulacionId, intentos: intentosPrevios }));
+    return res.status(200).json({ status: 'max_intentos_alcanzado', postulacion_id: postulacionId, intentos: intentosPrevios });
+  }
 
-  return res.status(202).json({ status: 'processing', postulacion_id: postulacionId });
+  // PASO 2: Marcar como en proceso, registrar el intento y disparar trabajo en background
+  // evaluacion_fecha se actualiza aquí para que /cola pueda detectar intentos atascados
+  // (la función murió por maxDuration sin llegar al catch) comparando contra el momento de inicio.
+  const intentoActual = intentosPrevios + 1;
+  await supabase.from('evaluaciones').update({
+    evaluacion_agendada: true,
+    intentos:            intentoActual,
+    evaluacion_fecha:    new Date().toISOString(),
+  }).eq('postulacion_id', postulacionId);
+  waitUntil(procesarEvaluacion(postulacionId, { ...postulacion, intentos: intentoActual }, supabase));
+
+  return res.status(202).json({ status: 'processing', postulacion_id: postulacionId, intento: intentoActual });
 }
 
 export default async function handler(req, res) {
