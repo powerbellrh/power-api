@@ -79,7 +79,7 @@ Inconsistencias en fechas/datos
 ORDEN OBLIGATORIO (5 PREGUNTAS TOTALES):
 
 Preguntas del contexto extra (si existen) - reformuladas profesionalmente
-Pregunta salarial: "¿El salario ofertado de [monto] cumple con tus expectativas salariales para esta posición?"
+Pregunta salarial: "¿El salario ofertado de [monto] cumple con tus expectativas salariales para esta posición?" ([monto] debe extraerse del texto de la descripción de la vacante)
 Si se detectó brecha laboral grave (>12 meses) o cambios frecuentes (<18 meses por puesto): incluir una pregunta al respecto de forma respetuosa y profesional
 Pregunta técnica crucial según vacante
 Pregunta de experiencia relevante

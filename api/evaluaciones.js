@@ -13,8 +13,6 @@ import {
   obtenerUrlImagenPuntuacion,
   obtenerNombreCategoriaPuntuacion,
   obtenerCalificacionEstrellas,
-  construirJsonSalario,
-  formatearSalario,
   construirBloqueInfoVacante,
   construirBloqueInfoCandidato,
   extraerCalificacion,
@@ -234,7 +232,6 @@ async function procesarReevaluacion(postulacionId, postulacion, supabase) {
     vacante_descripcion: descripcionVacante,
     vacante_ubicacion: ubicacionVacante,
     vacante_contexto: contextoVacante,
-    vacante_sueldo: sueldoVacante,
     candidato_nombre: candidatoNombre,
     candidato_respuestas: respuestasOriginales,
     respuestas_preguntas_personalizadas: respuestasPersonalizadas,
@@ -250,11 +247,7 @@ async function procesarReevaluacion(postulacionId, postulacion, supabase) {
     candidateId          = datosCandidato.id;
     const urlCurriculum  = datosCandidato.attributes.resume;
 
-    const textoSalarioVacante = sueldoVacante?.sueldo_min
-      ? formatearSalario(sueldoVacante.sueldo_min, sueldoVacante.sueldo_max, sueldoVacante.moneda)
-      : null;
-
-    const bloqueVacante = construirBloqueInfoVacante(tituloVacante, limpiarHtml(descripcionVacante || ''), ubicacionVacante, contextoVacante, textoSalarioVacante);
+    const bloqueVacante = construirBloqueInfoVacante(tituloVacante, limpiarHtml(descripcionVacante || ''), ubicacionVacante, contextoVacante);
     let bloqueCandidato = construirBloqueInfoCandidato(candidatoNombre, respuestasOriginales);
     const bloqueRespuestasPersonalizadas = construirBloqueRespuestasPersonalizadas(respuestasPersonalizadas);
     if (bloqueRespuestasPersonalizadas) bloqueCandidato += `\n\n${bloqueRespuestasPersonalizadas}`;
@@ -367,13 +360,8 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     const tituloVacante          = atributosVacante.title || 'Untitled Job';
     const descripcionVacanteLimpia = limpiarHtml(atributosVacante.body || '');
     const ubicacionVacante       = datosVacante.included?.find(i => i.type === 'locations')?.attributes?.name ?? null;
-    const salarioMin             = atributosVacante['min-salary'] ?? null;
-    const salarioMax             = atributosVacante['max-salary'] ?? null;
-    const moneda                 = atributosVacante.currency || 'MXN';
-    const jsonSalarioVacante     = construirJsonSalario(salarioMin, salarioMax, moneda);
-    const textoSalarioVacante    = formatearSalario(salarioMin, salarioMax, moneda);
 
-    console.log(JSON.stringify({ etapa: 'datos_job', titulo: tituloVacante, ubicacion: ubicacionVacante, salario: textoSalarioVacante }));
+    console.log(JSON.stringify({ etapa: 'datos_job', titulo: tituloVacante, ubicacion: ubicacionVacante }));
 
     // PASO 4: Obtener campo personalizado de contexto
     etapaActual              = 'custom_field';
@@ -415,7 +403,6 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
       vacante_nombre:       tituloVacante,
       vacante_descripcion:  descripcionVacanteLimpia,
       vacante_ubicacion:    ubicacionVacante,
-      vacante_sueldo:       jsonSalarioVacante,
       vacante_contexto:     contextoCampoPersonalizado || null,
       candidato_respuestas: candidatoRespuestas,
     }).eq('postulacion_id', postulacionId);
@@ -429,7 +416,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     // GLM no soporta imágenes en OpenRouter: si el OP depende de la imagen de su historial, usar un modelo con visión
     const tipoConfigModelo = urlImagenDeRespuestas ? AI_CONFIG.OP_VISION : tipoConfig;
 
-    const bloqueVacante   = construirBloqueInfoVacante(tituloVacante, descripcionVacanteLimpia, ubicacionVacante, contextoCampoPersonalizado, textoSalarioVacante);
+    const bloqueVacante   = construirBloqueInfoVacante(tituloVacante, descripcionVacanteLimpia, ubicacionVacante, contextoCampoPersonalizado);
     const bloqueCandidato = construirBloqueInfoCandidato(candidatoNombre, candidatoRespuestas);
 
     const peticionModelo = construirPeticionOpenRouter(
