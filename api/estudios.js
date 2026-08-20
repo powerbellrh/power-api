@@ -158,7 +158,7 @@ async function evaluarVacante(vacante, busqueda) {
       { role: 'system', content: SYSTEM_PROMPT_FILTRADO },
       { role: 'user',   content: `Búsqueda original: ${busqueda}\n\nVacante a evaluar:\nEmpresa: ${vacante.nombre_empresa ?? ''}\nTítulo: ${vacante.titulo_vacante ?? ''}\nDescripción: ${descripcion}` },
     ],
-  });
+  }, process.env.OPENROUTER_API_KEY_ESTUDIOS);
 
   const raw = datos?.choices?.[0]?.message?.content?.trim();
   if (!raw) throw new Error('GLM no devolvió contenido de texto');
@@ -215,7 +215,7 @@ async function extraerSalarioDeVacante(vacante) {
       { role: 'system', content: SYSTEM_PROMPT_SALARIO },
       { role: 'user',   content: `Título: ${vacante.titulo_vacante ?? ''}\n\nDescripción:\n${descripcion}` },
     ],
-  });
+  }, process.env.OPENROUTER_API_KEY_ESTUDIOS);
 
   const textoRespuesta = datos?.choices?.[0]?.message?.content?.trim();
   if (!textoRespuesta) throw new Error('GLM no devolvió contenido de texto');
@@ -392,7 +392,7 @@ async function manejarGlassdoor(vacante, ubicacion, url, muestra, test, res) {
     max_tokens: 20000,
     reasoning:  { effort: 'xhigh' },
     messages:   [{ role: 'user', content: promptConclusion }],
-  });
+  }, process.env.OPENROUTER_API_KEY_ESTUDIOS);
 
   const { prompt_tokens: ti_c = 0, completion_tokens: to_c = 0 } = datosConclusion.usage ?? {};
   const costo_ia    = costo(
@@ -551,7 +551,7 @@ export default async function handler(req, res) {
     max_tokens: 20000,
     reasoning:  { effort: 'xhigh' },
     messages:   [{ role: 'user', content: promptConclusion }],
-  });
+  }, process.env.OPENROUTER_API_KEY_ESTUDIOS);
 
   const { prompt_tokens: ti_c = 0, completion_tokens: to_c = 0 } = datosConclusion.usage ?? {};
   const costo_ia    = costo(

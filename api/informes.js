@@ -226,7 +226,7 @@ async function obtenerAnalisisEstructurado(respuestasPorId, nombreCandidato, vac
     tools:       [INFORME_TOOL],
     tool_choice: { type: 'function', function: { name: 'informe_estructurado' } },
     reasoning:   { effort: 'high' },
-  });
+  }, process.env.OPENROUTER_API_KEY_INFORMES);
 
   const llamada = datos?.choices?.[0]?.message?.tool_calls?.find(c => c.function?.name === 'informe_estructurado');
   if (!llamada) throw new Error('OpenRouter no devolvió una respuesta estructurada válida');
@@ -255,7 +255,7 @@ async function retocarFoto(urlFoto, candidatoId) {
     input_references: [
       { type: 'image_url', image_url: { url: dataUrlFoto } },
     ],
-  });
+  }, process.env.OPENROUTER_API_KEY_INFORMES);
 
   const imagen = datos?.data?.[0];
   if (!imagen?.b64_json) throw new Error('OpenRouter no devolvió una imagen válida');

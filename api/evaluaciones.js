@@ -21,6 +21,7 @@ import {
   extraerEstadoEvaluacion,
   estadoEvaluacionACalificacion,
   obtenerCalificacionEstadoEvaluacion,
+  construirNotaTeamtailor,
 } from '../lib/evaluacion_postulacion.js';
 import { ttObtener, ttActualizar, ttCrear, mcCrear, mcObtener } from '../lib/clientes_api.js';
 import { orChatCompletion } from '../lib/openrouter.js';
@@ -122,7 +123,7 @@ export function construirPeticionOpenRouter(tipoConfig, promptSistema, bloqueVac
 }
 
 async function llamarOpenRouter(peticion) {
-  const datos = await orChatCompletion(peticion);
+  const datos = await orChatCompletion(peticion, process.env.OPENROUTER_API_KEY_EVALUACIONES);
 
   const mensaje = datos?.choices?.[0]?.message;
   const resultadoEvaluacion = mensaje?.content ?? '';
@@ -297,7 +298,7 @@ async function procesarReevaluacion(postulacionId, postulacion, supabase) {
         data: {
           type: 'notes',
           attributes: {
-            note: resultadoEvaluacion,
+            note: construirNotaTeamtailor(resultadoEvaluacion, tituloVacante, true),
             ...(calificacionNotaEvaluacion != null && { rating: calificacionNotaEvaluacion }),
           },
           relationships: {
@@ -509,7 +510,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
         data: {
           type: 'notes',
           attributes: {
-            note: resultadoEvaluacion,
+            note: construirNotaTeamtailor(resultadoEvaluacion, tituloVacante, false),
             ...(calificacionNotaEvaluacion != null && { rating: calificacionNotaEvaluacion }),
           },
           relationships: {

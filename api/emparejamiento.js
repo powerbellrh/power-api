@@ -106,7 +106,7 @@ async function detectarDomicilioPorLlm(texto) {
     ],
     tools:       [DOMICILIO_TOOL],
     tool_choice: { type: 'function', function: { name: 'normalizar_domicilio' } },
-  });
+  }, process.env.OPENROUTER_API_KEY_EMPAREJAMIENTO);
 
   const llamada = datos?.choices?.[0]?.message?.tool_calls?.find(c => c.function?.name === 'normalizar_domicilio');
   if (!llamada) throw new Error('OpenRouter no devolvió una respuesta estructurada válida');
@@ -138,7 +138,7 @@ async function detectarHabilidadesPorLlm(texto) {
     ],
     tools:       [HABILIDADES_TOOL],
     tool_choice: { type: 'function', function: { name: 'extraer_habilidades' } },
-  });
+  }, process.env.OPENROUTER_API_KEY_EMPAREJAMIENTO);
 
   const llamada = datos?.choices?.[0]?.message?.tool_calls?.find(c => c.function?.name === 'extraer_habilidades');
   if (!llamada) throw new Error('OpenRouter no devolvió una respuesta estructurada válida');
@@ -166,7 +166,7 @@ async function verificarCompatibilidad(candidato, descripcion) {
     ],
     tools:       [VERIFICACION_TOOL],
     tool_choice: { type: 'function', function: { name: 'verificar_compatibilidad' } },
-  });
+  }, process.env.OPENROUTER_API_KEY_EMPAREJAMIENTO);
 
   const llamada = datos?.choices?.[0]?.message?.tool_calls?.find(c => c.function?.name === 'verificar_compatibilidad');
   if (!llamada) throw new Error('OpenRouter no devolvió una respuesta estructurada válida');
