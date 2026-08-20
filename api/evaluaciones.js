@@ -229,6 +229,7 @@ function construirBloqueRespuestasPersonalizadas(respuestas) {
 // ============================================================================
 async function procesarReevaluacion(postulacionId, postulacion, supabase) {
   const {
+    vacante_id: vacanteId,
     vacante_nombre: tituloVacante,
     vacante_descripcion: descripcionVacante,
     vacante_ubicacion: ubicacionVacante,
@@ -242,6 +243,15 @@ async function procesarReevaluacion(postulacionId, postulacion, supabase) {
   let candidateId = null;
 
   try {
+    etapaActual = 'titulo_interno_vacante';
+    let tituloVacanteInterno = tituloVacante;
+    try {
+      const datosVacante = vacanteId ? await ttObtener(`/jobs/${vacanteId}`, true) : null;
+      tituloVacanteInterno = datosVacante?.data?.attributes?.['internal-name'] || tituloVacante;
+    } catch (e) {
+      console.log(JSON.stringify({ etapa: 'reevaluacion_titulo_interno', estado: 'error', mensaje: e.message }));
+    }
+
     etapaActual = 'datos_candidato';
     const candidatoCrudo = await ttObtener(`/job-applications/${postulacionId}/candidate`, true);
     const datosCandidato = candidatoCrudo.data;
@@ -298,7 +308,7 @@ async function procesarReevaluacion(postulacionId, postulacion, supabase) {
         data: {
           type: 'notes',
           attributes: {
-            note: construirNotaTeamtailor(resultadoEvaluacion, tituloVacante, true),
+            note: construirNotaTeamtailor(resultadoEvaluacion, tituloVacanteInterno, true),
             ...(calificacionNotaEvaluacion != null && { rating: calificacionNotaEvaluacion }),
           },
           relationships: {
@@ -359,6 +369,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     const atributosVacante = datosVacante.data.attributes;
 
     const tituloVacante          = atributosVacante.title || 'Untitled Job';
+    const tituloVacanteInterno   = atributosVacante['internal-name'] || tituloVacante;
     const descripcionVacanteLimpia = limpiarHtml(atributosVacante.body || '');
     const ubicacionVacante       = datosVacante.included?.find(i => i.type === 'locations')?.attributes?.name ?? null;
 
@@ -510,7 +521,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
         data: {
           type: 'notes',
           attributes: {
-            note: construirNotaTeamtailor(resultadoEvaluacion, tituloVacante, false),
+            note: construirNotaTeamtailor(resultadoEvaluacion, tituloVacanteInterno, false),
             ...(calificacionNotaEvaluacion != null && { rating: calificacionNotaEvaluacion }),
           },
           relationships: {
