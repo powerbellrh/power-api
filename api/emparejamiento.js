@@ -331,7 +331,7 @@ export default async function handler(req, res) {
     if (error) throw error;
 
     const vacantesCoincidentes = vacantes.filter(
-      vacante => vacante.id !== idVacante && habilidadesDetectadas.some(habilidad => vacante.habilidades?.includes(habilidad))
+      vacante => parseInt(vacante.id_team_tailor, 10) !== idVacante && habilidadesDetectadas.some(habilidad => vacante.habilidades?.includes(habilidad))
     );
 
     console.log(JSON.stringify({ etapa: 'coincidencias_iniciales', estado: 'ok', coincidencias: vacantesCoincidentes.length }));
