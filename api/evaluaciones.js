@@ -329,20 +329,27 @@ async function procesarReevaluacion(postulacionId, postulacion, supabase) {
     }
 
   } catch (error) {
-    console.log(JSON.stringify({ etapa: 'reevaluacion_error', etapa_fallida: etapaActual, postulacion_id: postulacionId, mensaje: error.message }));
+    // Fallo determinístico (PDF corrupto/no descargable): reintentar no cambia el resultado,
+    // así que se da por completada (sin éxito) en vez de dejarla en un loop infinito —
+    // reevaluación no tiene contador de intentos propio, solo el flag reevaluacion_completada.
+    const esCandidatoNoProcesable = error.message.includes('Failed to parse');
+    console.log(JSON.stringify({ etapa: 'reevaluacion_error', etapa_fallida: etapaActual, postulacion_id: postulacionId, no_procesable: esCandidatoNoProcesable, mensaje: error.message }));
     try {
       await supabase.from('evaluaciones').update({
         reevaluacion_agendada:   false,
-        reevaluacion_completada: false,
+        reevaluacion_completada: esCandidatoNoProcesable,
         evaluacion_error:        `[reevaluacion:${etapaActual}] ${error.message}`,
       }).eq('postulacion_id', postulacionId);
     } catch (_) {}
     if (candidateId) {
       try {
+        const notaError = esCandidatoNoProcesable
+          ? '✖️ Reevaluación no procesable'
+          : `❌ Error en reevaluación automática [${etapaActual}]: ${error.message}`;
         await ttCrear('/notes', {
           data: {
             type: 'notes',
-            attributes: { note: `❌ Error en reevaluación automática [${etapaActual}]: ${error.message}` },
+            attributes: { note: notaError },
             relationships: {
               candidate:       { data: { id: candidateId,              type: 'candidates'       } },
               user:            { data: { id: TEAMTAILOR_BOT_USER_ID_REEVALUACION, type: 'users' } },
