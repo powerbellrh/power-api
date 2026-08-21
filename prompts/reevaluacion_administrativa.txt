@@ -12,7 +12,7 @@ Compara lo que el candidato respondió contra lo que la vacante exige (descripci
 AJUSTE DE CALIFICACIÓN
 - El ajuste normal está limitado a un máximo de ±5 puntos sobre la calificación original (sin bajar de 0 ni superar 20).
 - EXCEPCIÓN: puedes ajustar más allá de ±5 puntos ÚNICAMENTE si una respuesta contradice de forma explícita e inequívoca un requisito indispensable declarado LITERALMENTE en la descripción o el contexto de la vacante (ejemplo: la vacante exige disponibilidad de reubicación y el candidato dice explícitamente que no puede reubicarse; exige una certificación obligatoria y el candidato confirma no tenerla). El estándar para usar esta excepción es alto: dudas, matices o respuestas simplemente "menos ideales" NO la activan — solo una contradicción directa y explícita contra un requisito indispensable EXPLÍCITAMENTE declarado, nunca inferido.
-- Si usas esta excepción, uno de los 5 puntos (idealmente el primero) debe citar textualmente el requisito de la vacante y la respuesta que lo contradice.
+- Si usas esta excepción, uno de los 5 puntos debe citar textualmente el requisito de la vacante y la respuesta que lo contradice (este punto será 🔴 y aparecerá al final, según el orden de bueno a malo).
 - REGLA ANTI-INFLACIÓN: una respuesta simplemente aceptable o esperada NO debe subir la calificación. Solo información que cambia genuinamente la evaluación (confirma algo que era dudoso, o revela algo nuevo relevante) debe mover el número.
 - GRANULARIDAD: el tamaño del ajuste debe ser proporcional a la relevancia del hallazgo, no un salto fijo. Un matiz menor debe mover 1-2 puntos, un hallazgo relevante 3-4, y solo un hallazgo verdaderamente determinante debe acercarse al máximo de 5. Evita usar siempre el máximo del rango.
 
@@ -23,7 +23,7 @@ Reevaluación: {{titulo_vacante}}
 
 Calificación global: [texto breve, ej. "Se ajusta favorablemente"] - [número]/20
 
-[emoji semáforo] [punto 1, conciso, ligado a una respuesta concreta]
+[emoji semáforo] [punto 1, breve (máx. 1 línea), ligado a una respuesta concreta]
 [emoji semáforo] [punto 2]
 [emoji semáforo] [punto 3]
 [emoji semáforo] [punto 4]
@@ -36,7 +36,8 @@ REGLAS DE LOS EMOJIS (semáforo de impacto, no decorativo)
 
 REGLAS ABSOLUTAS
 ✓ EXACTAMENTE 5 PUNTOS, ni más ni menos
-✓ Ordenados por relevancia/impacto en la calificación, el más determinante primero — no por el orden de las preguntas originales
+✓ Ordenados de bueno a malo: primero todos los 🟢, luego los 🟡, al final los 🔴 — no por el orden de las preguntas originales
+✓ Cada punto debe ser breve y resumido (máx. 1 línea), directo al hallazgo, sin rodeos
 ✓ Cada punto debe ligarse a una respuesta o dato concreto, nunca una afirmación genérica
 ✓ NO uses la palabra "delta" ni jerga técnica de evaluación — esta nota la lee un reclutador, no un ingeniero
 ✓ NO generes preguntas nuevas ni incluyas el marcador #PREGUNTAS#
