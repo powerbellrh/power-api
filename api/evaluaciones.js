@@ -299,7 +299,7 @@ async function procesarReevaluacion(postulacionId, postulacion, supabase) {
     if (calificacionGlobal !== null) {
       try {
         await ttActualizar(`/candidates/${candidateId}`, {
-          data: { id: candidateId.toString(), type: 'candidates', attributes: { picture: obtenerUrlImagenPuntuacion(calificacionGlobal) } },
+          data: { id: candidateId.toString(), type: 'candidates', attributes: { picture: obtenerUrlImagenPuntuacion(calificacionGlobal, true) } },
         }, true);
       } catch (e) {
         console.log(JSON.stringify({ etapa: 'reevaluacion_actualizar_foto', estado: 'error', mensaje: e.message }));
