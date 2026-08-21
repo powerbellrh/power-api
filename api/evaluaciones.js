@@ -8,7 +8,7 @@ import {
   limpiarTelefono,
   normalizarTelefonoMx,
   limpiarHtml,
-  extraerPrimerasCincoPreguntas,
+  extraerPrimerasNuevePreguntas,
   extraerPrimerasTresPreguntas,
   obtenerUrlImagenPuntuacion,
   obtenerNombreCategoriaPuntuacion,
@@ -39,8 +39,9 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export const PROMPTS = {
-  AD: readFileSync(join(__dirname, '../prompts/evaluacion_administrativa.txt'), 'utf-8'),
-  OP: readFileSync(join(__dirname, '../prompts/evaluacion_operativa.txt'),      'utf-8'),
+  AD:        readFileSync(join(__dirname, '../prompts/evaluacion_administrativa.txt'),   'utf-8'),
+  OP:        readFileSync(join(__dirname, '../prompts/evaluacion_operativa.txt'),        'utf-8'),
+  REEVAL_AD: readFileSync(join(__dirname, '../prompts/reevaluacion_administrativa.txt'), 'utf-8'),
 };
 
 const OPENROUTER_MODEL_AD        = 'z-ai/glm-5.2';
@@ -58,10 +59,6 @@ const TEAMTAILOR_BOT_USER_ID_REEVALUACION = 27789;
 const CUSTOM_FIELD_ID        =  AD_TEAMTAILOR_CUSTOM_FIELD_ID;
 const MANYCHAT_FLOW_NS       =  AD_MANYCHAT_FLOW_NS;
 
-const REEVALUACION_PREAMBLE = `NOTA IMPORTANTE: Esta es una REEVALUACIÓN. Ya evaluaste a este candidato anteriormente y le enviaste preguntas personalizadas por WhatsApp; el candidato ya respondió. A continuación se te presentan de nuevo el CV, sus respuestas originales del formulario, y ahora también sus respuestas a las preguntas personalizadas que se le enviaron. Vuelve a evaluar al candidato desde cero, considerando toda esta información combinada. IMPORTANTE: ignora por completo la sección "4. ESTRUCTURA DE PREGUNTAS" y el apartado #PREGUNTAS# del formato de respuesta descritos abajo — en una reevaluación NO se generan preguntas nuevas, así que tu respuesta debe terminar en el apartado de Estabilidad, sin incluir #PREGUNTAS# ni ningún listado de preguntas.
-
-`;
-
 const MANYCHAT_PHONE_FIELD_ID = MANYCHAT_FIELD_PHONE_ID;
 
 const MANYCHAT_FIELDS = {
@@ -73,6 +70,10 @@ const MANYCHAT_FIELDS = {
   question_3:   MANYCHAT_FIELD_PREGUNTA[3],
   question_4:   MANYCHAT_FIELD_PREGUNTA[4],
   question_5:   MANYCHAT_FIELD_PREGUNTA[5],
+  question_6:   MANYCHAT_FIELD_PREGUNTA[6],
+  question_7:   MANYCHAT_FIELD_PREGUNTA[7],
+  question_8:   MANYCHAT_FIELD_PREGUNTA[8],
+  question_9:   MANYCHAT_FIELD_PREGUNTA[9],
 };
 
 // ============================================================================
@@ -186,7 +187,7 @@ async function enviarWhatsApp({ candidatoNombrePila, candidatoTelefono, candidat
     try {
       const clavesPreguntas = vacanteTipo === 'OP'
         ? ['question_1', 'question_2', 'question_3']
-        : ['question_1', 'question_2', 'question_3', 'question_4', 'question_5'];
+        : ['question_1', 'question_2', 'question_3', 'question_4', 'question_5', 'question_6', 'question_7', 'question_8', 'question_9'];
 
       const camposPreguntas = clavesPreguntas
         .map((clave, i) => preguntas[i] ? { field_id: MANYCHAT_FIELDS[clave], field_value: preguntas[i] } : null)
@@ -237,6 +238,7 @@ async function procesarReevaluacion(postulacionId, postulacion, supabase) {
     candidato_nombre: candidatoNombre,
     candidato_respuestas: respuestasOriginales,
     respuestas_preguntas_personalizadas: respuestasPersonalizadas,
+    evaluacion_calificacion: calificacionOriginal,
   } = postulacion;
 
   let etapaActual = 'init';
@@ -264,7 +266,10 @@ async function procesarReevaluacion(postulacionId, postulacion, supabase) {
     if (bloqueRespuestasPersonalizadas) bloqueCandidato += `\n\n${bloqueRespuestasPersonalizadas}`;
 
     const fechaActual = new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Mexico_City' });
-    const promptSistemaConFecha = REEVALUACION_PREAMBLE + PROMPTS.AD.replace('{{fecha_actual}}', fechaActual);
+    const promptSistemaConFecha = PROMPTS.REEVAL_AD
+      .replace('{{fecha_actual}}', fechaActual)
+      .replace(/\{\{calificacion_original\}\}/g, calificacionOriginal ?? 'desconocida')
+      .replace(/\{\{titulo_vacante\}\}/g, tituloVacanteInterno);
 
     const peticionModelo = construirPeticionOpenRouter(AI_CONFIG.AD, promptSistemaConFecha, bloqueVacante, bloqueCandidato, urlCurriculum, null);
 
@@ -308,7 +313,7 @@ async function procesarReevaluacion(postulacionId, postulacion, supabase) {
         data: {
           type: 'notes',
           attributes: {
-            note: construirNotaTeamtailor(resultadoEvaluacion, tituloVacanteInterno, true),
+            note: resultadoEvaluacion,
             ...(calificacionNotaEvaluacion != null && { rating: calificacionNotaEvaluacion }),
           },
           relationships: {
@@ -467,7 +472,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     if (resultadoEvaluacion.includes('#PREGUNTAS#')) {
       try {
         preguntasExtraidas             = esAdministrativa
-          ? extraerPrimerasCincoPreguntas(resultadoEvaluacion)
+          ? extraerPrimerasNuevePreguntas(resultadoEvaluacion)
           : extraerPrimerasTresPreguntas(resultadoEvaluacion);
         preguntasExtraidasExitosamente = true;
         evaluacionPreguntas = {
@@ -476,6 +481,10 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
           pregunta_3: preguntasExtraidas[2] ?? null,
           pregunta_4: preguntasExtraidas[3] ?? null,
           pregunta_5: preguntasExtraidas[4] ?? null,
+          pregunta_6: preguntasExtraidas[5] ?? null,
+          pregunta_7: preguntasExtraidas[6] ?? null,
+          pregunta_8: preguntasExtraidas[7] ?? null,
+          pregunta_9: preguntasExtraidas[8] ?? null,
         };
       } catch (e) {
         console.log(JSON.stringify({ etapa: 'extraccion_preguntas', estado: 'error', mensaje: e.message }));
@@ -521,7 +530,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
         data: {
           type: 'notes',
           attributes: {
-            note: construirNotaTeamtailor(resultadoEvaluacion, tituloVacanteInterno, false),
+            note: construirNotaTeamtailor(resultadoEvaluacion, tituloVacanteInterno),
             ...(calificacionNotaEvaluacion != null && { rating: calificacionNotaEvaluacion }),
           },
           relationships: {
