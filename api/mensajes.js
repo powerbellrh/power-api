@@ -23,7 +23,9 @@ const REGEX_BAJA                     = /\bbaja\b/i; // palabra usada para solici
 const FOTO_PERFIL_DEFAULT      = 'https://i.ibb.co/JwvVrDr0/fotodesconocido.png';
 const FOTO_PERFIL_HOMBRE       = 'https://i.ibb.co/4RGYgcC4/fotohombre.png';
 const FOTO_PERFIL_MUJER        = 'https://i.ibb.co/6CdjYbv/fotomujer.png';
-const MENSAJE_DESPEDIDA_COMPLETADO = '¡Felicidades! Tu postulación ha sido registrada. Una reclutadora se pondrá en contacto contigo lo más pronto posible 🥳';
+const URL_CANAL_WHATSAPP = 'https://whatsapp.com/channel/0029VbDRL604NVifiRhMHX3P';
+const NOTA_CANAL_WHATSAPP = 'Únete a nuestro canal de WhatsApp para enterarte de otras vacantes que podrían interesarte 👇';
+const MENSAJE_DESPEDIDA_COMPLETADO = `¡Felicidades! Tu postulación ha sido registrada. Una reclutadora se pondrá en contacto contigo lo más pronto posible 🥳\n\n${NOTA_CANAL_WHATSAPP}\n${URL_CANAL_WHATSAPP}`;
 const MENSAJE_RECORDATORIO_COMPLETADO = 'Tu postulación ya quedó registrada, una reclutadora te contactará lo más pronto posible 🙂';
 const MENSAJE_FALLBACK_ERROR = 'Tuvimos un problema para procesar tu mensaje, ¿podrías escribirlo de nuevo?';
 const MENSAJE_LIMITE_PREGUNTAS_GENERALES = 'Para dudas más específicas, una reclutadora podrá ayudarte con más detalle 🙂';
@@ -562,7 +564,7 @@ async function detectarYCargarVacante({ supabase, fila, idSuscriptor, telefono, 
       const quedanPendientes = fila.preguntas.some(item => !item.respuesta);
 
       if (!quedanPendientes) {
-        const avisoAutomatico = 'Ya contamos con tu información, así que llenamos tu postulación de forma automática. Una reclutadora se pondrá en contacto contigo lo más pronto posible 🙂';
+        const avisoAutomatico = `Ya contamos con tu información, así que llenamos tu postulación de forma automática. Una reclutadora se pondrá en contacto contigo lo más pronto posible 🙂\n\n${NOTA_CANAL_WHATSAPP}\n${URL_CANAL_WHATSAPP}`;
         try {
           await enviarRespuestaCandidato(idSuscriptor, avisoAutomatico);
           await agregarMensajeConversacion(supabase, fila, 'agente', avisoAutomatico);

@@ -318,6 +318,15 @@ export default async function handler(req, res) {
   }
 
   try {
+    const { data: postulacionesExistentes, error: errorPostulaciones } = await supabase
+      .from('postulaciones')
+      .select('id_vacante')
+      .eq('id_candidato', candidato.id);
+
+    if (errorPostulaciones) throw errorPostulaciones;
+
+    const idsVacantesConPostulacion = new Set((postulacionesExistentes ?? []).map(p => p.id_vacante));
+
     let consulta = supabase
       .from('vacantes')
       .select('id, id_team_tailor, domicilio, habilidades, descripcion');
@@ -331,7 +340,10 @@ export default async function handler(req, res) {
     if (error) throw error;
 
     const vacantesCoincidentes = vacantes.filter(
-      vacante => parseInt(vacante.id_team_tailor, 10) !== idVacante && habilidadesDetectadas.some(habilidad => vacante.habilidades?.includes(habilidad))
+      vacante =>
+        parseInt(vacante.id_team_tailor, 10) !== idVacante &&
+        !idsVacantesConPostulacion.has(vacante.id) &&
+        habilidadesDetectadas.some(habilidad => vacante.habilidades?.includes(habilidad))
     );
 
     console.log(JSON.stringify({ etapa: 'coincidencias_iniciales', estado: 'ok', coincidencias: vacantesCoincidentes.length }));
