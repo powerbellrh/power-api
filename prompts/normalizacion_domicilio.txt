@@ -1,9 +1,5 @@
-Analiza el domicilio que proporcionó el candidato y determina a cuál de los siguientes municipios corresponde:
+Analiza el domicilio que proporcionó el candidato e infiere a qué estado y ciudad/municipio de México corresponde.
 
-- Zapopan, Jalisco
-- Guadalajara, Jalisco
-- Tlaquepaque, Jalisco
-- El Salto, Jalisco
-- Tlajomulco, Jalisco
+Usa colonias, referencias, códigos postales o cualquier otra pista del texto para inferir la ubicación, aunque no la mencione explícitamente. Devuelve el nombre completo y estándar del estado y de la ciudad/municipio (por ejemplo "Jalisco" y "Guadalajara", no abreviaturas como "GDL" o "Edo. Mex").
 
-Usa colonias, referencias o cualquier otra pista del texto para inferir el municipio, aunque no lo mencione explícitamente. Si el domicilio es ambiguo, incompleto, o corresponde a un municipio distinto a los listados, responde "NO_DETERMINADO".
+Si no hay información suficiente para determinar el estado, o la ciudad, responde "NO_DETERMINADO" en el campo correspondiente.

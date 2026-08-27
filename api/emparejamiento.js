@@ -11,37 +11,24 @@ const PROMPT_VERIFICACION_MATCH     = readFileSync(join(__dirname, '../prompts/v
 const PROMPT_NORMALIZACION_DOMICILIO = readFileSync(join(__dirname, '../prompts/normalizacion_domicilio.txt'), 'utf-8');
 const OPENROUTER_MODEL              = 'deepseek/deepseek-v4-flash-0731';
 
-const DOMICILIOS_VALIDOS = [
-  'Zapopan, Jalisco',
-  'Guadalajara, Jalisco',
-  'Tlaquepaque, Jalisco',
-  'El Salto, Jalisco',
-  'Tlajomulco, Jalisco',
-];
-
-const DOMICILIO_REGEX = {
-  'Zapopan, Jalisco':      /zapopan/i,
-  'Guadalajara, Jalisco':  /guadalajara/i,
-  'Tlaquepaque, Jalisco':  /tlaquepaque/i,
-  'El Salto, Jalisco':     /el salto/i,
-  'Tlajomulco, Jalisco':   /tlajomulco/i,
-};
-
 const DOMICILIO_TOOL = {
   type: 'function',
   function: {
     name: 'normalizar_domicilio',
-    description: 'Determina a cuál de los municipios permitidos corresponde el domicilio del candidato.',
+    description: 'Infiere el estado y la ciudad/municipio de México a los que corresponde el domicilio del candidato.',
     parameters: {
       type: 'object',
       properties: {
-        domicilio: {
+        estado: {
           type: 'string',
-          enum: [...DOMICILIOS_VALIDOS, 'NO_DETERMINADO'],
-          description: 'Municipio inferido, o NO_DETERMINADO si no hay información suficiente.',
+          description: 'Nombre completo y estándar del estado inferido, o NO_DETERMINADO si no hay información suficiente.',
+        },
+        ciudad: {
+          type: 'string',
+          description: 'Nombre completo y estándar de la ciudad/municipio inferido, o NO_DETERMINADO si no hay información suficiente.',
         },
       },
-      required: ['domicilio'],
+      required: ['estado', 'ciudad'],
     },
   },
 };
@@ -91,12 +78,15 @@ function detectarHabilidadesPorRegex(texto) {
     .map(([habilidad]) => habilidad);
 }
 
-function detectarDomicilioPorRegex(texto) {
-  const encontrado = Object.entries(DOMICILIO_REGEX).find(([, regex]) => regex.test(texto));
-  return encontrado?.[0] ?? null;
+function normalizarTexto(texto) {
+  return texto
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .trim()
+    .toLowerCase();
 }
 
-async function detectarDomicilioPorLlm(texto) {
+async function detectarUbicacionPorLlm(texto) {
   const datos = await orChatCompletion({
     model:      OPENROUTER_MODEL,
     reasoning:  { enabled: false },
@@ -112,20 +102,27 @@ async function detectarDomicilioPorLlm(texto) {
   if (!llamada) throw new Error('OpenRouter no devolvió una respuesta estructurada válida');
 
   const argumentos = typeof llamada.function.arguments === 'string' ? JSON.parse(llamada.function.arguments) : llamada.function.arguments;
-  return argumentos.domicilio === 'NO_DETERMINADO' ? null : argumentos.domicilio;
+  return {
+    estado: argumentos.estado === 'NO_DETERMINADO' ? null : argumentos.estado,
+    ciudad: argumentos.ciudad === 'NO_DETERMINADO' ? null : argumentos.ciudad,
+  };
 }
 
-async function normalizarDomicilio(texto) {
-  const porRegex = detectarDomicilioPorRegex(texto);
-  if (porRegex) return { domicilio: porRegex, origen: 'regex' };
+async function buscarUbicacion(supabase, estado, ciudad) {
+  if (!ciudad) return null;
 
-  try {
-    const porLlm = await detectarDomicilioPorLlm(texto);
-    return { domicilio: porLlm, origen: 'llm' };
-  } catch (error) {
-    console.log(JSON.stringify({ etapa: 'normalizacion_domicilio', estado: 'error', mensaje: error.message }));
-    return { domicilio: null, origen: 'error' };
-  }
+  // TODO: reemplazar la comparación exacta por búsqueda difusa (pg_trgm) para tolerar
+  // variaciones de escritura entre lo que infiere el LLM y el catálogo de ubicaciones.
+  let consulta = supabase.from('ubicaciones').select('id, ciudad, estado');
+  if (estado) consulta = consulta.ilike('estado', estado);
+
+  const { data: ubicaciones, error } = await consulta;
+  if (error) throw error;
+
+  const ciudadNormalizada = normalizarTexto(ciudad);
+  const encontrada = (ubicaciones ?? []).find(u => normalizarTexto(u.ciudad) === ciudadNormalizada);
+
+  return encontrada ?? null;
 }
 
 async function detectarHabilidadesPorLlm(texto) {
@@ -291,9 +288,17 @@ export default async function handler(req, res) {
 
   console.log(JSON.stringify({ etapa: 'busqueda_candidato', estado: 'ok', candidato_id: candidato.id }));
 
-  const { domicilio: domicilioNormalizado, origen: origenDomicilio } = await normalizarDomicilio(domicilio);
+  let estadoDetectado = null;
+  let ciudadDetectada = null;
+  let origenDomicilio = 'llm';
 
-  console.log(JSON.stringify({ etapa: 'normalizacion_domicilio', estado: 'ok', origen: origenDomicilio, domicilio: domicilioNormalizado }));
+  try {
+    ({ estado: estadoDetectado, ciudad: ciudadDetectada } = await detectarUbicacionPorLlm(domicilio));
+    console.log(JSON.stringify({ etapa: 'normalizacion_domicilio', estado: 'ok', origen: origenDomicilio, estado_detectado: estadoDetectado, ciudad_detectada: ciudadDetectada }));
+  } catch (error) {
+    origenDomicilio = 'error';
+    console.log(JSON.stringify({ etapa: 'normalizacion_domicilio', estado: 'error', mensaje: error.message }));
+  }
 
   let habilidadesDetectadas = detectarHabilidadesPorRegex(experiencia);
   let origenDeteccion = 'regex';
@@ -329,16 +334,8 @@ export default async function handler(req, res) {
 
     let idsVacantesPorUbicacion = null;
 
-    if (domicilioNormalizado) {
-      const [ciudad] = domicilioNormalizado.split(',').map(parte => parte.trim());
-
-      const { data: ubicacion, error: errorUbicacion } = await supabase
-        .from('ubicaciones')
-        .select('id')
-        .eq('ciudad', ciudad)
-        .maybeSingle();
-
-      if (errorUbicacion) throw errorUbicacion;
+    if (ciudadDetectada) {
+      const ubicacion = await buscarUbicacion(supabase, estadoDetectado, ciudadDetectada);
 
       if (!ubicacion) {
         idsVacantesPorUbicacion = [];
@@ -380,6 +377,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ id_team_tailor: [], uso_ia: usoIa });
     }
 
+    const domicilioNormalizado = ciudadDetectada ? [ciudadDetectada, estadoDetectado].filter(Boolean).join(', ') : null;
     const datosCandidato = { nombre, domicilio: domicilioNormalizado ?? domicilio, expectativa, experiencia, rolarTurno, acceso };
     const vacantesVerificadas = await verificarRecomendaciones(datosCandidato, vacantesCoincidentes);
 
