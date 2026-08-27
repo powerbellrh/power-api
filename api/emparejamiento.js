@@ -327,12 +327,39 @@ export default async function handler(req, res) {
 
     const idsVacantesConPostulacion = new Set((postulacionesExistentes ?? []).map(p => p.id_vacante));
 
-    let consulta = supabase
-      .from('vacantes')
-      .select('id, id_team_tailor, domicilio, habilidades, descripcion');
+    let idsVacantesPorUbicacion = null;
 
     if (domicilioNormalizado) {
-      consulta = consulta.eq('domicilio', domicilioNormalizado);
+      const [ciudad] = domicilioNormalizado.split(',').map(parte => parte.trim());
+
+      const { data: ubicacion, error: errorUbicacion } = await supabase
+        .from('ubicaciones')
+        .select('id')
+        .eq('ciudad', ciudad)
+        .maybeSingle();
+
+      if (errorUbicacion) throw errorUbicacion;
+
+      if (!ubicacion) {
+        idsVacantesPorUbicacion = [];
+      } else {
+        const { data: ubicacionesSeleccionadas, error: errorUbicacionesSeleccionadas } = await supabase
+          .from('ubicaciones_seleccionadas')
+          .select('id_vacante')
+          .eq('id_ubicacion', ubicacion.id);
+
+        if (errorUbicacionesSeleccionadas) throw errorUbicacionesSeleccionadas;
+
+        idsVacantesPorUbicacion = (ubicacionesSeleccionadas ?? []).map(u => u.id_vacante);
+      }
+    }
+
+    let consulta = supabase
+      .from('vacantes')
+      .select('id, id_team_tailor, habilidades, descripcion');
+
+    if (idsVacantesPorUbicacion !== null) {
+      consulta = consulta.in('id', idsVacantesPorUbicacion);
     }
 
     const { data: vacantes, error } = await consulta;
