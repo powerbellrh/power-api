@@ -662,7 +662,7 @@ async function procesarCandidatoSinVacante({ supabase, fila, idSuscriptor, log }
 
 // Candidato con una vacante y preguntas de postulación cargadas: avanza el flujo de
 // preguntas con el agente conversacional y sincroniza el progreso con TeamTailor.
-async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor, telefono, log }) {
+export async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor, telefono, log }) {
   const itemsPreguntas = fila.preguntas;
 
   // Postulación ya completada: responde sus dudas con el agente general (el mismo
