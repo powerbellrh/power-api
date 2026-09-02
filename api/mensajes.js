@@ -475,6 +475,15 @@ async function detectarYCargarVacante({ supabase, fila, idSuscriptor, telefono, 
   const esVacanteNueva = fila.vacante !== idVacanteNum;
   log('inicio', { idVacante: idVacanteNum, vacanteNueva: esVacanteNueva });
 
+  // Se lanza en paralelo con el formateo/envío de la info de la vacante: no depende
+  // de esos resultados y solo se usa más abajo, así que no hay razón para esperarla.
+  const preguntasVacantePromise = esVacanteNueva
+    ? extraerPreguntasVacante(idVacanteTexto).catch(e => {
+        log('teamtailor_preguntas', { estado: 'error', error: e.message });
+        return [];
+      })
+    : null;
+
   const informacionVacanteCruda = limpiarHtmlParaWhatsApp(datosVacante.body);
   const informacionVacante      = await formatearVacanteParaWhatsApp(informacionVacanteCruda, log);
   log('teamtailor', { estado: 'ok', titulo: datosVacante.title, chars: informacionVacante.length });
@@ -490,12 +499,7 @@ async function detectarYCargarVacante({ supabase, fila, idSuscriptor, telefono, 
   }
 
   if (esVacanteNueva) {
-    let nuevosItemsVacante = [];
-    try {
-      nuevosItemsVacante = await extraerPreguntasVacante(idVacanteTexto);
-    } catch (e) {
-      log('teamtailor_preguntas', { estado: 'error', error: e.message });
-    }
+    const nuevosItemsVacante = await preguntasVacantePromise;
 
     // Las preguntas de cajón van al inicio y al final; se conserva lo ya respondido antes.
     const itemsPrevios = fila.preguntas ?? [];
