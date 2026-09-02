@@ -722,6 +722,12 @@ async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor, telef
     });
   } catch (e) {
     log('agente_llm', { estado: 'error', error: e.message });
+
+    const reintentosPorError = (fila.reintentos ?? 0) + 1;
+    fila.reintentos = reintentosPorError;
+    const { error: errorReintentos } = await supabase.from('chatbot').update({ reintentos: reintentosPorError }).eq('id', fila.id);
+    if (errorReintentos) log('supabase_preguntas', { estado: 'error', error: errorReintentos.message });
+
     try {
       await enviarRespuestaCandidato(idSuscriptor, MENSAJE_FALLBACK_ERROR);
       await agregarMensajeConversacion(supabase, fila, 'agente', MENSAJE_FALLBACK_ERROR);
