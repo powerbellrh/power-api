@@ -1,7 +1,5 @@
-Analiza la experiencia laboral reciente que describe el candidato y extrae únicamente las habilidades de la siguiente lista cerrada que apliquen. No inventes habilidades fuera de esta lista y no la fuerces si el texto no la sustenta claramente.
+Analiza la experiencia laboral reciente que describe el candidato y extrae únicamente las habilidades de la siguiente lista cerrada que apliquen, según lo que el candidato dijo haber hecho. No inventes habilidades fuera de esta lista y no la fuerces si el texto no la sustenta claramente.
 
-- Experiencia en Producción: trabajo en líneas de producción o manufactura (ensamble, operación de máquinas, inyección de plástico, soldadura, empaque, control de calidad en planta, etc.).
-- Experiencia en Seguridad y Vigilancia: trabajo como guardia, vigilante o escolta; monitoreo de cámaras, rondines, resguardo de instalaciones o control de acceso.
-- Experiencia en Almacén: trabajo en almacén o centro de distribución (manejo de montacargas, control de inventario, surtido/picking de pedidos, recepción o embarque de mercancía).
+{{habilidades}}
 
-Si la experiencia descrita no corresponde claramente a ninguna de estas categorías, regresa una lista vacía.
+Si la experiencia descrita no corresponde claramente a ninguna de estas habilidades, regresa una lista vacía.

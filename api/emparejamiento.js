@@ -3,7 +3,6 @@ import { fileURLToPath }     from 'url';
 import { dirname, join }     from 'path';
 import { createClient }      from '@supabase/supabase-js';
 import { orChatCompletion }  from '../lib/openrouter.js';
-import { HABILIDADES_REGEX } from '../lib/habilidades_dict.js';
 
 const __dirname                     = dirname(fileURLToPath(import.meta.url));
 const PROMPT_EXTRACCION_HABILIDADES = readFileSync(join(__dirname, '../prompts/extraccion_habilidades.txt'), 'utf-8');
@@ -33,24 +32,26 @@ const DOMICILIO_TOOL = {
   },
 };
 
-const HABILIDADES_TOOL = {
-  type: 'function',
-  function: {
-    name: 'extraer_habilidades',
-    description: 'Extrae las habilidades laborales mencionadas en el texto del candidato, a partir de una lista cerrada de habilidades posibles.',
-    parameters: {
-      type: 'object',
-      properties: {
-        habilidades: {
-          type: 'array',
-          items: { type: 'string', enum: Object.keys(HABILIDADES_REGEX) },
-          description: 'Habilidades detectadas en el texto. Vacío si ninguna aplica.',
+function construirHerramientaHabilidades(habilidadesDisponibles) {
+  return {
+    type: 'function',
+    function: {
+      name: 'extraer_habilidades',
+      description: 'Extrae las habilidades laborales mencionadas en el texto del candidato, a partir de una lista cerrada de habilidades posibles.',
+      parameters: {
+        type: 'object',
+        properties: {
+          habilidades: {
+            type: 'array',
+            items: { type: 'string', enum: habilidadesDisponibles },
+            description: 'Habilidades detectadas en el texto. Vacío si ninguna aplica.',
+          },
         },
+        required: ['habilidades'],
       },
-      required: ['habilidades'],
     },
-  },
-};
+  };
+}
 
 const VERIFICACION_TOOL = {
   type: 'function',
@@ -72,10 +73,23 @@ const VERIFICACION_TOOL = {
 // HELPERS
 // ============================================================================
 
-function detectarHabilidadesPorRegex(texto) {
-  return Object.entries(HABILIDADES_REGEX)
-    .filter(([, regex]) => regex.test(texto))
-    .map(([habilidad]) => habilidad);
+// Las habilidades no son una lista fija: son las que existen realmente en la
+// columna `habilidades` de cada vacante (texto libre separado por comas), para
+// que lo que extraiga la IA del candidato coincida por texto con lo que ya
+// tienen etiquetadas las vacantes.
+export async function obtenerHabilidadesUnicas(supabase) {
+  const { data, error } = await supabase.from('vacantes').select('habilidades').not('habilidades', 'is', null);
+  if (error) throw error;
+
+  const unicas = new Set();
+  for (const { habilidades } of data ?? []) {
+    for (const habilidad of habilidades.split(',')) {
+      const limpia = habilidad.trim();
+      if (limpia) unicas.add(limpia);
+    }
+  }
+
+  return [...unicas];
 }
 
 function normalizarTexto(texto) {
@@ -125,15 +139,18 @@ async function buscarUbicacion(supabase, estado, ciudad) {
   return encontrada ?? null;
 }
 
-async function detectarHabilidadesPorLlm(texto) {
+async function detectarHabilidadesPorLlm(texto, habilidadesDisponibles) {
+  const listaHabilidades = habilidadesDisponibles.map(habilidad => `- ${habilidad}`).join('\n');
+  const prompt = PROMPT_EXTRACCION_HABILIDADES.replace('{{habilidades}}', listaHabilidades);
+
   const datos = await orChatCompletion({
     model:      OPENROUTER_MODEL,
     reasoning:  { enabled: false },
     messages: [
-      { role: 'system', content: PROMPT_EXTRACCION_HABILIDADES },
+      { role: 'system', content: prompt },
       { role: 'user',   content: texto },
     ],
-    tools:       [HABILIDADES_TOOL],
+    tools:       [construirHerramientaHabilidades(habilidadesDisponibles)],
     tool_choice: { type: 'function', function: { name: 'extraer_habilidades' } },
   }, process.env.OPENROUTER_API_KEY_EMPAREJAMIENTO);
 
@@ -304,22 +321,30 @@ export default async function handler(req, res) {
     console.log(JSON.stringify({ etapa: 'normalizacion_domicilio', estado: 'error', mensaje: error.message }));
   }
 
-  let habilidadesDetectadas = detectarHabilidadesPorRegex(experiencia);
-  let origenDeteccion = 'regex';
-
-  if (habilidadesDetectadas.length === 0) {
-    try {
-      habilidadesDetectadas = await detectarHabilidadesPorLlm(experiencia);
-      origenDeteccion = 'llm';
-    } catch (error) {
-      console.log(JSON.stringify({ etapa: 'llm', estado: 'error', mensaje: error.message }));
-      return res.status(500).json({ error: error.message });
-    }
+  let habilidadesDisponibles = [];
+  try {
+    habilidadesDisponibles = await obtenerHabilidadesUnicas(supabase);
+  } catch (error) {
+    console.log(JSON.stringify({ etapa: 'habilidades_disponibles', estado: 'error', mensaje: error.message }));
+    return res.status(500).json({ error: error.message });
   }
 
-  console.log(JSON.stringify({ etapa: 'deteccion', estado: 'ok', origen: origenDeteccion, habilidades: habilidadesDetectadas }));
+  if (habilidadesDisponibles.length === 0) {
+    console.log(JSON.stringify({ etapa: 'completado', estado: 'sin_habilidades_catalogo' }));
+    return res.status(200).json({ id_team_tailor: [], uso_ia: false });
+  }
 
-  const usoIa = origenDeteccion === 'llm' || origenDomicilio === 'llm';
+  let habilidadesDetectadas;
+  try {
+    habilidadesDetectadas = await detectarHabilidadesPorLlm(experiencia, habilidadesDisponibles);
+  } catch (error) {
+    console.log(JSON.stringify({ etapa: 'llm', estado: 'error', mensaje: error.message }));
+    return res.status(500).json({ error: error.message });
+  }
+
+  console.log(JSON.stringify({ etapa: 'deteccion', estado: 'ok', habilidades: habilidadesDetectadas }));
+
+  const usoIa = true;
 
   if (habilidadesDetectadas.length === 0) {
     console.log(JSON.stringify({ etapa: 'completado', estado: 'sin_habilidades' }));
