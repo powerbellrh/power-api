@@ -382,7 +382,8 @@ export default async function handler(req, res) {
 
     let consulta = supabase
       .from('vacantes')
-      .select('id, id_team_tailor, habilidades, descripcion');
+      .select('id, id_team_tailor, habilidades, descripcion')
+      .or('tipo.is.null,tipo.not.ilike.administrativa'); // ilike para no depender de mayúsculas/minúsculas; is.null evita excluir vacantes sin tipo asignado
 
     if (idsVacantesPorUbicacion !== null) {
       consulta = consulta.in('id', idsVacantesPorUbicacion);
