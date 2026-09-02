@@ -144,16 +144,22 @@ async function detectarHabilidadesPorLlm(texto) {
   return argumentos.habilidades ?? [];
 }
 
+export function formatearPreguntasOpcionales(preguntasOpcional) {
+  if (!Array.isArray(preguntasOpcional) || preguntasOpcional.length === 0) return '(sin información adicional)';
+
+  return preguntasOpcional
+    .map(({ pregunta, respuesta }) => `${pregunta} ${respuesta}`)
+    .join('\n');
+}
+
 async function verificarCompatibilidad(candidato, descripcion) {
   const prompt = PROMPT_VERIFICACION_MATCH
-    .replace('{{nombre}}',       candidato.nombre       || '(no proporcionado)')
-    .replace('{{ubicacion}}',    candidato.domicilio     || '(no proporcionado)')
-    .replace('{{escolaridad}}',  '(no proporcionado)')
-    .replace('{{expectativa}}',  candidato.expectativa === true ? 'tiene expectativa de sueldo' : candidato.expectativa === false ? 'sin expectativa de sueldo particular' : '(no proporcionado)')
-    .replace('{{experiencia}}',  candidato.experiencia   || '(no proporcionado)')
-    .replace('{{rolar_turno}}',  typeof candidato.rolarTurno === 'boolean' ? (candidato.rolarTurno ? 'sí' : 'no') : '(no proporcionado)')
-    .replace('{{acceso}}',       typeof candidato.acceso === 'boolean' ? (candidato.acceso ? 'sí' : 'no') : '(no proporcionado)')
-    .replace('{{descripcion}}',  descripcion             || '(sin descripción)');
+    .replace('{{nombre}}',            candidato.nombre       || '(no proporcionado)')
+    .replace('{{ubicacion}}',         candidato.domicilio     || '(no proporcionado)')
+    .replace('{{escolaridad}}',       '(no proporcionado)')
+    .replace('{{experiencia}}',       candidato.experiencia   || '(no proporcionado)')
+    .replace('{{preguntas_opcional}}', formatearPreguntasOpcionales(candidato.preguntasOpcional))
+    .replace('{{descripcion}}',       descripcion             || '(sin descripción)');
 
   const datos = await orChatCompletion({
     model:      OPENROUTER_MODEL,
@@ -240,16 +246,14 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const cuerpo      = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-  const nombre      = cuerpo?.nombre;
-  const telefono    = cuerpo?.telefono != null ? String(cuerpo.telefono) : cuerpo?.telefono;
-  const edad        = cuerpo?.edad;
-  const domicilio   = cuerpo?.domicilio;
-  const expectativa = cuerpo?.expectativa;
-  const experiencia = cuerpo?.experiencia;
-  const rolarTurno  = cuerpo?.rolar_turno;
-  const acceso      = cuerpo?.acceso;
-  const idVacante   = parseInt(cuerpo?.id_vacante, 10);
+  const cuerpo            = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+  const nombre            = cuerpo?.nombre;
+  const telefono          = cuerpo?.telefono != null ? String(cuerpo.telefono) : cuerpo?.telefono;
+  const edad              = cuerpo?.edad;
+  const domicilio         = cuerpo?.domicilio;
+  const experiencia       = cuerpo?.experiencia;
+  const idVacante         = parseInt(cuerpo?.id_vacante, 10);
+  const preguntasOpcional = Array.isArray(cuerpo?.preguntas_opcional) ? cuerpo.preguntas_opcional : [];
 
   if (!telefono || typeof telefono !== 'string') {
     console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing telefono field' }));
@@ -266,7 +270,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'missing experiencia field' });
   }
 
-  console.log(JSON.stringify({ etapa: 'inicio', telefono, domicilio, chars: experiencia.length, id_vacante: Number.isInteger(idVacante) ? idVacante : null }));
+  console.log(JSON.stringify({ etapa: 'inicio', telefono, domicilio, chars: experiencia.length, preguntas_opcional: preguntasOpcional.length, id_vacante: Number.isInteger(idVacante) ? idVacante : null }));
 
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
@@ -378,7 +382,7 @@ export default async function handler(req, res) {
     }
 
     const domicilioNormalizado = ciudadDetectada ? [ciudadDetectada, estadoDetectado].filter(Boolean).join(', ') : null;
-    const datosCandidato = { nombre, domicilio: domicilioNormalizado ?? domicilio, expectativa, experiencia, rolarTurno, acceso };
+    const datosCandidato = { nombre, domicilio: domicilioNormalizado ?? domicilio, experiencia, preguntasOpcional };
     const vacantesVerificadas = await verificarRecomendaciones(datosCandidato, vacantesCoincidentes);
 
     console.log(JSON.stringify({ etapa: 'verificacion_match', estado: 'ok', antes: vacantesCoincidentes.length, despues: vacantesVerificadas.length }));
