@@ -8,7 +8,6 @@ import {
   AGENDA_MANYCHAT_FIELD_VACANTE_TITULO,
   AGENDA_MANYCHAT_FIELD_VACANTE_URL,
   AGENDA_MANYCHAT_FIELD_CANDIDATO_NOMBRE,
-  AGENDA_MANYCHAT_FIELD_CANDIDATO_EMAIL,
   AGENDA_MANYCHAT_FIELD_CANDIDATO_TEAMTAILOR_ID,
   MANYCHAT_FIELD_PHONE_ID,
 } from '../lib/config.js';
@@ -212,14 +211,6 @@ async function manejarEnviarAgenda(candidato, data) {
 
   const nombreCandidato = [candidato.first_name, candidato.last_name].filter(Boolean).join(' ') || candidato.phone || 'Unknown';
 
-  let candidatoTT = {};
-  try {
-    const candResp = await ttObtener(`/candidates/${candidato.id}`);
-    candidatoTT = candResp.data.attributes;
-  } catch (e) {
-    console.log(JSON.stringify({ etapa: 'agenda_obtener_candidato', estado: 'error', mensaje: e.message }));
-  }
-
   let tituloVacante   = '';
   let urlVacante      = '';
   let nombreReclutadora   = '';
@@ -275,7 +266,6 @@ async function manejarEnviarAgenda(candidato, data) {
         { field_id: AGENDA_MANYCHAT_FIELD_VACANTE_TITULO,         field_value: tituloVacante },
         { field_id: AGENDA_MANYCHAT_FIELD_VACANTE_URL,            field_value: urlVacante },
         { field_id: AGENDA_MANYCHAT_FIELD_CANDIDATO_NOMBRE,       field_value: nombreCandidato },
-        { field_id: AGENDA_MANYCHAT_FIELD_CANDIDATO_EMAIL,        field_value: candidatoTT.email || '' },
         { field_id: AGENDA_MANYCHAT_FIELD_CANDIDATO_TEAMTAILOR_ID, field_value: candidato.id.toString() },
       ],
     });
