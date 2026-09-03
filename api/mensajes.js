@@ -20,6 +20,7 @@ const DESPLAZAMIENTO_CDMX_MS         = 6 * 60 * 60 * 1000; // Ciudad de México 
 const REGEX_VACANTE                  = /#(\d{6,})/; // los ids de vacante tienen 6+ dígitos; evita falsos positivos con números de calle
 const REGEX_BAJA                     = /\bbaja\b/i; // palabra usada para solicitar la eliminación de datos
 const MENSAJE_IRRESPONSIVO           = 'Irresponsivo'; // valor fijo que manda ManyChat cuando pasa 1h sin respuesta del candidato
+const MENSAJE_DESPEDIDA_INACTIVIDAD  = 'Entendemos que quizás no es el mejor momento. Cuando quieras continuar con tu postulación, solo escríbenos 🙂';
 
 const FOTO_PERFIL_DEFAULT      = 'https://i.ibb.co/JwvVrDr0/fotodesconocido.png';
 const FOTO_PERFIL_HOMBRE       = 'https://i.ibb.co/4RGYgcC4/fotohombre.png';
@@ -857,12 +858,21 @@ async function procesarRecordatorioInactividad({ supabase, fila, idSuscriptor, l
     return;
   }
 
-  if ((fila.reintentos ?? 0) >= LIMITE_REINTENTOS) {
-    log('recordatorio_inactividad', { estado: 'silenciado', reintentos: fila.reintentos });
+  const reintentosPrevios = fila.reintentos ?? 0;
+  if (reintentosPrevios >= LIMITE_REINTENTOS) {
+    log('recordatorio_inactividad', { estado: 'silenciado', reintentos: reintentosPrevios });
     return;
   }
 
-  const mensajeRecordatorio = `Hola! ¿Quisieras continuar con tu postulación?\n\n${pendiente.texto}`;
+  // Si este intento alcanza el límite, se manda la despedida (con el canal de WhatsApp)
+  // en vez del recordatorio normal, y se fija reintentos = LIMITE_REINTENTOS de una vez
+  // (no +1) para que ninguna llamada futura de "Irresponsivo" vuelva a escribirle —
+  // evita un bucle de spam cada hora si el candidato nunca responde.
+  const esUltimoIntento = reintentosPrevios + 1 >= LIMITE_REINTENTOS;
+  const mensajeRecordatorio = esUltimoIntento
+    ? `${MENSAJE_DESPEDIDA_INACTIVIDAD}\n\n${NOTA_CANAL_WHATSAPP}\n${URL_CANAL_WHATSAPP}`
+    : `Hola! ¿Quisieras continuar con tu postulación?\n\n${pendiente.texto}`;
+
   try {
     await enviarRespuestaCandidato(idSuscriptor, mensajeRecordatorio);
     await agregarMensajeConversacion(supabase, fila, 'agente', mensajeRecordatorio);
@@ -871,12 +881,12 @@ async function procesarRecordatorioInactividad({ supabase, fila, idSuscriptor, l
     return;
   }
 
-  const nuevosReintentos = (fila.reintentos ?? 0) + 1;
+  const nuevosReintentos = esUltimoIntento ? LIMITE_REINTENTOS : reintentosPrevios + 1;
   fila.reintentos = nuevosReintentos;
   const { error } = await supabase.from('chatbot').update({ reintentos: nuevosReintentos }).eq('id', fila.id);
   if (error) log('supabase_preguntas', { estado: 'error', error: error.message });
 
-  log('recordatorio_inactividad', { estado: 'ok', reintentos: nuevosReintentos, pregunta_id: pendiente.id });
+  log('recordatorio_inactividad', { estado: 'ok', reintentos: nuevosReintentos, ultimo_intento: esUltimoIntento, pregunta_id: pendiente.id });
 }
 
 async function procesarMensaje({ idSuscriptor, telefono, mensaje, log }) {
