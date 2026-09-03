@@ -19,6 +19,7 @@ const MAXIMO_PREGUNTAS               = 5;
 const DESPLAZAMIENTO_CDMX_MS         = 6 * 60 * 60 * 1000; // Ciudad de México es UTC-6 todo el año
 const REGEX_VACANTE                  = /#(\d{6,})/; // los ids de vacante tienen 6+ dígitos; evita falsos positivos con números de calle
 const REGEX_BAJA                     = /\bbaja\b/i; // palabra usada para solicitar la eliminación de datos
+const MENSAJE_IRRESPONSIVO           = 'Irresponsivo'; // valor fijo que manda ManyChat cuando pasa 1h sin respuesta del candidato
 
 const FOTO_PERFIL_DEFAULT      = 'https://i.ibb.co/JwvVrDr0/fotodesconocido.png';
 const FOTO_PERFIL_HOMBRE       = 'https://i.ibb.co/4RGYgcC4/fotohombre.png';
@@ -844,6 +845,40 @@ export async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor
   log('completado', { estado: 'ok' });
 }
 
+// ManyChat manda "Irresponsivo" cuando pasa 1h sin respuesta del candidato. Se le
+// pregunta si quiere continuar, recordándole la pregunta donde se quedó, hasta el
+// mismo límite de reintentos que el resto del flujo (comparten el contador).
+async function procesarRecordatorioInactividad({ supabase, fila, idSuscriptor, log }) {
+  const itemsPreguntas = fila.preguntas ?? [];
+  const pendiente      = itemsPreguntas.find(item => !item.respuesta);
+
+  if (!pendiente) {
+    log('recordatorio_inactividad', { estado: 'saltado', razon: 'sin_pregunta_pendiente' });
+    return;
+  }
+
+  if ((fila.reintentos ?? 0) >= LIMITE_REINTENTOS) {
+    log('recordatorio_inactividad', { estado: 'silenciado', reintentos: fila.reintentos });
+    return;
+  }
+
+  const mensajeRecordatorio = `Hola! ¿Quisieras continuar con tu postulación?\n\n${pendiente.texto}`;
+  try {
+    await enviarRespuestaCandidato(idSuscriptor, mensajeRecordatorio);
+    await agregarMensajeConversacion(supabase, fila, 'agente', mensajeRecordatorio);
+  } catch (e) {
+    log('manychat_envio', { estado: 'error', error: e.message });
+    return;
+  }
+
+  const nuevosReintentos = (fila.reintentos ?? 0) + 1;
+  fila.reintentos = nuevosReintentos;
+  const { error } = await supabase.from('chatbot').update({ reintentos: nuevosReintentos }).eq('id', fila.id);
+  if (error) log('supabase_preguntas', { estado: 'error', error: error.message });
+
+  log('recordatorio_inactividad', { estado: 'ok', reintentos: nuevosReintentos, pregunta_id: pendiente.id });
+}
+
 async function procesarMensaje({ idSuscriptor, telefono, mensaje, log }) {
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
@@ -852,6 +887,11 @@ async function procesarMensaje({ idSuscriptor, telefono, mensaje, log }) {
     ({ fila, esNuevo } = await obtenerOCrearContacto(supabase, idSuscriptor, telefono));
   } catch (e) {
     log('supabase_contacto', { estado: 'error', error: e.message });
+    return;
+  }
+
+  if (mensaje === MENSAJE_IRRESPONSIVO) {
+    await procesarRecordatorioInactividad({ supabase, fila, idSuscriptor, log });
     return;
   }
 
