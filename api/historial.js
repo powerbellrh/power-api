@@ -1,6 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
-import { ttObtener } from '../lib/clientes_api.js';
-import { normalizarTelefonoMx } from '../lib/evaluacion_postulacion.js';
+import { ttObtener, mcCrear, mcObtener } from '../lib/clientes_api.js';
+import { limpiarTelefono, normalizarTelefonoMx } from '../lib/evaluacion_postulacion.js';
+import {
+  AGENDA_MANYCHAT_FLOW_NS,
+  AGENDA_MANYCHAT_FIELD_RECLUTADORA_NOMBRE,
+  AGENDA_MANYCHAT_FIELD_RECLUTADORA_WHATSAPP,
+  AGENDA_MANYCHAT_FIELD_VACANTE_TITULO,
+  AGENDA_MANYCHAT_FIELD_VACANTE_URL,
+  AGENDA_MANYCHAT_FIELD_CANDIDATO_NOMBRE,
+  AGENDA_MANYCHAT_FIELD_CANDIDATO_EMAIL,
+  AGENDA_MANYCHAT_FIELD_CANDIDATO_TEAMTAILOR_ID,
+  MANYCHAT_FIELD_PHONE_ID,
+} from '../lib/config.js';
 
 const URL_GENERATE     = 'https://power-api-alpha.vercel.app/api/powerid';
 const URL_FELICITACION = 'https://power-api-alpha.vercel.app/api/felicitacion';
@@ -189,6 +200,94 @@ async function manejarHired(candidato) {
 }
 
 // ============================================================================
+// STAGE "Enviar agenda" → crea/busca suscriptor en ManyChat y envía flujo de agenda
+// ============================================================================
+async function manejarEnviarAgenda(candidato, data) {
+  const telefonoLimpio = limpiarTelefono(candidato.phone);
+  if (!telefonoLimpio) {
+    console.log(JSON.stringify({ etapa: 'agenda_whatsapp', estado: 'saltado', razon: 'sin_telefono', candidato_id: candidato.id }));
+    return;
+  }
+  const telefono = normalizarTelefonoMx(telefonoLimpio);
+
+  const nombreCandidato = [candidato.first_name, candidato.last_name].filter(Boolean).join(' ') || candidato.phone || 'Unknown';
+
+  let candidatoTT = {};
+  try {
+    const candResp = await ttObtener(`/candidates/${candidato.id}`);
+    candidatoTT = candResp.data.attributes;
+  } catch (e) {
+    console.log(JSON.stringify({ etapa: 'agenda_obtener_candidato', estado: 'error', mensaje: e.message }));
+  }
+
+  let tituloVacante   = '';
+  let urlVacante      = '';
+  let nombreReclutadora   = '';
+  let whatsappReclutadora = '';
+  try {
+    const jobResp = await ttObtener(`/jobs/${data.job_id}?include=user`);
+    tituloVacante = jobResp.data.attributes.title || '';
+    urlVacante    = (jobResp.data.links?.['careersite-job-url'] || '').replace(/^https?:\/\//, '');
+
+    const reclutador = jobResp.included?.find(i => i.type === 'users');
+    nombreReclutadora   = reclutador?.attributes?.name  || '';
+    whatsappReclutadora = reclutador?.attributes?.phone || '';
+  } catch (e) {
+    console.log(JSON.stringify({ etapa: 'agenda_obtener_vacante', estado: 'error', mensaje: e.message }));
+  }
+
+  try {
+    let idUsuarioMc;
+
+    try {
+      const respSuscriptor = await mcCrear('/fb/subscriber/createSubscriber', {
+        first_name:     candidato.first_name || '',
+        whatsapp_phone: `+${telefono}`,
+        consent_phrase: 'Consiento a que mi contacto sea usado para enviarme actualizaciones de las vacantes disponibles',
+      });
+
+      if (respSuscriptor.status !== 'success' || !respSuscriptor.data)
+        throw new Error('createSubscriber did not return success');
+
+      idUsuarioMc = parseInt(respSuscriptor.data.id, 10);
+      if (isNaN(idUsuarioMc))
+        throw new Error(`Invalid subscriber ID: ${respSuscriptor.data.id}`);
+    } catch (errorCreacion) {
+      if (errorCreacion.message.includes('wa_id') && errorCreacion.message.includes('already exists')) {
+        const encontrado = await mcObtener('/fb/subscriber/findByCustomField', {
+          field_id:    MANYCHAT_FIELD_PHONE_ID,
+          field_value: telefono,
+        });
+        const existente = encontrado?.data?.[0];
+        if (!existente?.id)
+          throw new Error(`createSubscriber failed (already exists) and findByCustomField returned no results for phone ${telefono}`);
+        idUsuarioMc = existente.id;
+      } else {
+        throw errorCreacion;
+      }
+    }
+
+    await mcCrear('/fb/subscriber/setCustomFields', {
+      subscriber_id: idUsuarioMc,
+      fields: [
+        { field_id: AGENDA_MANYCHAT_FIELD_RECLUTADORA_NOMBRE,     field_value: nombreReclutadora },
+        { field_id: AGENDA_MANYCHAT_FIELD_RECLUTADORA_WHATSAPP,   field_value: whatsappReclutadora },
+        { field_id: AGENDA_MANYCHAT_FIELD_VACANTE_TITULO,         field_value: tituloVacante },
+        { field_id: AGENDA_MANYCHAT_FIELD_VACANTE_URL,            field_value: urlVacante },
+        { field_id: AGENDA_MANYCHAT_FIELD_CANDIDATO_NOMBRE,       field_value: nombreCandidato },
+        { field_id: AGENDA_MANYCHAT_FIELD_CANDIDATO_EMAIL,        field_value: candidatoTT.email || '' },
+        { field_id: AGENDA_MANYCHAT_FIELD_CANDIDATO_TEAMTAILOR_ID, field_value: candidato.id.toString() },
+      ],
+    });
+
+    await mcCrear('/fb/sending/sendFlow', { subscriber_id: idUsuarioMc, flow_ns: AGENDA_MANYCHAT_FLOW_NS });
+    console.log(JSON.stringify({ etapa: 'agenda_whatsapp', estado: 'ok', candidato_id: candidato.id }));
+  } catch (e) {
+    console.log(JSON.stringify({ etapa: 'agenda_whatsapp', estado: 'error', candidato_id: candidato.id, mensaje: e.message }));
+  }
+}
+
+// ============================================================================
 // HANDLER PRINCIPAL (webhook de TeamTailor, sin auth — ver recepcion-postulaciones.js)
 // ============================================================================
 export default async function handler(req, res) {
@@ -212,7 +311,7 @@ export default async function handler(req, res) {
   const stage = (data.stage_name || '').toLowerCase().trim();
   console.log(JSON.stringify({ etapa: 'inicio', evento: eventName, stage, candidato_id: candidato.id ?? null }));
 
-  if (stage !== 'enviado a cliente' && stage !== 'hired') {
+  if (stage !== 'enviado a cliente' && stage !== 'hired' && stage !== 'enviar agenda') {
     console.log(JSON.stringify({ etapa: 'evento', estado: 'ignorado', razon: 'stage_no_manejado', stage }));
     return res.status(200).json({ status: 'ignored', reason: 'unhandled_stage' });
   }
@@ -221,6 +320,8 @@ export default async function handler(req, res) {
     if (stage === 'enviado a cliente') {
       const supabase = createClient(process.env.HISTORIAL_SUPABASE_URL, process.env.HISTORIAL_SUPABASE_SERVICE_ROLE_KEY);
       await manejarEnviadoACliente(supabase, data, candidato);
+    } else if (stage === 'enviar agenda') {
+      await manejarEnviarAgenda(candidato, data);
     } else {
       await manejarHired(candidato);
     }
