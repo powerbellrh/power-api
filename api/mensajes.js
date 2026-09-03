@@ -392,7 +392,7 @@ async function formatearVacanteParaWhatsApp(informacionVacante, log) {
       messages: [
         {
           role:    'system',
-          content: 'Reformatea el siguiente texto de una vacante para que se vea bien en WhatsApp: cada título de sección debe llevar negritas usando asteriscos, por ejemplo *Responsabilidades*. No cambies, resumas, traduzcas ni agregues ninguna palabra del contenido original; solo ajusta el formato.',
+          content: 'Reformatea el siguiente texto de una vacante para que se vea bien en WhatsApp: cada título de sección debe llevar negritas usando asteriscos, por ejemplo *Responsabilidades*. No cambies, resumas, traduzcas ni agregues ninguna palabra del contenido original; solo ajusta el formato. Responde ÚNICAMENTE con el texto reformateado, sin ningún preámbulo, introducción ni comentario propio (nada como "Aquí tienes el texto..." ni similares) — tu respuesta se le manda tal cual al candidato por WhatsApp.',
         },
         { role: 'user', content: informacionVacante },
       ],
