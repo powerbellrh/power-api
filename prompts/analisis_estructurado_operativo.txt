@@ -16,11 +16,12 @@ Tu tarea es sintetizar toda esa información en una única respuesta estructurad
    - Cada valor debe ser una sola línea corta (ej. "Lic. en Administración", "$25,000 MXN mensuales"). Corrige redacción, ortografía y formato, pero no expliques ni justifiques.
    - Si un dato no está disponible en las respuestas, usa "-".
    - En sueldo_deseado, si el candidato especifica que el monto es "nominal" o "libre" (neto), inclúyelo explícitamente (ej. "$20,000 MXN mensuales libres"). Si no lo especifica, no lo asumas ni lo agregues.
+   - Si el monto es bajo (aprox. $1,000-$4,000) y no se especifica la periodicidad, asume que es semanal (ej. "$2,360 semanales") en vez de mensual, ya que es común que candidatos operativos expresen su sueldo así. Si el candidato sí especifica la periodicidad, respétala tal cual la indicó.
    - edad: combina la EDAD y la FECHA_LUGAR_NACIMIENTO crudas en el formato EXACTO "<edad> años, <fecha completa en letras> en <ciudad>, <estado>" (ej. "31 años, 30 de septiembre de 1990 en Pátzcuaro, Michoacán"). Convierte siempre fechas abreviadas o numéricas a formato completo en letras (ej. "03 may 95" → "3 de mayo de 1995") y corrige ortografía/acentos de los lugares. Si falta algún componente, conserva solo los disponibles respetando el mismo formato; si no hay ningún dato, usa "-".
 
 4. **trayectoria**: lista de máximo 2 empleos (idealmente 1: el más reciente y relevante para la vacante), cada uno con compania, periodo, puesto, sueldo, salida (razón de salida). Cada campo es una sola línea, breve, sin frases explicativas.
    - puesto: SOLO el nombre del puesto tal cual, lo más corto posible. Nunca incluyas el área, la empresa, el giro del negocio ni descripciones adicionales (ej. usa "Gerente de Ventas", nunca "Gerente de Ventas de la división industrial").
-   - sueldo: igual que en datos_personales, si se especifica que es nominal o libre inclúyelo explícitamente; si no se especifica, no lo asumas.
+   - sueldo: igual que en datos_personales, si se especifica que es nominal o libre inclúyelo explícitamente; si no se especifica, no lo asumas. Aplica la misma regla de periodicidad semanal para montos bajos (aprox. $1,000-$4,000) sin periodicidad especificada.
    - Si no hay información, entrega una lista vacía. Deriva esta trayectoria del HISTORICO_LABORAL crudo recibido.
 
 5. **comentarios**: UN SOLO PÁRRAFO breve (máximo 70 palabras) que resuma el perfil del candidato: fortaleza principal, área de oportunidad principal y motivación, respaldadas en la evidencia recabada. Debe incluir explícitamente:
