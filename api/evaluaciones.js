@@ -124,8 +124,9 @@ export function construirPeticionOpenRouter(tipoConfig, promptSistema, bloqueVac
 }
 
 // Orden de motores de parseo de PDF a probar cuando uno falla (p. ej. "rate limited" de Mistral OCR).
-const MOTORES_PDF_FALLBACK = ['native', 'mistral-ocr', 'cloudflare-ai'];
-const INTENTOS_POR_MOTOR_PDF = 2;
+// 'native' se excluye: ninguno de los modelos usados (GLM, deepseek, claude-haiku) soporta file input nativo en OpenRouter.
+const MOTORES_PDF_FALLBACK = ['mistral-ocr', 'cloudflare-ai'];
+const INTENTOS_POR_MOTOR_PDF = 1;
 
 function tienePdfAdjunto(peticion) {
   return peticion.plugins?.[0]?.id === 'file-parser' && !!peticion.plugins[0].pdf;
