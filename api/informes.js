@@ -158,7 +158,7 @@ const INFORME_TOOL_OPERATIVO = {
             required: ['compania', 'periodo', 'puesto', 'sueldo', 'salida'],
           },
         },
-        comentarios: { type: 'string', description: 'Un solo párrafo, máximo 70 palabras, que incluya explícitamente la movilidad del candidato hacia la empresa y la percepción del consultor sobre el candidato. La última frase siempre debe ser una recomendación explícita de avance en el proceso — este informe solo se genera para candidatos que ya se decidió avanzar.' },
+        comentarios: { type: 'string', description: 'Un solo párrafo, máximo 70 palabras, que incluya explícitamente la movilidad del candidato hacia la empresa y las notas del consultor (combinando contexto personal y percepción del consultor sobre el candidato). La última frase siempre debe ser una recomendación explícita de avance en el proceso — este informe solo se genera para candidatos que ya se decidió avanzar.' },
       },
       required: ['nombre', 'cliente', 'vacante', 'datos_personales', 'trayectoria', 'comentarios'],
     },

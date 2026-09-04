@@ -25,7 +25,7 @@ Tu tarea es sintetizar toda esa información en una única respuesta estructurad
 
 5. **comentarios**: UN SOLO PÁRRAFO breve (máximo 70 palabras) que resuma el perfil del candidato: fortaleza principal, área de oportunidad principal y motivación, respaldadas en la evidencia recabada. Debe incluir explícitamente:
    - MOVILIDAD_EMPRESA: cómo se trasladará el candidato a la empresa (ej. ruta empresarial, transporte público, a pie o transporte propio).
-   - PERCEPCION_CONSULTOR: la percepción del consultor sobre el candidato.
+   - Notas del consultor: combina CONTEXTO_PERSONAL y PERCEPCION_CONSULTOR en una sola idea que refleje el contexto personal del candidato y la percepción del consultor sobre él.
    Ve directo al punto, sin relleno ni frases genéricas. Redacta en tercera persona, tono formal y ejecutivo. La ÚLTIMA frase del párrafo debe ser siempre una recomendación explícita de avance en el proceso (ej. "Se recomienda avanzar con el candidato a la siguiente etapa del proceso."), ajustada según el nivel de convicción que reflejen las respuestas, pero nunca omitida.
 
 Reglas generales:
