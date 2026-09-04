@@ -123,7 +123,34 @@ export function construirPeticionOpenRouter(tipoConfig, promptSistema, bloqueVac
   };
 }
 
+// Orden de motores de parseo de PDF a probar cuando uno falla (p. ej. "rate limited" de Mistral OCR).
+const MOTORES_PDF_FALLBACK = ['native', 'mistral-ocr', 'cloudflare-ai'];
+const INTENTOS_POR_MOTOR_PDF = 2;
+
+function tienePdfAdjunto(peticion) {
+  return peticion.plugins?.[0]?.id === 'file-parser' && !!peticion.plugins[0].pdf;
+}
+
 async function llamarOpenRouter(peticion) {
+  if (!tienePdfAdjunto(peticion)) return ejecutarLlamadaOpenRouter(peticion);
+
+  let ultimoError;
+  for (const motor of MOTORES_PDF_FALLBACK) {
+    const peticionConMotor = { ...peticion, plugins: [{ id: 'file-parser', pdf: { engine: motor } }] };
+
+    for (let intento = 1; intento <= INTENTOS_POR_MOTOR_PDF; intento++) {
+      try {
+        return await ejecutarLlamadaOpenRouter(peticionConMotor);
+      } catch (e) {
+        ultimoError = e;
+        console.log(JSON.stringify({ etapa: 'openrouter_pdf_fallback', estado: 'error', motor, intento, mensaje: e.message }));
+      }
+    }
+  }
+  throw ultimoError;
+}
+
+async function ejecutarLlamadaOpenRouter(peticion) {
   const datos = await orChatCompletion(peticion, process.env.OPENROUTER_API_KEY_EVALUACIONES);
 
   const mensaje = datos?.choices?.[0]?.message;
