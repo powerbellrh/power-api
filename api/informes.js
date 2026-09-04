@@ -1,14 +1,18 @@
 import { readFileSync }  from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { ttObtener, ttCrear, ttSubirArchivoTransitorio } from '../lib/clientes_api.js';
+import { ttObtener, ttActualizar, ttCrear, ttSubirArchivoTransitorio } from '../lib/clientes_api.js';
 import { orChatCompletion, orGenerarImagen } from '../lib/openrouter.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const PROMPT_ANALISIS_ESTRUCTURADO = readFileSync(join(__dirname, '../prompts/analisis_estructurado.txt'), 'utf-8');
+const PROMPT_ANALISIS_ESTRUCTURADO           = readFileSync(join(__dirname, '../prompts/analisis_estructurado.txt'), 'utf-8');
+const PROMPT_ANALISIS_ESTRUCTURADO_OPERATIVO = readFileSync(join(__dirname, '../prompts/analisis_estructurado_operativo.txt'), 'utf-8');
 const OPENROUTER_MODEL             = 'anthropic/claude-sonnet-5';
 const OPENROUTER_MODEL_IMAGEN      = 'google/gemini-3.1-flash-lite-image';
+const FOTO_PERFIL_DEFAULT          = 'https://i.ibb.co/JwvVrDr0/fotodesconocido.png';
+const FOTO_PERFIL_HOMBRE           = 'https://i.ibb.co/4RGYgcC4/fotohombre.png';
+const FOTO_PERFIL_MUJER            = 'https://i.ibb.co/6CdjYbv/fotomujer.png';
 const PROMPT_RETOQUE_FOTO          = 'El propósito de este retoque es mostrar a la persona en una gran versión corporativa de sí misma, para presentarla ante un cliente. Aplica únicamente retoques ligeros a esta fotografía, en beneficio de la persona, que incrementen ligeramente su imagen corporativa y profesional, y aumenta la resolución/nitidez de la imagen. No alteres ningún rasgo facial de la persona, ni su maquillaje, ni ninguna expresión de su personalidad: la persona debe seguir viéndose como ella misma. Puedes ajustar el encuadre/enmarcado y simular ángulos más profesionales, pero el resultado debe lucir natural, sin verse alterado ni artificial. Asegúrate de que la persona esté vistiendo siempre ropa formal de oficina (por ejemplo, camisa, blusa o saco), ajustando la vestimenta de manera natural y coherente con la persona y el encuadre.';
 
 // Mapeo de preguntas de TeamTailor -> etiqueta legible que se envía al modelo.
@@ -29,6 +33,20 @@ const QUESTION_MAPPING = {
   '121806': 'MOTIVACIONES_Y_EXPECTATIVAS',
   '121807': 'NOTAS_DEL_ENTREVISTADOR',
   '121808': 'HISTORICO_LABORAL',
+};
+
+// Mapeo de preguntas de TeamTailor -> etiqueta legible, para el modo "operativo".
+const QUESTION_MAPPING_OPERATIVO = {
+  '74195': 'FECHA_LUGAR_NACIMIENTO',
+  '70845': 'EDAD',
+  '73101': 'DOMICILIO',
+  '73099': 'ESTADO_CIVIL',
+  '74382': 'ESCOLARIDAD',
+  '74197': 'MOVILIDAD_EMPRESA',
+  '74198': 'SUELDO_DESEADO',
+  '74429': 'HISTORICO_LABORAL',
+  '74426': 'CONTEXTO_PERSONAL',
+  '74396': 'PERCEPCION_CONSULTOR',
 };
 
 const INFORME_TOOL = {
@@ -102,6 +120,106 @@ const INFORME_TOOL = {
   },
 };
 
+const INFORME_TOOL_OPERATIVO = {
+  type: 'function',
+  function: {
+    name:        'informe_operativo_estructurado',
+    description: 'Entrega el análisis estructurado del candidato operativo para el informe ejecutivo de una sola página. Todos los textos deben ser de una sola línea, breves y ejecutivos.',
+    parameters: {
+      type: 'object',
+      properties: {
+        nombre: { type: 'string', description: 'Nombre completo del candidato, en MAYÚSCULAS, con ortografía y capitalización corregidas si vienen mal escritas. No inventes ni cambies el nombre, solo corrige errores evidentes de captura.' },
+        cliente: { type: 'string', description: 'Nombre del cliente, en MAYÚSCULAS. El texto crudo de la vacante sigue la convención "CLIENTE - PUESTO"; toma la parte ANTES del primer guion, corrige su ortografía y elimina espacios sobrantes. Si no hay un guion en el texto crudo, usa "-".' },
+        vacante: { type: 'string', description: 'Nombre de la vacante (el puesto), en MAYÚSCULAS, con ortografía corregida. El texto crudo sigue la convención "CLIENTE - PUESTO"; toma SOLO la parte DESPUÉS del primer guion (si no hay guion, usa el texto completo). Elimina cualquier sufijo o marca interna de republicación o control (ej. "V2", "V3", "REPUBLICACION", "RE-PUBLICACION", códigos de ubicación u otras etiquetas internas), dejando solo el nombre real del puesto.' },
+        datos_personales: {
+          type: 'object',
+          properties: {
+            estado_civil:   { type: 'string', description: 'Una sola línea, ej. "Casado(a)".' },
+            educacion:      { type: 'string', description: 'Una sola línea, ej. "Lic. en Administración".' },
+            domicilio:      { type: 'string', description: 'Una sola línea.' },
+            sueldo_deseado: { type: 'string', description: 'Una sola línea. Si el candidato especifica que es nominal o libre, inclúyelo.' },
+            edad:           { type: 'string', description: 'Formato EXACTO y obligatorio: "<edad> años, <fecha completa en letras> en <ciudad>, <estado>", ej. "31 años, 30 de septiembre de 1990 en Pátzcuaro, Michoacán". Convierte fechas abreviadas o numéricas a formato completo en letras ("03 may 95" → "3 de mayo de 1995") y corrige nombres de lugares (acentos, mayúsculas). Si falta la edad, el lugar o la fecha, omite esa parte pero conserva lo disponible en el mismo formato. Si no hay ningún dato, usa "-".' },
+          },
+          required: ['estado_civil', 'educacion', 'domicilio', 'sueldo_deseado', 'edad'],
+        },
+        trayectoria: {
+          type: 'array',
+          description: 'Máximo 2 empleos (idealmente 1: el más reciente y relevante), más reciente primero. Lista vacía si no hay información.',
+          maxItems: 2,
+          items: {
+            type: 'object',
+            properties: {
+              compania: { type: 'string', description: 'Una sola línea.' },
+              periodo:  { type: 'string', description: 'Una sola línea. Usa fechas concretas si están disponibles, formato "<Mes> <año> a <Mes> <año>" (ej. "Marzo 2019 a Febrero 2021"), o "<Mes> <año> a la fecha" si sigue vigente. Nunca uses una duración aproximada como "5 años"; solo recurre a eso si no hay ninguna fecha disponible.' },
+              puesto:   { type: 'string', description: 'SOLO el nombre del puesto tal cual, lo más corto posible. Nunca incluir área, empresa, giro del negocio ni descripciones adicionales (ej. "Gerente de Ventas", nunca "Gerente de Ventas de la división industrial").' },
+              sueldo:   { type: 'string', description: 'Una sola línea. Si el candidato especifica que es nominal o libre, inclúyelo.' },
+              salida:   { type: 'string', description: 'Una sola línea.' },
+            },
+            required: ['compania', 'periodo', 'puesto', 'sueldo', 'salida'],
+          },
+        },
+        comentarios: { type: 'string', description: 'Un solo párrafo, máximo 70 palabras, que incluya explícitamente la movilidad del candidato hacia la empresa y la percepción del consultor sobre el candidato. La última frase siempre debe ser una recomendación explícita de avance en el proceso — este informe solo se genera para candidatos que ya se decidió avanzar.' },
+      },
+      required: ['nombre', 'cliente', 'vacante', 'datos_personales', 'trayectoria', 'comentarios'],
+    },
+  },
+};
+
+const GENERO_TOOL = {
+  type: 'function',
+  function: {
+    name:        'genero_candidato',
+    description: 'Determina el género del candidato según su nombre.',
+    parameters: {
+      type: 'object',
+      properties: {
+        genero: {
+          type:        'string',
+          enum:        ['Hombre', 'Mujer', 'ninguno'],
+          description: 'Género del candidato según su nombre, solo con alta confianza según uso común en México. "ninguno" si es dudoso, unisex o el nombre no es suficiente.',
+        },
+      },
+      required: ['genero'],
+    },
+  },
+};
+
+async function inferirGenero(nombreCompleto) {
+  const datos = await orChatCompletion({
+    model:       OPENROUTER_MODEL,
+    messages:    [{ role: 'user', content: `Nombre del candidato: ${nombreCompleto}` }],
+    tools:       [GENERO_TOOL],
+    tool_choice: { type: 'function', function: { name: 'genero_candidato' } },
+  }, process.env.OPENROUTER_API_KEY_INFORMES);
+
+  const llamada = datos?.choices?.[0]?.message?.tool_calls?.find(c => c.function?.name === 'genero_candidato');
+  if (!llamada) return 'ninguno';
+
+  const argumentos = typeof llamada.function.arguments === 'string' ? JSON.parse(llamada.function.arguments) : llamada.function.arguments;
+  return argumentos?.genero ?? 'ninguno';
+}
+
+// Cuando el candidato no tiene foto de perfil en TeamTailor, le asignamos una
+// foto genérica según su género (inferido por IA a partir del nombre) para que
+// el informe siempre pueda generarse.
+async function asignarFotoGenerica(nombreCompleto, candidatoId) {
+  let genero = 'ninguno';
+  try {
+    genero = await inferirGenero(nombreCompleto);
+  } catch (error) {
+    console.log(JSON.stringify({ etapa: 'foto_generica', estado: 'error', mensaje: error.message, candidato_id: candidatoId }));
+  }
+
+  const fotoGenerica = genero === 'Mujer' ? FOTO_PERFIL_MUJER : genero === 'Hombre' ? FOTO_PERFIL_HOMBRE : FOTO_PERFIL_DEFAULT;
+
+  await ttActualizar(`/candidates/${candidatoId}`, {
+    data: { id: candidatoId.toString(), type: 'candidates', attributes: { picture: fotoGenerica } },
+  }, true);
+
+  console.log(JSON.stringify({ etapa: 'foto_generica', estado: 'ok', candidato_id: candidatoId, genero }));
+  return fotoGenerica;
+}
+
 // ── TeamTailor ───────────────────────────────────────────────────────────
 
 async function obtenerRespuestasCandidato(candidatoId) {
@@ -120,12 +238,12 @@ async function obtenerRespuestasCandidato(candidatoId) {
   return todas;
 }
 
-function parsearRespuestas(respuestas) {
+function parsearRespuestas(respuestas, mapeoPreguntas = QUESTION_MAPPING) {
   const porId = {};
 
   for (const respuesta of respuestas) {
     const preguntaId = respuesta.relationships?.question?.data?.id;
-    if (!preguntaId || !QUESTION_MAPPING[preguntaId]) continue;
+    if (!preguntaId || !mapeoPreguntas[preguntaId]) continue;
 
     const attrs        = respuesta.attributes ?? {};
     const opciones      = attrs.choices ?? [];
@@ -162,10 +280,10 @@ function limpiarValor(valor, fallback = '-') {
   return texto && !['None', 'null', 'NA', 'N/A'].includes(texto) ? texto : fallback;
 }
 
-function construirBloqueRespuestasCrudas(respuestasPorId) {
+function construirBloqueRespuestasCrudas(respuestasPorId, mapeoPreguntas = QUESTION_MAPPING) {
   const lineas = [];
 
-  for (const [preguntaId, etiqueta] of Object.entries(QUESTION_MAPPING)) {
+  for (const [preguntaId, etiqueta] of Object.entries(mapeoPreguntas)) {
     const valores = respuestasPorId[preguntaId];
     if (!valores?.length) continue;
     const texto = valores.length > 1 ? valores.join('\n') : valores[0];
@@ -200,8 +318,15 @@ function reconstruirAnalisisPrevio(respuestaAnterior) {
   };
 }
 
-async function obtenerAnalisisEstructurado(respuestasPorId, nombreCandidato, vacante, comentarios, respuestaAnterior) {
-  const bloqueCrudo   = construirBloqueRespuestasCrudas(respuestasPorId);
+async function obtenerAnalisisEstructurado(respuestasPorId, nombreCandidato, vacante, comentarios, respuestaAnterior, opciones = {}) {
+  const {
+    mapeoPreguntas = QUESTION_MAPPING,
+    prompt         = PROMPT_ANALISIS_ESTRUCTURADO,
+    tool           = INFORME_TOOL,
+    nombreTool     = 'informe_estructurado',
+  } = opciones;
+
+  const bloqueCrudo   = construirBloqueRespuestasCrudas(respuestasPorId, mapeoPreguntas);
   let mensajeUsuario = `Candidato: ${nombreCandidato}\nVacante: ${vacante}\n\n${bloqueCrudo}`;
 
   if (comentarios) {
@@ -220,15 +345,15 @@ async function obtenerAnalisisEstructurado(respuestasPorId, nombreCandidato, vac
   const datos = await orChatCompletion({
     model:      OPENROUTER_MODEL,
     messages: [
-      { role: 'system', content: PROMPT_ANALISIS_ESTRUCTURADO },
+      { role: 'system', content: prompt },
       { role: 'user',   content: mensajeUsuario },
     ],
-    tools:       [INFORME_TOOL],
-    tool_choice: { type: 'function', function: { name: 'informe_estructurado' } },
+    tools:       [tool],
+    tool_choice: { type: 'function', function: { name: nombreTool } },
     reasoning:   { effort: 'high' },
   }, process.env.OPENROUTER_API_KEY_INFORMES);
 
-  const llamada = datos?.choices?.[0]?.message?.tool_calls?.find(c => c.function?.name === 'informe_estructurado');
+  const llamada = datos?.choices?.[0]?.message?.tool_calls?.find(c => c.function?.name === nombreTool);
   if (!llamada) throw new Error('OpenRouter no devolvió una respuesta estructurada válida');
 
   const argumentos = llamada.function.arguments;
@@ -314,7 +439,8 @@ export default async function handler(req, res) {
   if (process.env.INFORMES_API_KEY && claveApi !== process.env.INFORMES_API_KEY)
     return res.status(401).json({ error: 'Unauthorized' });
 
-  const { postulacion: postulacionId, vacante: vacanteId, comentarios, respuesta_anterior: respuestaAnterior, imagen: mejorarFoto, cv: soloCurriculum } = req.body ?? {};
+  const { postulacion: postulacionId, vacante: vacanteId, comentarios, respuesta_anterior: respuestaAnterior, imagen: mejorarFoto, cv: soloCurriculum, tipo } = req.body ?? {};
+  const esOperativo = tipo === 'operativo';
 
   if (soloCurriculum) {
     if (!postulacionId) {
@@ -352,23 +478,29 @@ export default async function handler(req, res) {
     const primerNombre = attrs['first-name'] ?? '';
     const apellido      = attrs['last-name']  ?? '';
     const nombreCompleto = `${primerNombre} ${apellido}`.trim();
-    const urlFoto        = attrs.picture ?? null;
+    let urlFoto          = attrs.picture ?? null;
     const urlCurriculum  = attrs.resume ?? null;
 
     if (!urlFoto) {
-      console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'candidato sin foto de perfil', postulacion_id: postulacionId }));
-      return res.status(422).json({ error: 'El candidato no tiene foto de perfil' });
+      console.log(JSON.stringify({ etapa: 'validacion', estado: 'sin_foto', mensaje: 'candidato sin foto de perfil, asignando foto genérica', postulacion_id: postulacionId }));
+      urlFoto = await asignarFotoGenerica(nombreCompleto, candidatoId);
     }
 
     const datosVacante   = await ttObtener(`/jobs/${vacanteId}?include=user`, true);
     const nombreInterno  = extraerNombreInterno(datosVacante);
     const nombreReclutador = extraerNombreReclutador(datosVacante);
 
+    const mapeoPreguntas   = esOperativo ? QUESTION_MAPPING_OPERATIVO : QUESTION_MAPPING;
     const respuestasCrudas = await obtenerRespuestasCandidato(candidatoId);
-    const respuestasPorId  = parsearRespuestas(respuestasCrudas);
+    const respuestasPorId  = parsearRespuestas(respuestasCrudas, mapeoPreguntas);
 
-    console.log(JSON.stringify({ etapa: 'analisis_ia', candidato: nombreCompleto, vacante: nombreInterno }));
-    const analisis = await obtenerAnalisisEstructurado(respuestasPorId, nombreCompleto, nombreInterno, comentarios, respuestaAnterior);
+    console.log(JSON.stringify({ etapa: 'analisis_ia', candidato: nombreCompleto, vacante: nombreInterno, tipo: esOperativo ? 'operativo' : 'estandar' }));
+    const analisis = await obtenerAnalisisEstructurado(respuestasPorId, nombreCompleto, nombreInterno, comentarios, respuestaAnterior, esOperativo ? {
+      mapeoPreguntas,
+      prompt:     PROMPT_ANALISIS_ESTRUCTURADO_OPERATIVO,
+      tool:       INFORME_TOOL_OPERATIVO,
+      nombreTool: 'informe_operativo_estructurado',
+    } : {});
 
     let fotoFinal = urlFoto;
     if (mejorarFoto) {
@@ -398,10 +530,12 @@ export default async function handler(req, res) {
     console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', candidato: nombreCompleto, postulacion_id: postulacionId }));
 
     return res.status(200).json({
-      simple:        camposSimples,
-      trayectoria:   analisis.trayectoria ?? [],
-      apego_vacante: analisis.apego_vacante ?? [],
-      competencias:  analisis.competencias ?? [],
+      simple:      camposSimples,
+      trayectoria: analisis.trayectoria ?? [],
+      ...(esOperativo ? {} : {
+        apego_vacante: analisis.apego_vacante ?? [],
+        competencias:  analisis.competencias ?? [],
+      }),
       ...(urlCurriculumFinal ? { curriculum: urlCurriculumFinal } : {}),
       ...(nombreReclutador ? { reclutador: nombreReclutador } : {}),
     });
