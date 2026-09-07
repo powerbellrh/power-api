@@ -542,6 +542,7 @@ export default async function handler(req, res) {
     console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', candidato: nombreCompleto, postulacion_id: postulacionId }));
 
     return res.status(200).json({
+      tipo:        esOperativo ? 'operativo' : 'administrativo',
       simple:      camposSimples,
       trayectoria: analisis.trayectoria ?? [],
       ...(esOperativo ? {} : {
