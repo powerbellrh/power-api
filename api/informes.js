@@ -15,6 +15,13 @@ const FOTO_PERFIL_HOMBRE           = 'https://i.ibb.co/4RGYgcC4/fotohombre.png';
 const FOTO_PERFIL_MUJER            = 'https://i.ibb.co/6CdjYbv/fotomujer.png';
 const PROMPT_RETOQUE_FOTO          = 'El propósito de este retoque es mostrar a la persona en una gran versión corporativa de sí misma, para presentarla ante un cliente. Aplica únicamente retoques ligeros a esta fotografía, en beneficio de la persona, que incrementen ligeramente su imagen corporativa y profesional, y aumenta la resolución/nitidez de la imagen. No alteres ningún rasgo facial de la persona, ni su maquillaje, ni ninguna expresión de su personalidad: la persona debe seguir viéndose como ella misma. Puedes ajustar el encuadre/enmarcado y simular ángulos más profesionales, pero el resultado debe lucir natural, sin verse alterado ni artificial. Asegúrate de que la persona esté vistiendo siempre ropa formal de oficina (por ejemplo, camisa, blusa o saco), ajustando la vestimenta de manera natural y coherente con la persona y el encuadre.';
 
+// IDs de reclutadores (usuarios de TeamTailor) que operan bajo el modo "operativo".
+// Cualquier otro reclutador, o vacantes sin reclutador asignado, usan el modo "administrativo" (default).
+const RECLUTADORES_OPERATIVA = new Set([
+  '42381', '82313', '46016', '107180', '64360', '76703',
+  '45146', '45147', '46250', '68768', '44696',
+]);
+
 // Mapeo de preguntas de TeamTailor -> etiqueta legible que se envía al modelo.
 const QUESTION_MAPPING = {
   '74195':  'FECHA_LUGAR_NACIMIENTO',
@@ -263,6 +270,10 @@ function extraerNombreInterno(datosVacante) {
   return attrs['internal-name'] || attrs.title || '-';
 }
 
+function extraerIdReclutador(datosVacante) {
+  return datosVacante.data?.relationships?.user?.data?.id ?? null;
+}
+
 function extraerNombreReclutador(datosVacante) {
   const usuarioId = datosVacante.data?.relationships?.user?.data?.id;
   if (!usuarioId) return null;
@@ -439,8 +450,7 @@ export default async function handler(req, res) {
   if (process.env.INFORMES_API_KEY && claveApi !== process.env.INFORMES_API_KEY)
     return res.status(401).json({ error: 'Unauthorized' });
 
-  const { postulacion: postulacionId, vacante: vacanteId, comentarios, respuesta_anterior: respuestaAnterior, imagen: mejorarFoto, cv: soloCurriculum, tipo } = req.body ?? {};
-  const esOperativo = tipo === 'operativo';
+  const { postulacion: postulacionId, vacante: vacanteId, comentarios, respuesta_anterior: respuestaAnterior, imagen: mejorarFoto, cv: soloCurriculum } = req.body ?? {};
 
   if (soloCurriculum) {
     if (!postulacionId) {
@@ -489,6 +499,8 @@ export default async function handler(req, res) {
     const datosVacante   = await ttObtener(`/jobs/${vacanteId}?include=user`, true);
     const nombreInterno  = extraerNombreInterno(datosVacante);
     const nombreReclutador = extraerNombreReclutador(datosVacante);
+    const idReclutador   = extraerIdReclutador(datosVacante);
+    const esOperativo    = idReclutador != null && RECLUTADORES_OPERATIVA.has(idReclutador);
 
     const mapeoPreguntas   = esOperativo ? QUESTION_MAPPING_OPERATIVO : QUESTION_MAPPING;
     const respuestasCrudas = await obtenerRespuestasCandidato(candidatoId);
