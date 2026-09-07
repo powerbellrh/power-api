@@ -384,27 +384,32 @@ function generarDespedida(nombre) {
   return `${inicio} por tu tiempo. Una reclutadora se pondrá en contacto contigo lo más pronto posible para continuar con tu proceso.`.slice(0, 250);
 }
 
-async function formatearVacanteParaWhatsApp(informacionVacante, log) {
-  try {
-    const datos = await orChatCompletion({
-      model:     OPENROUTER_MODEL,
-      reasoning: { enabled: false },
-      messages: [
-        {
-          role:    'system',
-          content: 'Reformatea el siguiente texto de una vacante para que se vea bien en WhatsApp: cada título de sección debe llevar negritas usando asteriscos, por ejemplo *Responsabilidades*. No cambies, resumas, traduzcas ni agregues ninguna palabra del contenido original; solo ajusta el formato. Responde ÚNICAMENTE con el texto reformateado, sin ningún preámbulo, introducción ni comentario propio (nada como "Aquí tienes el texto..." ni similares) — tu respuesta se le manda tal cual al candidato por WhatsApp.',
-        },
-        { role: 'user', content: informacionVacante },
-      ],
-    });
-
-    const texto = datos?.choices?.[0]?.message?.content?.trim();
-    return texto || informacionVacante;
-  } catch (e) {
-    log('formato_vacante', { estado: 'error', error: e.message });
-    return informacionVacante;
-  }
-}
+// Deshabilitado: el LLM a veces respondía con meta-comentarios (consejos de
+// redacción, opciones alternativas, placeholders sin rellenar) en vez de solo
+// reformatear el texto, y eso se le mandaba tal cual al candidato por WhatsApp.
+// Se deja el código por si se retoma con un caché (la vacante no cambia seguido,
+// así que el resultado se podría cachear por id de vacante y revisar una sola vez).
+// async function formatearVacanteParaWhatsApp(informacionVacante, log) {
+//   try {
+//     const datos = await orChatCompletion({
+//       model:     OPENROUTER_MODEL,
+//       reasoning: { enabled: false },
+//       messages: [
+//         {
+//           role:    'system',
+//           content: 'Reformatea el siguiente texto de una vacante para que se vea bien en WhatsApp: cada título de sección debe llevar negritas usando asteriscos, por ejemplo *Responsabilidades*. No cambies, resumas, traduzcas ni agregues ninguna palabra del contenido original; solo ajusta el formato. Responde ÚNICAMENTE con el texto reformateado, sin ningún preámbulo, introducción ni comentario propio (nada como "Aquí tienes el texto..." ni similares) — tu respuesta se le manda tal cual al candidato por WhatsApp.',
+//         },
+//         { role: 'user', content: informacionVacante },
+//       ],
+//     });
+//
+//     const texto = datos?.choices?.[0]?.message?.content?.trim();
+//     return texto || informacionVacante;
+//   } catch (e) {
+//     log('formato_vacante', { estado: 'error', error: e.message });
+//     return informacionVacante;
+//   }
+// }
 
 async function generarRespuestaAgente({ items, conversacion }) {
   const listaPreguntas = items
@@ -486,8 +491,7 @@ async function detectarYCargarVacante({ supabase, fila, idSuscriptor, telefono, 
       })
     : null;
 
-  const informacionVacanteCruda = limpiarHtmlParaWhatsApp(datosVacante.body);
-  const informacionVacante      = await formatearVacanteParaWhatsApp(informacionVacanteCruda, log);
+  const informacionVacante = limpiarHtmlParaWhatsApp(datosVacante.body);
   log('teamtailor', { estado: 'ok', titulo: datosVacante.title, chars: informacionVacante.length });
 
   try {
