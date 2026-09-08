@@ -44,7 +44,7 @@ export const PROMPTS = {
   REEVAL_AD: readFileSync(join(__dirname, '../prompts/reevaluacion_administrativa.txt'), 'utf-8'),
 };
 
-const OPENROUTER_MODEL_AD        = 'z-ai/glm-5.2';
+const OPENROUTER_MODEL_AD        = 'z-ai/glm-5.3';
 const OPENROUTER_MODEL_OP        = 'deepseek/deepseek-v4-flash-0731';
 const OPENROUTER_MODEL_OP_VISION = 'anthropic/claude-haiku-4.5'; // GLM no tiene ruta en OpenRouter que acepte imágenes
 
