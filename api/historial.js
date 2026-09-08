@@ -278,7 +278,7 @@ async function manejarEnviarAgenda(candidato, data) {
   }
 
   try {
-    const mensajeWa = `Hola ${candidato.first_name || ''}, soy reclutador(a) de PowerBell y me interesó tu perfil para la vacante de ${tituloVacante}.`.trim();
+    const mensajeWa = `Hola ${candidato.first_name || ''}, soy un reclutador de PowerBell y me interesó tu perfil para la vacante de ${tituloVacante}.`.trim();
     const enlaceWa  = `https://wa.me/${telefono}?text=${encodeURIComponent(mensajeWa)}`;
 
     await ttCrear('/notes', {
