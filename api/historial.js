@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { ttObtener, mcCrear, mcObtener } from '../lib/clientes_api.js';
+import { ttObtener, ttCrear, mcCrear, mcObtener } from '../lib/clientes_api.js';
 import { limpiarTelefono, normalizarTelefonoMx } from '../lib/evaluacion_postulacion.js';
 import {
   AGENDA_MANYCHAT_FLOW_NS,
@@ -10,6 +10,7 @@ import {
   AGENDA_MANYCHAT_FIELD_CANDIDATO_NOMBRE,
   AGENDA_MANYCHAT_FIELD_CANDIDATO_TEAMTAILOR_ID,
   MANYCHAT_FIELD_PHONE_ID,
+  TEAMTAILOR_USER_ID,
 } from '../lib/config.js';
 
 const URL_GENERATE     = 'https://power-api-alpha.vercel.app/api/powerid';
@@ -274,6 +275,26 @@ async function manejarEnviarAgenda(candidato, data) {
     console.log(JSON.stringify({ etapa: 'agenda_whatsapp', estado: 'ok', candidato_id: candidato.id }));
   } catch (e) {
     console.log(JSON.stringify({ etapa: 'agenda_whatsapp', estado: 'error', candidato_id: candidato.id, mensaje: e.message }));
+  }
+
+  try {
+    const mensajeWa = `Hola ${candidato.first_name || ''}, soy reclutador(a) de PowerBell y me interesó tu perfil para la vacante de ${tituloVacante}.`.trim();
+    const enlaceWa  = `https://wa.me/${telefono}?text=${encodeURIComponent(mensajeWa)}`;
+
+    await ttCrear('/notes', {
+      data: {
+        type: 'notes',
+        attributes: { note: `📲 Contactar candidato por WhatsApp: ${enlaceWa}` },
+        relationships: {
+          candidate:          { data: { id: candidato.id.toString(), type: 'candidates' } },
+          user:               { data: { id: TEAMTAILOR_USER_ID, type: 'users' } },
+          'job-application':  { data: { id: data.id.toString(), type: 'job-applications' } },
+        },
+      },
+    });
+    console.log(JSON.stringify({ etapa: 'agenda_nota_whatsapp', estado: 'ok', candidato_id: candidato.id }));
+  } catch (e) {
+    console.log(JSON.stringify({ etapa: 'agenda_nota_whatsapp', estado: 'error', candidato_id: candidato.id, mensaje: e.message }));
   }
 }
 

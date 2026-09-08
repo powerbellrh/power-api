@@ -13,6 +13,7 @@ import { TEAMTAILOR_ADDRESS_QUESTION_ID, TEAMTAILOR_EDAD_QUESTION_ID, TEAMTAILOR
 const __dirname                      = dirname(fileURLToPath(import.meta.url));
 const PROMPT_AGENTE_CONVERSACIONAL   = readFileSync(join(__dirname, '../prompts/agente_conversacional.txt'), 'utf-8');
 const PROMPT_AGENTE_GENERAL          = readFileSync(join(__dirname, '../prompts/agente_general.txt'), 'utf-8');
+const PROMPT_PREGUNTAS_ENRIQUECIMIENTO = readFileSync(join(__dirname, '../prompts/preguntas_enriquecimiento.txt'), 'utf-8');
 const OPENROUTER_MODEL               = 'deepseek/deepseek-v4-flash-0731';
 const LIMITE_REINTENTOS              = 3;
 const MAXIMO_PREGUNTAS               = 5;
@@ -204,7 +205,7 @@ async function enviarRespuestaCandidato(idSuscriptor, texto) {
 // ============================================================================
 
 async function crearPostulacionTeamTailor(candidatoId, idVacante) {
-  await ttCrear('/job-applications', {
+  const respuesta = await ttCrear('/job-applications', {
     data: {
       type:       'job-applications',
       attributes: { sourced: true },
@@ -214,6 +215,15 @@ async function crearPostulacionTeamTailor(candidatoId, idVacante) {
       },
     },
   });
+  return Number(respuesta.data.id);
+}
+
+// Backfill: para filas de `chatbot` creadas antes de que se empezara a guardar
+// `postulacion`, se busca el job-application ya existente en TeamTailor.
+async function buscarPostulacionTeamTailor(candidatoId, idVacante) {
+  const respuesta = await ttObtener(`/candidates/${candidatoId}/job-applications`, true);
+  const coincidencia = (respuesta.data ?? []).find(ja => ja.relationships?.job?.data?.id === String(idVacante));
+  return coincidencia ? Number(coincidencia.id) : null;
 }
 
 async function crearCandidatoTeamTailor(nombre, genero, telefono, idVacante) {
@@ -435,6 +445,46 @@ async function generarRespuestaAgente({ items, conversacion }) {
   return typeof llamada.function.arguments === 'string' ? JSON.parse(llamada.function.arguments) : llamada.function.arguments;
 }
 
+const GENERAR_PREGUNTAS_TOOL = {
+  type: 'function',
+  function: {
+    name:        'generar_preguntas',
+    description: 'Registra las 5 preguntas de enriquecimiento generadas para el candidato.',
+    parameters: {
+      type: 'object',
+      properties: {
+        preguntas: {
+          type:        'array',
+          description: 'Exactamente 5 preguntas, como texto plano sin numerarlas.',
+          items:       { type: 'string' },
+          minItems:    5,
+          maxItems:    5,
+        },
+      },
+      required: ['preguntas'],
+    },
+  },
+};
+
+async function generarPreguntasEnriquecimiento(conversacion) {
+  const datos = await orChatCompletion({
+    model:       OPENROUTER_MODEL,
+    reasoning:   { effort: 'medium' },
+    messages: [
+      { role: 'system', content: PROMPT_PREGUNTAS_ENRIQUECIMIENTO },
+      { role: 'user',   content: conversacion },
+    ],
+    tools:       [GENERAR_PREGUNTAS_TOOL],
+    tool_choice: { type: 'function', function: { name: 'generar_preguntas' } },
+  });
+
+  const llamada = datos?.choices?.[0]?.message?.tool_calls?.find(c => c.function?.name === 'generar_preguntas');
+  if (!llamada) throw new Error('OpenRouter no devolvió preguntas de enriquecimiento válidas');
+
+  const { preguntas } = typeof llamada.function.arguments === 'string' ? JSON.parse(llamada.function.arguments) : llamada.function.arguments;
+  return preguntas.slice(0, 5);
+}
+
 async function generarRespuestaAgenteGeneral(conversacion) {
   const datos = await orChatCompletion({
     model:     OPENROUTER_MODEL,
@@ -540,13 +590,14 @@ async function detectarYCargarVacante({ supabase, fila, idSuscriptor, telefono, 
     // se recrea con los datos que ya tenemos.
     if (candidatoIdExistente) {
       try {
-        const { candidatoId: candidatoIdValido } = await conCandidatoValido(
+        const { candidatoId: candidatoIdValido, resultado: postulacionId } = await conCandidatoValido(
           candidatoIdExistente,
           id => crearPostulacionTeamTailor(id, idVacanteNum),
           { nombre: nombreConocido || telefono, genero: null, telefono, idVacante: idVacanteNum, log },
         );
-        fila.candidato = candidatoIdValido;
-        log('postulacion_creada', { estado: 'ok', candidato_id: candidatoIdValido, idVacante: idVacanteNum });
+        fila.candidato   = candidatoIdValido;
+        fila.postulacion = postulacionId;
+        log('postulacion_creada', { estado: 'ok', candidato_id: candidatoIdValido, postulacion_id: postulacionId, idVacante: idVacanteNum });
       } catch (e) {
         log('postulacion_creada', { estado: 'error', error: e.message });
       }
@@ -560,10 +611,11 @@ async function detectarYCargarVacante({ supabase, fila, idSuscriptor, telefono, 
     const { error: errorReinicio } = await supabase
       .from('chatbot')
       .update({
-        vacante:    fila.vacante,
-        preguntas:  fila.preguntas,
-        reintentos: 0,
-        candidato:  fila.candidato ?? null,
+        vacante:     fila.vacante,
+        preguntas:   fila.preguntas,
+        reintentos:  0,
+        candidato:   fila.candidato ?? null,
+        postulacion: fila.postulacion ?? null,
         ...(esRegreso ? { conversacion: null } : {}),
       })
       .eq('id', fila.id);
@@ -749,8 +801,29 @@ export async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor
     return { ...item, respuesta: respuestaValidada || item.respuesta };
   });
 
-  const avanzo           = detectarAvance(itemsPreguntas, itemsActualizados);
-  const todasRespondidas = itemsActualizados.every(item => item.respuesta);
+  // En cuanto se responde el empleo anterior, se generan 5 preguntas de
+  // enriquecimiento y se agregan al arreglo como items más — así el mismo
+  // agente conversacional las sigue preguntando en los turnos siguientes.
+  const empleoRespondioAhora = !itemsPreguntas.find(i => i.id === ID_PREGUNTA_EMPLEO)?.respuesta
+    && itemsActualizados.find(i => i.id === ID_PREGUNTA_EMPLEO)?.respuesta;
+  const yaTienePreguntasExtra = itemsActualizados.some(i => i.tipo === 'extra');
+
+  let itemsConExtra = itemsActualizados;
+  if (empleoRespondioAhora && !yaTienePreguntasExtra) {
+    try {
+      const preguntasExtra = await generarPreguntasEnriquecimiento(fila.conversacion);
+      itemsConExtra = [
+        ...itemsActualizados,
+        ...preguntasExtra.map((texto, i) => ({ id: `extra_${i + 1}`, texto, respuesta: '', tipo: 'extra', enviado: false })),
+      ];
+      log('preguntas_enriquecimiento', { estado: 'ok', cantidad: preguntasExtra.length });
+    } catch (e) {
+      log('preguntas_enriquecimiento', { estado: 'error', error: e.message });
+    }
+  }
+
+  const avanzo           = detectarAvance(itemsPreguntas, itemsConExtra);
+  const todasRespondidas = itemsConExtra.every(item => item.respuesta);
   const nuevoReintentos  = avanzo ? 0 : (fila.reintentos ?? 0) + 1;
 
   let mensajeAgente     = (resultadoAgente.mensaje ?? '').slice(0, 250);
@@ -760,13 +833,13 @@ export async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor
     mensajeAgente     = MENSAJE_DESPEDIDA_COMPLETADO;
     reintentosFinales = 0;
   } else if (nuevoReintentos >= LIMITE_REINTENTOS) {
-    const nombreCandidato = itemsActualizados.find(item => item.id === ID_PREGUNTA_NOMBRE)?.respuesta;
+    const nombreCandidato = itemsConExtra.find(item => item.id === ID_PREGUNTA_NOMBRE)?.respuesta;
     mensajeAgente = generarDespedida(nombreCandidato);
   }
 
   // ── Sincronización con TeamTailor: alta de candidato/postulación + respuestas ──
   let candidatoId = fila.candidato ?? null;
-  const itemNombre = itemsActualizados.find(item => item.id === ID_PREGUNTA_NOMBRE);
+  const itemNombre = itemsConExtra.find(item => item.id === ID_PREGUNTA_NOMBRE);
   const genero = resultadoAgente.genero && resultadoAgente.genero !== 'ninguno' ? resultadoAgente.genero : null;
 
   // El candidato ya existe en TeamTailor desde su primer mensaje (nombre = teléfono,
@@ -793,8 +866,33 @@ export async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor
   }
 
   if (candidatoId) {
-    for (const item of itemsActualizados) {
-      if (item.tipo === 'nombre' || !item.respuesta || item.enviado) continue;
+    for (const item of itemsConExtra) {
+      if (!item.respuesta || item.enviado) continue;
+
+      if (item.tipo === 'extra') {
+        try {
+          const { candidatoId: candidatoIdValido } = await conCandidatoValido(
+            candidatoId,
+            id => ttCrear('/notes', {
+              data: {
+                type:       'notes',
+                attributes: { note: `❓ Pregunta: ${item.texto}\n💬 Respuesta: ${item.respuesta}` },
+                relationships: { candidate: { data: { id: id.toString(), type: 'candidates' } } },
+              },
+            }),
+            { nombre: itemNombre?.respuesta, genero, telefono, idVacante: fila.vacante, log },
+          );
+          candidatoId = candidatoIdValido;
+          item.enviado = true;
+          log('nota_enriquecimiento', { estado: 'ok', candidato_id: candidatoId, id_pregunta: item.id });
+        } catch (e) {
+          log('nota_enriquecimiento', { estado: 'error', id_pregunta: item.id, error: e.message });
+        }
+        continue;
+      }
+
+      if (item.tipo === 'nombre') continue;
+
       try {
         const { candidatoId: candidatoIdValido } = await conCandidatoValido(
           candidatoId,
@@ -810,7 +908,7 @@ export async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor
     }
   }
 
-  fila.preguntas  = itemsActualizados;
+  fila.preguntas  = itemsConExtra;
   fila.candidato  = candidatoId;
   fila.reintentos = reintentosFinales;
 
@@ -836,6 +934,47 @@ export async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor
       log('conversacion_pdf', { estado: 'ok', candidato_id: candidatoId });
     } catch (e) {
       log('conversacion_pdf', { estado: 'error', error: e.message });
+    }
+
+    const itemsExtra = itemsConExtra.filter(i => i.tipo === 'extra' && i.respuesta);
+    if (itemsExtra.length) {
+      // Backfill: si esta fila nunca capturó el job-application id (candidatos
+      // creados antes de este cambio), se busca en TeamTailor y se persiste.
+      let postulacionId = fila.postulacion ?? null;
+      if (!postulacionId && fila.vacante) {
+        try {
+          postulacionId = await buscarPostulacionTeamTailor(candidatoId, fila.vacante);
+          if (postulacionId) {
+            fila.postulacion = postulacionId;
+            await supabase.from('chatbot').update({ postulacion: postulacionId }).eq('id', fila.id);
+            log('postulacion_recuperada', { estado: 'ok', postulacion_id: postulacionId });
+          }
+        } catch (e) {
+          log('postulacion_recuperada', { estado: 'error', error: e.message });
+        }
+      }
+
+      if (postulacionId) {
+        // Evita duplicar el encolado si el candidato reenvía algo después de completar.
+        const { data: yaEncolada } = await supabase.from('evaluaciones').select('postulacion_id').eq('postulacion_id', postulacionId).maybeSingle();
+
+        if (!yaEncolada) {
+          const { error: errorEncolado } = await supabase.from('evaluaciones').insert([{
+            postulacion_id:        postulacionId,
+            candidato_nombre:      itemNombre?.respuesta ?? '',
+            candidato_telefono:    telefono,
+            vacante_id:            fila.vacante,
+            vacante_tipo:          'OP',
+            evaluacion_agendada:   false,
+            evaluacion_completada: false,
+            origen:                'chatbot',
+          }]);
+          if (errorEncolado) log('evaluacion_encolada', { estado: 'error', error: errorEncolado.message });
+          else log('evaluacion_encolada', { estado: 'ok', postulacion_id: postulacionId });
+        }
+      } else {
+        log('evaluacion_encolada', { estado: 'omitida', razon: 'no se encontró postulacion_id', candidato_id: candidatoId });
+      }
     }
   }
 

@@ -394,7 +394,7 @@ async function procesarReevaluacion(postulacionId, postulacion, supabase) {
 // PROCESAMIENTO EN BACKGROUND
 // ============================================================================
 async function procesarEvaluacion(postulacionId, postulacion, supabase) {
-  const { vacante_id: vacanteId, candidato_nombre: candidatoNombre, candidato_telefono: candidatoTelefono, vacante_tipo: vacanteTipo } = postulacion;
+  const { vacante_id: vacanteId, candidato_nombre: candidatoNombre, candidato_telefono: candidatoTelefono, vacante_tipo: vacanteTipo, origen } = postulacion;
 
   const tipoConfig   = AI_CONFIG[vacanteTipo] ?? AI_CONFIG.AD;
   const systemPrompt = PROMPTS[vacanteTipo]   ?? PROMPTS.AD;
@@ -585,11 +585,15 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     let whatsappEnviado = false;
     let whatsappError   = null;
 
-    if (preguntasExtraidasExitosamente) {
+    if (origen === 'chatbot') {
+      // El candidato ya está en conversación de WhatsApp con el chatbot de
+      // mensajes.js; no se le manda un segundo flow de ManyChat desde aquí.
+      console.log(JSON.stringify({ etapa: 'whatsapp_integracion', estado: 'omitido', razon: 'origen_chatbot' }));
+    } else if (preguntasExtraidasExitosamente) {
       const resultado = await enviarWhatsApp({ candidatoNombrePila: candidatoNombrePila, candidatoTelefono: candidatoTelefonoTt, candidatoId: candidateId, postulacionId, tituloVacante, preguntas: preguntasExtraidas, vacanteTipo });
       whatsappEnviado = resultado.enviado;
       whatsappError   = resultado.error;
-    } else if (!preguntasExtraidasExitosamente) {
+    } else {
       whatsappError = 'Questions section missing or extraction failed';
       console.log(JSON.stringify({ etapa: 'whatsapp_integracion', estado: 'saltado', razon: 'sin_preguntas' }));
     }
