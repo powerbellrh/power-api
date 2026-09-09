@@ -293,6 +293,13 @@ async function agendarNotificacionWhatsApp(supabase, candidato, data, payload) {
 }
 
 async function manejarEnviarAgenda(supabase, candidato, data) {
+  // Sin correo no se puede agendar (el flujo de ManyChat depende del campo de
+  // correo del candidato), así que se salta la etapa por completo.
+  if (!candidato.email) {
+    console.log(JSON.stringify({ etapa: 'agenda_whatsapp', estado: 'saltado', razon: 'sin_correo', candidato_id: candidato.id }));
+    return;
+  }
+
   // Sin teléfono no hay canal de WhatsApp (ManyChat necesita whatsapp_phone para
   // crear el suscriptor), pero la fila se agenda igual — el cron simplemente
   // salta ese canal al procesarla (ver enviarNotificacionAgendaManyChat).
