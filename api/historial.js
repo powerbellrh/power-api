@@ -293,18 +293,14 @@ async function agendarNotificacionWhatsApp(supabase, candidato, data, payload) {
 }
 
 async function manejarEnviarAgenda(supabase, candidato, data) {
+  // Sin teléfono no hay canal de WhatsApp (ManyChat necesita whatsapp_phone para
+  // crear el suscriptor), pero la fila se agenda igual — el cron simplemente
+  // salta ese canal al procesarla (ver enviarNotificacionAgendaManyChat).
   const telefonoLimpio = limpiarTelefono(candidato.phone);
-  if (!telefonoLimpio) {
-    // Sin teléfono no se puede crear el suscriptor de ManyChat (requiere whatsapp_phone),
-    // así que no hay nada que agendar en `notificaciones`; solo se avisa por nota que,
-    // como mínimo, ya se tiene su correo.
+  const telefono       = telefonoLimpio ? normalizarTelefonoMx(telefonoLimpio) : '';
+  if (!telefono) {
     console.log(JSON.stringify({ etapa: 'agenda_whatsapp', estado: 'saltado', razon: 'sin_telefono', candidato_id: candidato.id }));
-    if (candidato.email) {
-      await crearNotaTeamTailor(candidato.id, data.id, '📧 Email agendado', 'agenda_nota_email');
-    }
-    return;
   }
-  const telefono = normalizarTelefonoMx(telefonoLimpio);
 
   const nombreCandidato = [candidato.first_name, candidato.last_name].filter(Boolean).join(' ') || candidato.phone || 'Unknown';
 
@@ -338,13 +334,20 @@ async function manejarEnviarAgenda(supabase, candidato, data) {
   };
 
   await agendarNotificacionWhatsApp(supabase, candidato, data, payload);
-  await crearNotaWhatsApp(candidato, data, telefono, tituloVacante);
+  if (telefono) await crearNotaWhatsApp(candidato, data, telefono, tituloVacante);
 }
 
 // Envía el flujo de WhatsApp de agenda a ManyChat a partir de un `payload` ya
 // resuelto (usado por el cron que procesa `notificaciones`, no por este handler).
 export async function enviarNotificacionAgendaManyChat(payload, candidatoId) {
   const { telefono, correo, nombreCandidato, tituloVacante, urlVacante, nombreReclutadora, whatsappReclutadora } = payload;
+
+  // Sin teléfono no hay canal de WhatsApp (no se puede crear el suscriptor de
+  // ManyChat); se procesa la fila igual, solo se salta este canal.
+  if (!telefono) {
+    console.log(JSON.stringify({ etapa: 'agenda_notificacion_enviada', estado: 'saltado', razon: 'sin_telefono', candidato_id: candidatoId }));
+    return;
+  }
 
   let idUsuarioMc;
   try {
