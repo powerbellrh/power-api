@@ -808,7 +808,8 @@ export async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor
     && itemsActualizados.find(i => i.id === ID_PREGUNTA_EMPLEO)?.respuesta;
   const yaTienePreguntasExtra = itemsActualizados.some(i => i.tipo === 'extra');
 
-  let itemsConExtra = itemsActualizados;
+  let itemsConExtra      = itemsActualizados;
+  let seGeneraronExtras  = false;
   if (empleoRespondioAhora && !yaTienePreguntasExtra) {
     try {
       const preguntasExtra = await generarPreguntasEnriquecimiento(fila.conversacion);
@@ -816,6 +817,7 @@ export async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor
         ...itemsActualizados,
         ...preguntasExtra.map((texto, i) => ({ id: `extra_${i + 1}`, texto, respuesta: '', tipo: 'extra', enviado: false })),
       ];
+      seGeneraronExtras = true;
       log('preguntas_enriquecimiento', { estado: 'ok', cantidad: preguntasExtra.length });
     } catch (e) {
       log('preguntas_enriquecimiento', { estado: 'error', error: e.message });
@@ -835,6 +837,15 @@ export async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor
   } else if (nuevoReintentos >= LIMITE_REINTENTOS) {
     const nombreCandidato = itemsConExtra.find(item => item.id === ID_PREGUNTA_NOMBRE)?.respuesta;
     mensajeAgente = generarDespedida(nombreCandidato);
+  } else if (seGeneraronExtras) {
+    // El mensaje que ya redactó el LLM (resultadoAgente.mensaje) suena a cierre,
+    // porque lo generó sin saber que se le acaban de agregar preguntas extra a
+    // la postulación — se sobreescribe para que el candidato no crea que ya
+    // terminó justo antes de que le sigan preguntando.
+    const nombreCandidato = itemsConExtra.find(item => item.id === ID_PREGUNTA_NOMBRE)?.respuesta;
+    const primeraExtra    = itemsConExtra.find(item => item.tipo === 'extra')?.texto ?? '';
+    const inicio          = nombreCandidato ? `Gracias, ${nombreCandidato}` : 'Gracias';
+    mensajeAgente = `${inicio}. Ya casi terminamos, solo unas preguntas más para conocer mejor tu perfil: ${primeraExtra}`.slice(0, 250);
   }
 
   // ── Sincronización con TeamTailor: alta de candidato/postulación + respuestas ──
