@@ -16,10 +16,18 @@ import {
 const URL_GENERATE     = 'https://power-api-alpha.vercel.app/api/powerid';
 const URL_FELICITACION = 'https://power-api-alpha.vercel.app/api/felicitacion';
 
+// Tiempo que se espera antes de disparar el flujo de WhatsApp de "Enviar agenda"
+// (se guarda en `notificaciones` y la envía después un cron, no este handler).
+const AGENDA_NOTIFICACION_RETRASO_MS = 5 * 60 * 1000;
+
 const MESES = [
   'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
   'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
 ];
+
+// ============================================================================
+// HELPERS — Fecha / hora
+// ============================================================================
 
 function formatearFechaEspanol(fecha) {
   if (!fecha) return '';
@@ -38,16 +46,6 @@ function decimalAHora12(decimal) {
 function construirCitado(fecha, hora) {
   if (!fecha || !hora) return '';
   return `${formatearFechaEspanol(fecha)} a las ${decimalAHora12(hora)}`;
-}
-
-function esCampoValido(valor) {
-  if (valor === null || valor === undefined || valor === '') return false;
-  if (Array.isArray(valor)) return valor.length > 0 && !!valor[0] && valor[0] !== '';
-  return true;
-}
-
-function obtenerCampoPersonalizado(candidato, nombre) {
-  return candidato.custom_fields?.find(f => f.api_name === nombre)?.value;
 }
 
 function fechaMexico(fecha) {
@@ -71,8 +69,23 @@ function timestampCita(fecha, hora) {
 }
 
 // ============================================================================
-// STAGE "ENVIADO A CLIENTE" → genera PowerID y guarda/actualiza en Supabase
+// HELPERS — Candidato / TeamTailor
 // ============================================================================
+
+function esCampoValido(valor) {
+  if (valor === null || valor === undefined || valor === '') return false;
+  if (Array.isArray(valor)) return valor.length > 0 && !!valor[0] && valor[0] !== '';
+  return true;
+}
+
+function obtenerCampoPersonalizado(candidato, nombre) {
+  return candidato.custom_fields?.find(f => f.api_name === nombre)?.value;
+}
+
+// ****************************************************************************
+// STAGE "ENVIADO A CLIENTE" → genera PowerID y guarda/actualiza en Supabase
+// ****************************************************************************
+
 async function manejarEnviadoACliente(supabase, data, candidato) {
   const fecha      = obtenerCampoPersonalizado(candidato, 'fecha-de-cita');
   const hora       = obtenerCampoPersonalizado(candidato, 'hora-de-cita');
@@ -178,9 +191,10 @@ async function manejarEnviadoACliente(supabase, data, candidato) {
   }
 }
 
-// ============================================================================
+// ****************************************************************************
 // STAGE "HIRED" → genera certificado de felicitación vía API externa
-// ============================================================================
+// ****************************************************************************
+
 async function manejarHired(candidato) {
   try {
     const resp = await fetch(URL_FELICITACION, {
@@ -199,84 +213,14 @@ async function manejarHired(candidato) {
   }
 }
 
-// ============================================================================
-// STAGE "Enviar agenda" → crea/busca suscriptor en ManyChat y envía flujo de agenda
-// ============================================================================
-async function manejarEnviarAgenda(candidato, data) {
-  const telefonoLimpio = limpiarTelefono(candidato.phone);
-  if (!telefonoLimpio) {
-    console.log(JSON.stringify({ etapa: 'agenda_whatsapp', estado: 'saltado', razon: 'sin_telefono', candidato_id: candidato.id }));
-    return;
-  }
-  const telefono = normalizarTelefonoMx(telefonoLimpio);
+// ****************************************************************************
+// STAGE "Enviar agenda" → agenda en Supabase el flujo de WhatsApp (lo dispara un
+// cron 5 minutos después, cancelable si el candidato es rechazado o cambia de etapa)
+// ****************************************************************************
 
-  const nombreCandidato = [candidato.first_name, candidato.last_name].filter(Boolean).join(' ') || candidato.phone || 'Unknown';
-
-  let tituloVacante   = '';
-  let urlVacante      = '';
-  let nombreReclutadora   = '';
-  let whatsappReclutadora = '';
-  try {
-    const jobResp = await ttObtener(`/jobs/${data.job_id}?include=user`);
-    tituloVacante = jobResp.data.attributes.title || '';
-    urlVacante    = (jobResp.data.links?.['careersite-job-url'] || '').replace(/^https?:\/\//, '');
-
-    const reclutador = jobResp.included?.find(i => i.type === 'users');
-    nombreReclutadora   = reclutador?.attributes?.name  || '';
-    whatsappReclutadora = reclutador?.attributes?.phone || '';
-  } catch (e) {
-    console.log(JSON.stringify({ etapa: 'agenda_obtener_vacante', estado: 'error', mensaje: e.message }));
-  }
-
-  try {
-    let idUsuarioMc;
-
-    try {
-      const respSuscriptor = await mcCrear('/fb/subscriber/createSubscriber', {
-        first_name:     candidato.first_name || '',
-        whatsapp_phone: `+${telefono}`,
-        consent_phrase: 'Consiento a que mi contacto sea usado para enviarme actualizaciones de las vacantes disponibles',
-      });
-
-      if (respSuscriptor.status !== 'success' || !respSuscriptor.data)
-        throw new Error('createSubscriber did not return success');
-
-      idUsuarioMc = parseInt(respSuscriptor.data.id, 10);
-      if (isNaN(idUsuarioMc))
-        throw new Error(`Invalid subscriber ID: ${respSuscriptor.data.id}`);
-    } catch (errorCreacion) {
-      if (errorCreacion.message.includes('wa_id') && errorCreacion.message.includes('already exists')) {
-        const encontrado = await mcObtener('/fb/subscriber/findByCustomField', {
-          field_id:    MANYCHAT_FIELD_PHONE_ID,
-          field_value: telefono,
-        });
-        const existente = encontrado?.data?.[0];
-        if (!existente?.id)
-          throw new Error(`createSubscriber failed (already exists) and findByCustomField returned no results for phone ${telefono}`);
-        idUsuarioMc = existente.id;
-      } else {
-        throw errorCreacion;
-      }
-    }
-
-    await mcCrear('/fb/subscriber/setCustomFields', {
-      subscriber_id: idUsuarioMc,
-      fields: [
-        { field_id: AGENDA_MANYCHAT_FIELD_RECLUTADORA_NOMBRE,     field_value: nombreReclutadora },
-        { field_id: AGENDA_MANYCHAT_FIELD_RECLUTADORA_WHATSAPP,   field_value: whatsappReclutadora },
-        { field_id: AGENDA_MANYCHAT_FIELD_VACANTE_TITULO,         field_value: tituloVacante },
-        { field_id: AGENDA_MANYCHAT_FIELD_VACANTE_URL,            field_value: urlVacante },
-        { field_id: AGENDA_MANYCHAT_FIELD_CANDIDATO_NOMBRE,       field_value: nombreCandidato },
-        { field_id: AGENDA_MANYCHAT_FIELD_CANDIDATO_TEAMTAILOR_ID, field_value: candidato.id.toString() },
-      ],
-    });
-
-    await mcCrear('/fb/sending/sendFlow', { subscriber_id: idUsuarioMc, flow_ns: AGENDA_MANYCHAT_FLOW_NS });
-    console.log(JSON.stringify({ etapa: 'agenda_whatsapp', estado: 'ok', candidato_id: candidato.id }));
-  } catch (e) {
-    console.log(JSON.stringify({ etapa: 'agenda_whatsapp', estado: 'error', candidato_id: candidato.id, mensaje: e.message }));
-  }
-
+// Nota inmediata en TeamTailor con el link de WhatsApp para que la reclutadora
+// pueda contactar al candidato ella misma sin esperar el flujo automático.
+async function crearNotaWhatsApp(candidato, data, telefono, tituloVacante) {
   try {
     const mensajeWa = `Hola ${candidato.first_name || ''}, soy un reclutador de PowerBell y me interesó tu perfil para la vacante de ${tituloVacante}.`.trim();
     const enlaceWa  = `https://wa.me/${telefono}?text=${encodeURIComponent(mensajeWa)}`;
@@ -298,9 +242,124 @@ async function manejarEnviarAgenda(candidato, data) {
   }
 }
 
-// ============================================================================
+// Agenda en `notificaciones` el envío del flujo de WhatsApp de agenda, con un
+// retraso de AGENDA_NOTIFICACION_RETRASO_MS. Un cron aparte (aún no implementado
+// en este archivo) lee las filas vencidas y ejecuta el envío real a ManyChat;
+// otro flujo cancela la fila si el candidato es rechazado o cambia de etapa antes.
+async function agendarNotificacionWhatsApp(supabase, candidato, data, payload) {
+  const programadoPara = new Date(Date.now() + AGENDA_NOTIFICACION_RETRASO_MS).toISOString();
+
+  const { error } = await supabase.from('notificaciones').insert([{
+    candidato_id:    candidato.id,
+    postulacion_id:  data.id,
+    programado_para: programadoPara,
+    enviado:         false,
+    cancelado:       false,
+    payload,
+  }]);
+
+  if (error) {
+    console.log(JSON.stringify({ etapa: 'agenda_notificacion_agendada', estado: 'error', candidato_id: candidato.id, mensaje: error.message }));
+    return;
+  }
+  console.log(JSON.stringify({ etapa: 'agenda_notificacion_agendada', estado: 'ok', candidato_id: candidato.id, programado_para: programadoPara }));
+}
+
+async function manejarEnviarAgenda(supabase, candidato, data) {
+  const telefonoLimpio = limpiarTelefono(candidato.phone);
+  if (!telefonoLimpio) {
+    console.log(JSON.stringify({ etapa: 'agenda_whatsapp', estado: 'saltado', razon: 'sin_telefono', candidato_id: candidato.id }));
+    return;
+  }
+  const telefono = normalizarTelefonoMx(telefonoLimpio);
+
+  const nombreCandidato = [candidato.first_name, candidato.last_name].filter(Boolean).join(' ') || candidato.phone || 'Unknown';
+
+  let tituloVacante       = '';
+  let urlVacante          = '';
+  let nombreReclutadora   = '';
+  let whatsappReclutadora = '';
+  try {
+    const jobResp = await ttObtener(`/jobs/${data.job_id}?include=user`);
+    tituloVacante = jobResp.data.attributes.title || '';
+    urlVacante    = (jobResp.data.links?.['careersite-job-url'] || '').replace(/^https?:\/\//, '');
+
+    const reclutador = jobResp.included?.find(i => i.type === 'users');
+    nombreReclutadora   = reclutador?.attributes?.name  || '';
+    whatsappReclutadora = reclutador?.attributes?.phone || '';
+  } catch (e) {
+    console.log(JSON.stringify({ etapa: 'agenda_obtener_vacante', estado: 'error', mensaje: e.message }));
+  }
+
+  // El payload se resuelve por completo ahora (teléfono, nombres, vacante) y se
+  // congela en `notificaciones`; el cron que dispara el flujo 5 minutos después
+  // no vuelve a golpear TeamTailor, solo usa lo que ya se guardó aquí.
+  const payload = {
+    telefono,
+    nombreCandidato,
+    tituloVacante,
+    urlVacante,
+    nombreReclutadora,
+    whatsappReclutadora,
+  };
+
+  await agendarNotificacionWhatsApp(supabase, candidato, data, payload);
+  await crearNotaWhatsApp(candidato, data, telefono, tituloVacante);
+}
+
+// Envía el flujo de WhatsApp de agenda a ManyChat a partir de un `payload` ya
+// resuelto (usado por el cron que procesa `notificaciones`, no por este handler).
+export async function enviarNotificacionAgendaManyChat(payload, candidatoId) {
+  const { telefono, nombreCandidato, tituloVacante, urlVacante, nombreReclutadora, whatsappReclutadora } = payload;
+
+  let idUsuarioMc;
+  try {
+    const respSuscriptor = await mcCrear('/fb/subscriber/createSubscriber', {
+      first_name:     nombreCandidato,
+      whatsapp_phone: `+${telefono}`,
+      consent_phrase: 'Consiento a que mi contacto sea usado para enviarme actualizaciones de las vacantes disponibles',
+    });
+
+    if (respSuscriptor.status !== 'success' || !respSuscriptor.data)
+      throw new Error('createSubscriber did not return success');
+
+    idUsuarioMc = parseInt(respSuscriptor.data.id, 10);
+    if (isNaN(idUsuarioMc))
+      throw new Error(`Invalid subscriber ID: ${respSuscriptor.data.id}`);
+  } catch (errorCreacion) {
+    if (errorCreacion.message.includes('wa_id') && errorCreacion.message.includes('already exists')) {
+      const encontrado = await mcObtener('/fb/subscriber/findByCustomField', {
+        field_id:    MANYCHAT_FIELD_PHONE_ID,
+        field_value: telefono,
+      });
+      const existente = encontrado?.data?.[0];
+      if (!existente?.id)
+        throw new Error(`createSubscriber failed (already exists) and findByCustomField returned no results for phone ${telefono}`);
+      idUsuarioMc = existente.id;
+    } else {
+      throw errorCreacion;
+    }
+  }
+
+  await mcCrear('/fb/subscriber/setCustomFields', {
+    subscriber_id: idUsuarioMc,
+    fields: [
+      { field_id: AGENDA_MANYCHAT_FIELD_RECLUTADORA_NOMBRE,     field_value: nombreReclutadora },
+      { field_id: AGENDA_MANYCHAT_FIELD_RECLUTADORA_WHATSAPP,   field_value: whatsappReclutadora },
+      { field_id: AGENDA_MANYCHAT_FIELD_VACANTE_TITULO,         field_value: tituloVacante },
+      { field_id: AGENDA_MANYCHAT_FIELD_VACANTE_URL,            field_value: urlVacante },
+      { field_id: AGENDA_MANYCHAT_FIELD_CANDIDATO_NOMBRE,       field_value: nombreCandidato },
+      { field_id: AGENDA_MANYCHAT_FIELD_CANDIDATO_TEAMTAILOR_ID, field_value: candidatoId.toString() },
+    ],
+  });
+
+  await mcCrear('/fb/sending/sendFlow', { subscriber_id: idUsuarioMc, flow_ns: AGENDA_MANYCHAT_FLOW_NS });
+}
+
+// ****************************************************************************
 // HANDLER PRINCIPAL (webhook de TeamTailor, sin auth — ver recepcion-postulaciones.js)
-// ============================================================================
+// ****************************************************************************
+
 export default async function handler(req, res) {
   if (req.method !== 'POST')
     return res.status(405).json({ error: 'Método no permitido, usa POST' });
@@ -308,6 +367,10 @@ export default async function handler(req, res) {
   const data      = req.body ?? {};
   const candidato = data.candidate || {};
   const eventName = data.event_name;
+
+  // Log de inspección: cuerpo completo del webhook tal como llega de TeamTailor,
+  // para poder revisar qué información manda en cada evento/etapa.
+  console.log(JSON.stringify({ etapa: 'webhook_recibido', body: data }));
 
   if (eventName !== 'job_application.update') {
     console.log(JSON.stringify({ etapa: 'evento', estado: 'ignorado', evento: eventName ?? null }));
@@ -332,7 +395,8 @@ export default async function handler(req, res) {
       const supabase = createClient(process.env.HISTORIAL_SUPABASE_URL, process.env.HISTORIAL_SUPABASE_SERVICE_ROLE_KEY);
       await manejarEnviadoACliente(supabase, data, candidato);
     } else if (stage === 'enviar agenda') {
-      await manejarEnviarAgenda(candidato, data);
+      const supabase = createClient(process.env.HISTORIAL_SUPABASE_URL, process.env.HISTORIAL_SUPABASE_SERVICE_ROLE_KEY);
+      await manejarEnviarAgenda(supabase, candidato, data);
     } else {
       await manejarHired(candidato);
     }
