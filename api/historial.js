@@ -266,14 +266,17 @@ function formatearHoraMexico(fechaIso) {
 async function agendarNotificacionWhatsApp(supabase, candidato, data, payload) {
   const programadoPara = new Date(Date.now() + AGENDA_NOTIFICACION_RETRASO_MS).toISOString();
 
-  const { error } = await supabase.from('notificaciones').insert([{
+  // Idempotente por postulacion_id: si el candidato vuelve a pasar por "enviar
+  // agenda" sin haber cambiado de etapa entre medio, se reemplaza la fila
+  // existente (reiniciando enviado/cancelado) en vez de crear una duplicada.
+  const { error } = await supabase.from('notificaciones').upsert([{
     candidato_id:    candidato.id,
     postulacion_id:  data.id,
     programado_para: programadoPara,
     enviado:         false,
     cancelado:       false,
     payload,
-  }]);
+  }], { onConflict: 'postulacion_id' });
 
   if (error) {
     console.log(JSON.stringify({ etapa: 'agenda_notificacion_agendada', estado: 'error', candidato_id: candidato.id, mensaje: error.message }));
@@ -292,7 +295,13 @@ async function agendarNotificacionWhatsApp(supabase, candidato, data, payload) {
 async function manejarEnviarAgenda(supabase, candidato, data) {
   const telefonoLimpio = limpiarTelefono(candidato.phone);
   if (!telefonoLimpio) {
+    // Sin teléfono no se puede crear el suscriptor de ManyChat (requiere whatsapp_phone),
+    // así que no hay nada que agendar en `notificaciones`; solo se avisa por nota que,
+    // como mínimo, ya se tiene su correo.
     console.log(JSON.stringify({ etapa: 'agenda_whatsapp', estado: 'saltado', razon: 'sin_telefono', candidato_id: candidato.id }));
+    if (candidato.email) {
+      await crearNotaTeamTailor(candidato.id, data.id, '📧 Email agendado', 'agenda_nota_email');
+    }
     return;
   }
   const telefono = normalizarTelefonoMx(telefonoLimpio);
@@ -427,12 +436,14 @@ export default async function handler(req, res) {
   }
 
   const stage = (data.stage_name || '').toLowerCase().trim();
-  const supabase = createClient(process.env.HISTORIAL_SUPABASE_URL, process.env.HISTORIAL_SUPABASE_SERVICE_ROLE_KEY);
+  // `notificaciones` vive en el proyecto de Supabase principal, no en el de
+  // HISTORIAL_SUPABASE_URL (ese solo tiene la tabla PowerDelivery).
+  const supabaseNotificaciones = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
   // Si la postulación fue rechazada o ya no está en "enviar agenda" (se movió a
   // otra etapa), se cancela cualquier notificación de WhatsApp aún no enviada.
   if (data.rejected_at || stage !== 'enviar agenda') {
-    await cancelarNotificacionesPendientes(supabase, data.id);
+    await cancelarNotificacionesPendientes(supabaseNotificaciones, data.id);
   }
 
   if (data.rejected_at) {
@@ -449,9 +460,10 @@ export default async function handler(req, res) {
 
   try {
     if (stage === 'enviado a cliente') {
-      await manejarEnviadoACliente(supabase, data, candidato);
+      const supabaseHistorial = createClient(process.env.HISTORIAL_SUPABASE_URL, process.env.HISTORIAL_SUPABASE_SERVICE_ROLE_KEY);
+      await manejarEnviadoACliente(supabaseHistorial, data, candidato);
     } else if (stage === 'enviar agenda') {
-      await manejarEnviarAgenda(supabase, candidato, data);
+      await manejarEnviarAgenda(supabaseNotificaciones, candidato, data);
     } else {
       await manejarHired(candidato);
     }

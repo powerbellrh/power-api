@@ -8,7 +8,7 @@ export default async function handler(req, res) {
   if (encabezadoAuth !== `Bearer ${process.env.CRON_SECRET}`)
     return res.status(401).json({ error: 'Unauthorized' });
 
-  const supabase = createClient(process.env.HISTORIAL_SUPABASE_URL, process.env.HISTORIAL_SUPABASE_SERVICE_ROLE_KEY);
+  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
   const { data: pendientes, error: errorConsulta } = await supabase
     .from('notificaciones')
