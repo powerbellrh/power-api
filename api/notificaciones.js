@@ -53,17 +53,27 @@ export default async function handler(req, res) {
   const fallidos    = [];
 
   for (const notificacion of pendientes) {
+    let fallo = null;
     try {
       await enviarNotificacionAgendaManyChat(notificacion.payload, notificacion.candidato_id);
+    } catch (e) {
+      fallo = e.message;
+    }
 
-      const { error: errorActualizacion } = await supabase.from('notificaciones').update({ enviado: true }).eq('id', notificacion.id);
-      if (errorActualizacion) throw new Error(`Supabase update failed: ${errorActualizacion.message}`);
+    // Un solo intento: si ManyChat falla, ninguna llamada posterior para esa
+    // fila va a funcionar (el suscriptor/flujo ya quedó en un estado raro), así
+    // que se marca `enviado` igual para no reintentarla en corridas futuras.
+    const { error: errorActualizacion } = await supabase.from('notificaciones').update({ enviado: true }).eq('id', notificacion.id);
+    if (errorActualizacion) {
+      fallo = fallo ? `${fallo}; Supabase update failed: ${errorActualizacion.message}` : `Supabase update failed: ${errorActualizacion.message}`;
+    }
 
+    if (fallo) {
+      fallidos.push({ id: notificacion.id, error: fallo });
+      console.log(JSON.stringify({ etapa: 'agenda_notificacion_enviada', estado: 'error', id: notificacion.id, candidato_id: notificacion.candidato_id, mensaje: fallo }));
+    } else {
       procesados.push(notificacion.id);
       console.log(JSON.stringify({ etapa: 'agenda_notificacion_enviada', estado: 'ok', id: notificacion.id, candidato_id: notificacion.candidato_id }));
-    } catch (e) {
-      fallidos.push({ id: notificacion.id, error: e.message });
-      console.log(JSON.stringify({ etapa: 'agenda_notificacion_enviada', estado: 'error', id: notificacion.id, candidato_id: notificacion.candidato_id, mensaje: e.message }));
     }
   }
 
