@@ -5,6 +5,7 @@
     { "source": "/cola",            "destination": "/api/cola"            },
     { "source": "/recepcion-postulaciones", "destination": "/api/recepcion-postulaciones" },
     { "source": "/historial",       "destination": "/api/historial"       },
+    { "source": "/notificaciones",  "destination": "/api/notificaciones"  },
     { "source": "/experiencia",     "destination": "/api/experiencia"     },
     { "source": "/informes",        "destination": "/api/informes"        },
     { "source": "/powerid",         "destination": "/api/powerid"         },
@@ -28,6 +29,9 @@
     "api/cola.js": {
       "maxDuration": 60
     },
+    "api/notificaciones.js": {
+      "maxDuration": 60
+    },
     "api/recepcion-postulaciones.js": {
       "maxDuration": 30
     },
@@ -42,6 +46,7 @@
     }
   },
   "crons": [
-    { "path": "/api/cola", "schedule": "* * * * *" }
+    { "path": "/api/cola",           "schedule": "* * * * *" },
+    { "path": "/api/notificaciones", "schedule": "* * * * *" }
   ]
 }

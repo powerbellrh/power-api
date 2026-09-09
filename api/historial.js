@@ -9,6 +9,7 @@ import {
   AGENDA_MANYCHAT_FIELD_VACANTE_URL,
   AGENDA_MANYCHAT_FIELD_CANDIDATO_NOMBRE,
   AGENDA_MANYCHAT_FIELD_CANDIDATO_TEAMTAILOR_ID,
+  AGENDA_MANYCHAT_FIELD_CANDIDATO_CORREO,
   MANYCHAT_FIELD_PHONE_ID,
   TEAMTAILOR_USER_ID,
 } from '../lib/config.js';
@@ -218,34 +219,50 @@ async function manejarHired(candidato) {
 // cron 5 minutos después, cancelable si el candidato es rechazado o cambia de etapa)
 // ****************************************************************************
 
-// Nota inmediata en TeamTailor con el link de WhatsApp para que la reclutadora
-// pueda contactar al candidato ella misma sin esperar el flujo automático.
-async function crearNotaWhatsApp(candidato, data, telefono, tituloVacante) {
+// Nota genérica en TeamTailor, ligada al candidato y a la postulación (job-application).
+async function crearNotaTeamTailor(candidatoId, postulacionId, texto, etapaLog) {
   try {
-    const mensajeWa = `Hola ${candidato.first_name || ''}, soy un reclutador de PowerBell y me interesó tu perfil para la vacante de ${tituloVacante}.`.trim();
-    const enlaceWa  = `https://wa.me/${telefono}?text=${encodeURIComponent(mensajeWa)}`;
-
     await ttCrear('/notes', {
       data: {
         type: 'notes',
-        attributes: { note: `📲 Contactar candidato por WhatsApp: ${enlaceWa}` },
+        attributes: { note: texto },
         relationships: {
-          candidate:          { data: { id: candidato.id.toString(), type: 'candidates' } },
+          candidate:          { data: { id: candidatoId.toString(), type: 'candidates' } },
           user:               { data: { id: TEAMTAILOR_USER_ID, type: 'users' } },
-          'job-application':  { data: { id: data.id.toString(), type: 'job-applications' } },
+          'job-application':  { data: { id: postulacionId.toString(), type: 'job-applications' } },
         },
       },
     });
-    console.log(JSON.stringify({ etapa: 'agenda_nota_whatsapp', estado: 'ok', candidato_id: candidato.id }));
+    console.log(JSON.stringify({ etapa: etapaLog, estado: 'ok', candidato_id: candidatoId }));
   } catch (e) {
-    console.log(JSON.stringify({ etapa: 'agenda_nota_whatsapp', estado: 'error', candidato_id: candidato.id, mensaje: e.message }));
+    console.log(JSON.stringify({ etapa: etapaLog, estado: 'error', candidato_id: candidatoId, mensaje: e.message }));
   }
 }
 
+// Nota inmediata en TeamTailor con el link de WhatsApp para que la reclutadora
+// pueda contactar al candidato ella misma sin esperar el flujo automático.
+async function crearNotaWhatsApp(candidato, data, telefono, tituloVacante) {
+  const mensajeWa = `Hola ${candidato.first_name || ''}, soy un reclutador de PowerBell y me interesó tu perfil para la vacante de ${tituloVacante}.`.trim();
+  const enlaceWa  = `https://wa.me/${telefono}?text=${encodeURIComponent(mensajeWa)}`;
+  await crearNotaTeamTailor(candidato.id, data.id, `📲 Contactar candidato por WhatsApp: ${enlaceWa}`, 'agenda_nota_whatsapp');
+}
+
+// Hora en punto (HH:MM, horario de Ciudad de México/CST) en la que se disparará
+// la notificación, para avisarle a la reclutadora en la nota de TeamTailor.
+function formatearHoraMexico(fechaIso) {
+  return new Date(fechaIso).toLocaleString('es-MX', {
+    timeZone: 'America/Mexico_City',
+    hour:     '2-digit',
+    minute:   '2-digit',
+    hour12:   false,
+  });
+}
+
 // Agenda en `notificaciones` el envío del flujo de WhatsApp de agenda, con un
-// retraso de AGENDA_NOTIFICACION_RETRASO_MS. Un cron aparte (aún no implementado
-// en este archivo) lee las filas vencidas y ejecuta el envío real a ManyChat;
-// otro flujo cancela la fila si el candidato es rechazado o cambia de etapa antes.
+// retraso de AGENDA_NOTIFICACION_RETRASO_MS, y avisa en una nota de TeamTailor
+// a qué hora se disparará. Un cron aparte lee las filas vencidas y ejecuta el
+// envío real a ManyChat; otro flujo cancela la fila si el candidato es
+// rechazado o cambia de etapa antes de que se envíe.
 async function agendarNotificacionWhatsApp(supabase, candidato, data, payload) {
   const programadoPara = new Date(Date.now() + AGENDA_NOTIFICACION_RETRASO_MS).toISOString();
 
@@ -263,6 +280,13 @@ async function agendarNotificacionWhatsApp(supabase, candidato, data, payload) {
     return;
   }
   console.log(JSON.stringify({ etapa: 'agenda_notificacion_agendada', estado: 'ok', candidato_id: candidato.id, programado_para: programadoPara }));
+
+  await crearNotaTeamTailor(
+    candidato.id,
+    data.id,
+    `⏰ Notificaciones agendadas para las ${formatearHoraMexico(programadoPara)}`,
+    'agenda_nota_programada',
+  );
 }
 
 async function manejarEnviarAgenda(supabase, candidato, data) {
@@ -296,6 +320,7 @@ async function manejarEnviarAgenda(supabase, candidato, data) {
   // no vuelve a golpear TeamTailor, solo usa lo que ya se guardó aquí.
   const payload = {
     telefono,
+    correo: candidato.email || '',
     nombreCandidato,
     tituloVacante,
     urlVacante,
@@ -310,7 +335,7 @@ async function manejarEnviarAgenda(supabase, candidato, data) {
 // Envía el flujo de WhatsApp de agenda a ManyChat a partir de un `payload` ya
 // resuelto (usado por el cron que procesa `notificaciones`, no por este handler).
 export async function enviarNotificacionAgendaManyChat(payload, candidatoId) {
-  const { telefono, nombreCandidato, tituloVacante, urlVacante, nombreReclutadora, whatsappReclutadora } = payload;
+  const { telefono, correo, nombreCandidato, tituloVacante, urlVacante, nombreReclutadora, whatsappReclutadora } = payload;
 
   let idUsuarioMc;
   try {
@@ -350,10 +375,34 @@ export async function enviarNotificacionAgendaManyChat(payload, candidatoId) {
       { field_id: AGENDA_MANYCHAT_FIELD_VACANTE_URL,            field_value: urlVacante },
       { field_id: AGENDA_MANYCHAT_FIELD_CANDIDATO_NOMBRE,       field_value: nombreCandidato },
       { field_id: AGENDA_MANYCHAT_FIELD_CANDIDATO_TEAMTAILOR_ID, field_value: candidatoId.toString() },
+      { field_id: AGENDA_MANYCHAT_FIELD_CANDIDATO_CORREO,       field_value: correo },
     ],
   });
 
   await mcCrear('/fb/sending/sendFlow', { subscriber_id: idUsuarioMc, flow_ns: AGENDA_MANYCHAT_FLOW_NS });
+}
+
+// Cada cambio de etapa (o rechazo) de una postulación llega como un nuevo
+// job_application.update con el mismo `id` — así que basta comparar contra ese
+// `id` para cancelar cualquier notificación de agenda que quedó pendiente.
+async function cancelarNotificacionesPendientes(supabase, postulacionId) {
+  const { data: canceladas, error } = await supabase
+    .from('notificaciones')
+    .update({ cancelado: true })
+    .eq('postulacion_id', postulacionId)
+    .eq('enviado', false)
+    .eq('cancelado', false)
+    .select('id,candidato_id');
+
+  if (error) {
+    console.log(JSON.stringify({ etapa: 'agenda_notificacion_cancelada', estado: 'error', postulacion_id: postulacionId, mensaje: error.message }));
+    return;
+  }
+  if (!canceladas?.length) return;
+
+  console.log(JSON.stringify({ etapa: 'agenda_notificacion_cancelada', estado: 'ok', postulacion_id: postulacionId, cantidad: canceladas.length }));
+
+  await crearNotaTeamTailor(canceladas[0].candidato_id, postulacionId, '❌ Notificaciones canceladas', 'agenda_nota_cancelada');
 }
 
 // ****************************************************************************
@@ -377,12 +426,20 @@ export default async function handler(req, res) {
     return res.status(200).json({ status: 'ignored', reason: 'unhandled_event' });
   }
 
+  const stage = (data.stage_name || '').toLowerCase().trim();
+  const supabase = createClient(process.env.HISTORIAL_SUPABASE_URL, process.env.HISTORIAL_SUPABASE_SERVICE_ROLE_KEY);
+
+  // Si la postulación fue rechazada o ya no está en "enviar agenda" (se movió a
+  // otra etapa), se cancela cualquier notificación de WhatsApp aún no enviada.
+  if (data.rejected_at || stage !== 'enviar agenda') {
+    await cancelarNotificacionesPendientes(supabase, data.id);
+  }
+
   if (data.rejected_at) {
     console.log(JSON.stringify({ etapa: 'evento', estado: 'ignorado', razon: 'rechazado', rejected_at: data.rejected_at }));
     return res.status(200).json({ status: 'ignored', reason: 'rejected' });
   }
 
-  const stage = (data.stage_name || '').toLowerCase().trim();
   console.log(JSON.stringify({ etapa: 'inicio', evento: eventName, stage, candidato_id: candidato.id ?? null }));
 
   if (stage !== 'enviado a cliente' && stage !== 'hired' && stage !== 'enviar agenda') {
@@ -392,10 +449,8 @@ export default async function handler(req, res) {
 
   try {
     if (stage === 'enviado a cliente') {
-      const supabase = createClient(process.env.HISTORIAL_SUPABASE_URL, process.env.HISTORIAL_SUPABASE_SERVICE_ROLE_KEY);
       await manejarEnviadoACliente(supabase, data, candidato);
     } else if (stage === 'enviar agenda') {
-      const supabase = createClient(process.env.HISTORIAL_SUPABASE_URL, process.env.HISTORIAL_SUPABASE_SERVICE_ROLE_KEY);
       await manejarEnviarAgenda(supabase, candidato, data);
     } else {
       await manejarHired(candidato);
