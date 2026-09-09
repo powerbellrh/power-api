@@ -2,6 +2,27 @@ import { createClient } from '@supabase/supabase-js';
 import { enviarNotificacionAgendaManyChat } from './historial.js';
 
 const TAMANO_LOTE = 10;
+const RETENCION_DIAS_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Borra filas de `notificaciones` con más de 7 días de antigüedad (ya sea
+// enviadas, canceladas o pendientes) para no acumular basura en la tabla.
+async function limpiarNotificacionesViejas(supabase) {
+  const limite = new Date(Date.now() - RETENCION_DIAS_MS).toISOString();
+
+  const { data: eliminadas, error } = await supabase
+    .from('notificaciones')
+    .delete()
+    .lt('creado', limite)
+    .select('id');
+
+  if (error) {
+    console.log(JSON.stringify({ etapa: 'notificaciones_limpieza', estado: 'error', mensaje: error.message }));
+    return;
+  }
+  if (eliminadas?.length) {
+    console.log(JSON.stringify({ etapa: 'notificaciones_limpieza', estado: 'ok', cantidad: eliminadas.length }));
+  }
+}
 
 export default async function handler(req, res) {
   const encabezadoAuth = req.headers['authorization'];
@@ -47,6 +68,8 @@ export default async function handler(req, res) {
   }
 
   console.log(JSON.stringify({ etapa: 'completado', encontrados: pendientes.length, enviados: procesados.length, fallidos: fallidos.length }));
+
+  await limpiarNotificacionesViejas(supabase);
 
   return res.status(fallidos.length > 0 ? 207 : 200).json({
     status: 'success',
