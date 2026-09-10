@@ -1,14 +1,16 @@
 import { readFileSync }  from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { createClient }  from '@supabase/supabase-js';
 import { ttObtener, ttActualizar, ttCrear, ttSubirArchivoTransitorio } from '../lib/clientes_api.js';
 import { orChatCompletion, orGenerarImagen } from '../lib/openrouter.js';
+import { analizarRespuestas } from '../lib/evaluacion_postulacion.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const PROMPT_ANALISIS_ESTRUCTURADO           = readFileSync(join(__dirname, '../prompts/analisis_estructurado.txt'), 'utf-8');
 const PROMPT_ANALISIS_ESTRUCTURADO_OPERATIVO = readFileSync(join(__dirname, '../prompts/analisis_estructurado_operativo.txt'), 'utf-8');
-const OPENROUTER_MODEL             = 'anthropic/claude-sonnet-5';
+const OPENROUTER_MODEL             = 'z-ai/glm-5.3';
 const OPENROUTER_MODEL_IMAGEN      = 'google/gemini-3.1-flash-lite-image';
 const FOTO_PERFIL_DEFAULT          = 'https://i.ibb.co/JwvVrDr0/fotodesconocido.png';
 const FOTO_PERFIL_HOMBRE           = 'https://i.ibb.co/4RGYgcC4/fotohombre.png';
@@ -22,38 +24,40 @@ const RECLUTADORES_OPERATIVA = new Set([
   '45146', '45147', '46250', '68768', '44696',
 ]);
 
-// Mapeo de preguntas de TeamTailor -> etiqueta legible que se envía al modelo.
-const QUESTION_MAPPING = {
-  '74195':  'FECHA_LUGAR_NACIMIENTO',
-  '70845':  'EDAD',
-  '73101':  'DOMICILIO',
-  '74382':  'ESCOLARIDAD',
-  '118792': 'ESTADO_CIVIL',
-  '74198':  'SUELDO_DESEADO',
-  '121800': 'ULTIMO_SUELDO',
-  '74426':  'CONTEXTO_PERSONAL',
-  '121801': 'ANTECEDENTES_PROFESIONALES',
-  '121802': 'COMPETENCIAS_Y_HABILIDADES',
-  '121803': 'METODOLOGIAS_UTILIZADAS',
-  '121804': 'RESPUESTAS_A_ESCENARIOS',
-  '121805': 'AREAS_DE_OPORTUNIDAD',
-  '121806': 'MOTIVACIONES_Y_EXPECTATIVAS',
-  '121807': 'NOTAS_DEL_ENTREVISTADOR',
-  '121808': 'HISTORICO_LABORAL',
+// Catálogo de intenciones al que se clasifica cada pregunta contestada por el candidato
+// (formulario de TeamTailor, formulario de evaluación y preguntas personalizadas de WhatsApp),
+// sin importar el ID de la pregunta original ni la vacante/entrevista de la que provenga.
+const INTENCIONES_ADMINISTRATIVO = {
+  FECHA_LUGAR_NACIMIENTO:     'Fecha y lugar de nacimiento del candidato.',
+  EDAD:                       'Edad del candidato.',
+  DOMICILIO:                  'Domicilio o dirección donde vive el candidato.',
+  ESCOLARIDAD:                'Nivel de estudios, carrera o escolaridad del candidato.',
+  ESTADO_CIVIL:               'Estado civil del candidato.',
+  SUELDO_DESEADO:             'Sueldo o salario que el candidato espera o desea ganar.',
+  ULTIMO_SUELDO:              'Sueldo o salario que el candidato percibía en su último empleo.',
+  CONTEXTO_PERSONAL:          'Contexto personal, familiar o de vida del candidato relevante para el puesto.',
+  ANTECEDENTES_PROFESIONALES: 'Historial y antecedentes profesionales o experiencia laboral previa del candidato.',
+  COMPETENCIAS_Y_HABILIDADES: 'Competencias, habilidades técnicas o blandas del candidato.',
+  METODOLOGIAS_UTILIZADAS:    'Metodologías, herramientas o procesos que el candidato ha utilizado en su trabajo.',
+  RESPUESTAS_A_ESCENARIOS:    'Respuestas del candidato a escenarios o preguntas situacionales/hipotéticas.',
+  AREAS_DE_OPORTUNIDAD:       'Áreas de oportunidad, debilidades o aspectos a mejorar del candidato.',
+  MOTIVACIONES_Y_EXPECTATIVAS: 'Motivaciones, expectativas o razones del candidato para buscar el puesto.',
+  NOTAS_DEL_ENTREVISTADOR:    'Notas, observaciones o percepción del entrevistador/consultor sobre el candidato.',
+  HISTORICO_LABORAL:          'Histórico o trayectoria laboral detallada del candidato (empleos anteriores, fechas, puestos).',
 };
 
-// Mapeo de preguntas de TeamTailor -> etiqueta legible, para el modo "operativo".
-const QUESTION_MAPPING_OPERATIVO = {
-  '74195': 'FECHA_LUGAR_NACIMIENTO',
-  '70845': 'EDAD',
-  '73101': 'DOMICILIO',
-  '73099': 'ESTADO_CIVIL',
-  '74382': 'ESCOLARIDAD',
-  '74197': 'MOVILIDAD_EMPRESA',
-  '74198': 'SUELDO_DESEADO',
-  '74429': 'HISTORICO_LABORAL',
-  '74426': 'CONTEXTO_PERSONAL',
-  '74396': 'PERCEPCION_CONSULTOR',
+// Catálogo de intenciones para el modo "operativo".
+const INTENCIONES_OPERATIVO = {
+  FECHA_LUGAR_NACIMIENTO: 'Fecha y lugar de nacimiento del candidato.',
+  EDAD:                   'Edad del candidato.',
+  DOMICILIO:              'Domicilio o dirección donde vive el candidato.',
+  ESTADO_CIVIL:           'Estado civil del candidato.',
+  ESCOLARIDAD:            'Nivel de estudios, carrera o escolaridad del candidato.',
+  MOVILIDAD_EMPRESA:      'Disposición o facilidad del candidato para trasladarse hacia la empresa o el centro de trabajo.',
+  SUELDO_DESEADO:         'Sueldo o salario que el candidato espera o desea ganar.',
+  HISTORICO_LABORAL:      'Histórico o trayectoria laboral del candidato (empleos anteriores, fechas, puestos).',
+  CONTEXTO_PERSONAL:      'Contexto personal, familiar o de vida del candidato relevante para el puesto.',
+  PERCEPCION_CONSULTOR:   'Percepción, notas u observaciones del consultor/entrevistador sobre el candidato.',
 };
 
 const INFORME_TOOL = {
@@ -191,6 +195,95 @@ const GENERO_TOOL = {
   },
 };
 
+function construirToolClasificacion(catalogoIntenciones) {
+  return {
+    type: 'function',
+    function: {
+      name:        'clasificar_preguntas',
+      description: 'Clasifica cada pregunta contestada por el candidato según la intención del catálogo que mejor le corresponda.',
+      parameters: {
+        type: 'object',
+        properties: {
+          clasificaciones: {
+            type:        'array',
+            description: 'Una entrada por cada pregunta recibida, en el mismo orden en que se recibieron.',
+            items: {
+              type: 'object',
+              properties: {
+                indice:    { type: 'integer', description: 'Índice (basado en 0) de la pregunta, según el orden en que se recibió.' },
+                intencion: { type: 'string', enum: [...Object.keys(catalogoIntenciones), 'NINGUNA'], description: 'Intención del catálogo que mejor corresponde a la pregunta, o "NINGUNA" si ninguna aplica.' },
+              },
+              required: ['indice', 'intencion'],
+            },
+          },
+        },
+        required: ['clasificaciones'],
+      },
+    },
+  };
+}
+
+// Clasifica, con IA, cada pregunta contestada (venga de donde venga: formulario de
+// TeamTailor, formulario de evaluación o preguntas personalizadas de WhatsApp) según
+// la intención del catálogo que mejor le corresponda. Esto reemplaza el mapeo fijo de
+// IDs de pregunta -> etiqueta, así el informe funciona sin importar el formato exacto
+// de la entrevista o de la vacante.
+async function clasificarPreguntasPorIntencion(paresPreguntaRespuesta, catalogoIntenciones) {
+  if (!paresPreguntaRespuesta.length) return {};
+
+  const listaPreguntas = paresPreguntaRespuesta.map((par, indice) => `${indice}: ${par.pregunta}`).join('\n');
+  const catalogoTexto  = Object.entries(catalogoIntenciones).map(([clave, descripcion]) => `- ${clave}: ${descripcion}`).join('\n');
+  const tool           = construirToolClasificacion(catalogoIntenciones);
+
+  try {
+    const datos = await orChatCompletion({
+      model:    OPENROUTER_MODEL,
+      messages: [
+        { role: 'system', content: 'Clasifica cada pregunta de una entrevista de candidato según la intención del catálogo que mejor le corresponda. Usa "NINGUNA" si la pregunta no corresponde a ninguna intención del catálogo.' },
+        { role: 'user',   content: `Catálogo de intenciones:\n${catalogoTexto}\n\nPreguntas a clasificar:\n${listaPreguntas}` },
+      ],
+      tools:       [tool],
+      tool_choice: { type: 'function', function: { name: 'clasificar_preguntas' } },
+    }, process.env.OPENROUTER_API_KEY_INFORMES);
+
+    const llamada = datos?.choices?.[0]?.message?.tool_calls?.find(c => c.function?.name === 'clasificar_preguntas');
+    if (!llamada) return {};
+
+    const argumentos = typeof llamada.function.arguments === 'string' ? JSON.parse(llamada.function.arguments) : llamada.function.arguments;
+    const clasificaciones = argumentos?.clasificaciones ?? [];
+
+    const porIndice = {};
+    for (const clasificacion of clasificaciones) {
+      if (clasificacion.intencion && clasificacion.intencion !== 'NINGUNA') porIndice[clasificacion.indice] = clasificacion.intencion;
+    }
+    return porIndice;
+  } catch (error) {
+    console.log(JSON.stringify({ etapa: 'clasificacion_preguntas', estado: 'error', mensaje: error.message }));
+    return {};
+  }
+}
+
+// Agrupa las respuestas del candidato bajo la intención con la que fueron clasificadas,
+// en el mismo formato de bloque que antes se armaba a partir del mapeo fijo de IDs.
+function construirBloqueRespuestasPorIntencion(paresPreguntaRespuesta, clasificacionPorIndice, catalogoIntenciones) {
+  const porIntencion = {};
+
+  paresPreguntaRespuesta.forEach((par, indice) => {
+    const intencion = clasificacionPorIndice[indice];
+    if (!intencion) return;
+    (porIntencion[intencion] ??= []).push(par.respuesta);
+  });
+
+  const lineas = [];
+  for (const clave of Object.keys(catalogoIntenciones)) {
+    const valores = porIntencion[clave];
+    if (!valores?.length) continue;
+    lineas.push(`### ${clave}\n${valores.join('\n')}`);
+  }
+
+  return lineas.length ? lineas.join('\n\n') : '(Sin respuestas disponibles)';
+}
+
 async function inferirGenero(nombreCompleto) {
   const datos = await orChatCompletion({
     model:       OPENROUTER_MODEL,
@@ -230,39 +323,21 @@ async function asignarFotoGenerica(nombreCompleto, candidatoId) {
 // ── TeamTailor ───────────────────────────────────────────────────────────
 
 async function obtenerRespuestasCandidato(candidatoId) {
-  let todas = [];
+  let respuestas = [];
+  let preguntas  = [];
   let pagina = 1;
 
   while (true) {
     const datos = await ttObtener(`/candidates/${candidatoId}/answers?include=question&page[size]=30&page[number]=${pagina}`, true);
-    todas = todas.concat(datos.data ?? []);
+    respuestas = respuestas.concat(datos.data ?? []);
+    preguntas  = preguntas.concat(datos.included ?? []);
 
     const totalPaginas = datos.meta?.['page-count'] ?? 1;
     if (pagina >= totalPaginas) break;
     pagina++;
   }
 
-  return todas;
-}
-
-function parsearRespuestas(respuestas, mapeoPreguntas = QUESTION_MAPPING) {
-  const porId = {};
-
-  for (const respuesta of respuestas) {
-    const preguntaId = respuesta.relationships?.question?.data?.id;
-    if (!preguntaId || !mapeoPreguntas[preguntaId]) continue;
-
-    const attrs        = respuesta.attributes ?? {};
-    const opciones      = attrs.choices ?? [];
-    const opcionesTexto = opciones.length ? opciones.map(String).join(', ') : '';
-    const texto = attrs.text || attrs.answer || String(attrs.number ?? '') || opcionesTexto || String(attrs.boolean ?? '');
-
-    if (texto && !['None', '', '-'].includes(texto)) {
-      (porId[preguntaId] ??= []).push(String(texto));
-    }
-  }
-
-  return porId;
+  return { respuestas, preguntas };
 }
 
 function extraerNombreInterno(datosVacante) {
@@ -291,17 +366,29 @@ function limpiarValor(valor, fallback = '-') {
   return texto && !['None', 'null', 'NA', 'N/A'].includes(texto) ? texto : fallback;
 }
 
-function construirBloqueRespuestasCrudas(respuestasPorId, mapeoPreguntas = QUESTION_MAPPING) {
-  const lineas = [];
+// Trae las preguntas y respuestas que ya recopiló el endpoint de evaluaciones
+// (formulario de TeamTailor tal como lo vio la IA, más las respuestas a las
+// preguntas personalizadas enviadas por WhatsApp), como pares {pregunta, respuesta}
+// listos para clasificar por intención junto con el resto de las respuestas.
+async function obtenerPreguntasRespuestasEvaluacion(postulacionId) {
+  try {
+    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+    const { data, error } = await supabase
+      .from('evaluaciones')
+      .select('candidato_respuestas, respuestas_preguntas_personalizadas')
+      .eq('postulacion_id', postulacionId)
+      .single();
 
-  for (const [preguntaId, etiqueta] of Object.entries(mapeoPreguntas)) {
-    const valores = respuestasPorId[preguntaId];
-    if (!valores?.length) continue;
-    const texto = valores.length > 1 ? valores.join('\n') : valores[0];
-    lineas.push(`### ${etiqueta}\n${texto}`);
+    if (error || !data) return {};
+
+    return {
+      ...(data.candidato_respuestas ?? {}),
+      ...(data.respuestas_preguntas_personalizadas ?? {}),
+    };
+  } catch (error) {
+    console.log(JSON.stringify({ etapa: 'obtener_preguntas_evaluacion', estado: 'error', mensaje: error.message, postulacion_id: postulacionId }));
+    return {};
   }
-
-  return lineas.length ? lineas.join('\n\n') : '(Sin respuestas disponibles)';
 }
 
 // El consumidor (power_informe.py) reenvía como respuesta_anterior el JSON aplanado
@@ -329,15 +416,13 @@ function reconstruirAnalisisPrevio(respuestaAnterior) {
   };
 }
 
-async function obtenerAnalisisEstructurado(respuestasPorId, nombreCandidato, vacante, comentarios, respuestaAnterior, opciones = {}) {
+async function obtenerAnalisisEstructurado(bloqueCrudo, nombreCandidato, vacante, comentarios, respuestaAnterior, opciones = {}) {
   const {
-    mapeoPreguntas = QUESTION_MAPPING,
-    prompt         = PROMPT_ANALISIS_ESTRUCTURADO,
-    tool           = INFORME_TOOL,
-    nombreTool     = 'informe_estructurado',
+    prompt     = PROMPT_ANALISIS_ESTRUCTURADO,
+    tool       = INFORME_TOOL,
+    nombreTool = 'informe_estructurado',
   } = opciones;
 
-  const bloqueCrudo   = construirBloqueRespuestasCrudas(respuestasPorId, mapeoPreguntas);
   let mensajeUsuario = `Candidato: ${nombreCandidato}\nVacante: ${vacante}\n\n${bloqueCrudo}`;
 
   if (comentarios) {
@@ -502,13 +587,30 @@ export default async function handler(req, res) {
     const idReclutador   = extraerIdReclutador(datosVacante);
     const esOperativo    = idReclutador != null && RECLUTADORES_OPERATIVA.has(idReclutador);
 
-    const mapeoPreguntas   = esOperativo ? QUESTION_MAPPING_OPERATIVO : QUESTION_MAPPING;
-    const respuestasCrudas = await obtenerRespuestasCandidato(candidatoId);
-    const respuestasPorId  = parsearRespuestas(respuestasCrudas, mapeoPreguntas);
+    const catalogoIntenciones = esOperativo ? INTENCIONES_OPERATIVO : INTENCIONES_ADMINISTRATIVO;
+
+    const { respuestas: respuestasCrudas, preguntas: preguntasIncluidas } = await obtenerRespuestasCandidato(candidatoId);
+    const respuestasFormulario         = analizarRespuestas(respuestasCrudas, preguntasIncluidas) ?? {};
+    const preguntasRespuestasEvaluacion = await obtenerPreguntasRespuestasEvaluacion(postulacionId);
+
+    const todasLasPreguntas = { ...respuestasFormulario, ...preguntasRespuestasEvaluacion };
+    const paresPreguntaRespuesta = Object.entries(todasLasPreguntas)
+      .filter(([, respuesta]) => respuesta != null && String(respuesta).trim() !== '')
+      .map(([pregunta, respuesta]) => ({ pregunta, respuesta: String(respuesta) }));
+
+    const clasificacionPorIndice = await clasificarPreguntasPorIntencion(paresPreguntaRespuesta, catalogoIntenciones);
+    const bloqueCrudo = construirBloqueRespuestasPorIntencion(paresPreguntaRespuesta, clasificacionPorIndice, catalogoIntenciones);
+
+    console.log(JSON.stringify({
+      etapa: 'preguntas_respuestas', postulacion_id: postulacionId,
+      formulario_teamtailor: Object.keys(respuestasFormulario).length,
+      evaluacion_supabase:   Object.keys(preguntasRespuestasEvaluacion).length,
+      total_clasificadas:    Object.keys(clasificacionPorIndice).length,
+      total_pares:           paresPreguntaRespuesta.length,
+    }));
 
     console.log(JSON.stringify({ etapa: 'analisis_ia', candidato: nombreCompleto, vacante: nombreInterno, tipo: esOperativo ? 'operativo' : 'estandar' }));
-    const analisis = await obtenerAnalisisEstructurado(respuestasPorId, nombreCompleto, nombreInterno, comentarios, respuestaAnterior, esOperativo ? {
-      mapeoPreguntas,
+    const analisis = await obtenerAnalisisEstructurado(bloqueCrudo, nombreCompleto, nombreInterno, comentarios, respuestaAnterior, esOperativo ? {
       prompt:     PROMPT_ANALISIS_ESTRUCTURADO_OPERATIVO,
       tool:       INFORME_TOOL_OPERATIVO,
       nombreTool: 'informe_operativo_estructurado',

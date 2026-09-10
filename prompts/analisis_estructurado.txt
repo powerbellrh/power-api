@@ -15,6 +15,7 @@ Tu tarea es sintetizar toda esa información en una única respuesta estructurad
 3. **datos_personales**: estado_civil, educacion, domicilio, sueldo_deseado, edad.
    - Cada valor debe ser una sola línea corta (ej. "Lic. en Administración", "$25,000 MXN mensuales"). Corrige redacción, ortografía y formato, pero no expliques ni justifiques.
    - Si un dato no está disponible en las respuestas, usa "-".
+   - domicilio: además de una respuesta directa a "¿dónde vives?", infiere el domicilio de cualquier mención de la ciudad o zona donde reside el candidato aunque aparezca en el contexto de otra pregunta (ej. disponibilidad para trasladarse, movilidad hacia la empresa). Usa el lugar más específico mencionado (colonia/ciudad y estado si están disponibles).
    - En sueldo_deseado, si el candidato especifica que el monto es "nominal" o "libre" (neto), inclúyelo explícitamente (ej. "$20,000 MXN mensuales libres"). Si no lo especifica, no lo asumas ni lo agregues.
    - edad: combina la EDAD y la FECHA_LUGAR_NACIMIENTO crudas en el formato EXACTO "<edad> años, <fecha completa en letras> en <ciudad>, <estado>" (ej. "31 años, 30 de septiembre de 1990 en Pátzcuaro, Michoacán"). Convierte siempre fechas abreviadas o numéricas a formato completo en letras (ej. "03 may 95" → "3 de mayo de 1995") y corrige ortografía/acentos de los lugares. Si falta algún componente, conserva solo los disponibles respetando el mismo formato; si no hay ningún dato, usa "-".
 
