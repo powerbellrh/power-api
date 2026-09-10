@@ -10,7 +10,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const PROMPT_ANALISIS_ESTRUCTURADO           = readFileSync(join(__dirname, '../prompts/analisis_estructurado.txt'), 'utf-8');
 const PROMPT_ANALISIS_ESTRUCTURADO_OPERATIVO = readFileSync(join(__dirname, '../prompts/analisis_estructurado_operativo.txt'), 'utf-8');
-const OPENROUTER_MODEL             = 'z-ai/glm-5.3';
+const OPENROUTER_MODEL             = 'anthropic/claude-sonnet-5';
 const OPENROUTER_MODEL_IMAGEN      = 'google/gemini-3.1-flash-lite-image';
 const FOTO_PERFIL_DEFAULT          = 'https://i.ibb.co/JwvVrDr0/fotodesconocido.png';
 const FOTO_PERFIL_HOMBRE           = 'https://i.ibb.co/4RGYgcC4/fotohombre.png';
