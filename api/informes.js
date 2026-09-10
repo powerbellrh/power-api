@@ -416,7 +416,7 @@ function reconstruirAnalisisPrevio(respuestaAnterior) {
   };
 }
 
-async function obtenerAnalisisEstructurado(bloqueCrudo, nombreCandidato, vacante, comentarios, respuestaAnterior, opciones = {}) {
+async function obtenerAnalisisEstructurado(bloqueCrudo, nombreCandidato, vacante, comentarios, respuestaAnterior, urlCurriculum, opciones = {}) {
   const {
     prompt     = PROMPT_ANALISIS_ESTRUCTURADO,
     tool       = INFORME_TOOL,
@@ -438,22 +438,45 @@ async function obtenerAnalisisEstructurado(bloqueCrudo, nombreCandidato, vacante
     mensajeUsuario += `\n\nComentarios del reclutador:\n${comentarios}`;
   }
 
-  const datos = await orChatCompletion({
-    model:      OPENROUTER_MODEL,
-    messages: [
-      { role: 'system', content: prompt },
-      { role: 'user',   content: mensajeUsuario },
-    ],
-    tools:       [tool],
-    tool_choice: { type: 'function', function: { name: nombreTool } },
-    reasoning:   { effort: 'high' },
-  }, process.env.OPENROUTER_API_KEY_INFORMES);
+  async function llamarAnalisis(conCurriculum) {
+    const adjuntoCurriculum = conCurriculum && urlCurriculum?.trim()
+      ? [{ type: 'file', file: { filename: 'curriculum.pdf', file_data: urlCurriculum } }]
+      : [];
 
-  const llamada = datos?.choices?.[0]?.message?.tool_calls?.find(c => c.function?.name === nombreTool);
-  if (!llamada) throw new Error('OpenRouter no devolvió una respuesta estructurada válida');
+    const datos = await orChatCompletion({
+      model:      OPENROUTER_MODEL,
+      ...(adjuntoCurriculum.length > 0 && { plugins: [{ id: 'file-parser', pdf: { engine: 'mistral-ocr' } }] }),
+      messages: [
+        { role: 'system', content: prompt },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: mensajeUsuario },
+            ...adjuntoCurriculum,
+          ],
+        },
+      ],
+      tools:       [tool],
+      tool_choice: { type: 'function', function: { name: nombreTool } },
+      reasoning:   { effort: 'high' },
+    }, process.env.OPENROUTER_API_KEY_INFORMES);
 
-  const argumentos = llamada.function.arguments;
-  return typeof argumentos === 'string' ? JSON.parse(argumentos) : argumentos;
+    const llamada = datos?.choices?.[0]?.message?.tool_calls?.find(c => c.function?.name === nombreTool);
+    if (!llamada) throw new Error('OpenRouter no devolvió una respuesta estructurada válida');
+
+    const argumentos = llamada.function.arguments;
+    return typeof argumentos === 'string' ? JSON.parse(argumentos) : argumentos;
+  }
+
+  try {
+    return await llamarAnalisis(true);
+  } catch (error) {
+    if (!urlCurriculum?.trim()) throw error;
+    // Si falla con el CV adjunto (ej. PDF corrupto o rate limit del parser), se reintenta
+    // solo con las respuestas del candidato en vez de tumbar todo el informe.
+    console.log(JSON.stringify({ etapa: 'analisis_con_cv', estado: 'error', mensaje: error.message }));
+    return await llamarAnalisis(false);
+  }
 }
 
 async function retocarFoto(urlFoto, candidatoId) {
@@ -609,8 +632,18 @@ export default async function handler(req, res) {
       total_pares:           paresPreguntaRespuesta.length,
     }));
 
-    console.log(JSON.stringify({ etapa: 'analisis_ia', candidato: nombreCompleto, vacante: nombreInterno, tipo: esOperativo ? 'operativo' : 'estandar' }));
-    const analisis = await obtenerAnalisisEstructurado(bloqueCrudo, nombreCompleto, nombreInterno, comentarios, respuestaAnterior, esOperativo ? {
+    // Se refresca el CV justo antes de mandarlo a OpenRouter: la URL firmada de TeamTailor
+    // expira en segundos, y para este punto ya pasaron las llamadas de clasificación de preguntas.
+    let urlCurriculumAnalisis = urlCurriculum;
+    try {
+      const candidatoParaAnalisis = await ttObtener(`/job-applications/${postulacionId}/candidate`, true);
+      urlCurriculumAnalisis = candidatoParaAnalisis.data?.attributes?.resume ?? urlCurriculum;
+    } catch (e) {
+      console.log(JSON.stringify({ etapa: 'refrescar_cv_analisis', estado: 'error', mensaje: e.message, postulacion_id: postulacionId }));
+    }
+
+    console.log(JSON.stringify({ etapa: 'analisis_ia', candidato: nombreCompleto, vacante: nombreInterno, tipo: esOperativo ? 'operativo' : 'estandar', con_cv: !!urlCurriculumAnalisis }));
+    const analisis = await obtenerAnalisisEstructurado(bloqueCrudo, nombreCompleto, nombreInterno, comentarios, respuestaAnterior, urlCurriculumAnalisis, esOperativo ? {
       prompt:     PROMPT_ANALISIS_ESTRUCTURADO_OPERATIVO,
       tool:       INFORME_TOOL_OPERATIVO,
       nombreTool: 'informe_operativo_estructurado',
