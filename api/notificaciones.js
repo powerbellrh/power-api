@@ -8,6 +8,7 @@ const RETENCION_DIAS_MS = 7 * 24 * 60 * 60 * 1000;
 // enviadas, canceladas o pendientes) para no acumular basura en la tabla.
 async function limpiarNotificacionesViejas(supabase) {
   const limite = new Date(Date.now() - RETENCION_DIAS_MS).toISOString();
+  console.log(JSON.stringify({ etapa: 'notificaciones_limpieza', estado: 'iniciando', limite }));
 
   const { data: eliminadas, error } = await supabase
     .from('notificaciones')
@@ -19,15 +20,17 @@ async function limpiarNotificacionesViejas(supabase) {
     console.log(JSON.stringify({ etapa: 'notificaciones_limpieza', estado: 'error', mensaje: error.message }));
     return;
   }
-  if (eliminadas?.length) {
-    console.log(JSON.stringify({ etapa: 'notificaciones_limpieza', estado: 'ok', cantidad: eliminadas.length }));
-  }
+  console.log(JSON.stringify({ etapa: 'notificaciones_limpieza', estado: 'ok', cantidad: eliminadas?.length ?? 0 }));
 }
 
 export default async function handler(req, res) {
+  console.log(JSON.stringify({ etapa: 'notificaciones_invocado', ahora: new Date().toISOString() }));
+
   const encabezadoAuth = req.headers['authorization'];
-  if (encabezadoAuth !== `Bearer ${process.env.CRON_SECRET}`)
+  if (encabezadoAuth !== `Bearer ${process.env.CRON_SECRET}`) {
+    console.log(JSON.stringify({ etapa: 'notificaciones_invocado', estado: 'error', mensaje: 'Unauthorized' }));
     return res.status(401).json({ error: 'Unauthorized' });
+  }
 
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
@@ -45,7 +48,10 @@ export default async function handler(req, res) {
     return res.status(500).json({ status: 'error', message: 'Database query failed', detail: errorConsulta.message });
   }
 
+  console.log(JSON.stringify({ etapa: 'consulta_pendientes', estado: 'ok', cantidad: pendientes?.length ?? 0, ids: (pendientes ?? []).map(p => p.id) }));
+
   if (!pendientes || pendientes.length === 0) {
+    console.log(JSON.stringify({ etapa: 'notificaciones_cola_vacia' }));
     return res.status(200).json({ status: 'success', message: 'Queue is empty' });
   }
 
@@ -53,11 +59,15 @@ export default async function handler(req, res) {
   const fallidos    = [];
 
   for (const notificacion of pendientes) {
+    console.log(JSON.stringify({ etapa: 'agenda_notificacion_enviando', id: notificacion.id, candidato_id: notificacion.candidato_id }));
+
     let fallo = null;
+    let stack = null;
     try {
       await enviarNotificacionAgendaManyChat(notificacion.payload, notificacion.candidato_id);
     } catch (e) {
       fallo = e.message;
+      stack = e.stack;
     }
 
     // Un solo intento: si ManyChat falla, ninguna llamada posterior para esa
@@ -70,7 +80,7 @@ export default async function handler(req, res) {
 
     if (fallo) {
       fallidos.push({ id: notificacion.id, error: fallo });
-      console.log(JSON.stringify({ etapa: 'agenda_notificacion_enviada', estado: 'error', id: notificacion.id, candidato_id: notificacion.candidato_id, mensaje: fallo }));
+      console.log(JSON.stringify({ etapa: 'agenda_notificacion_enviada', estado: 'error', id: notificacion.id, candidato_id: notificacion.candidato_id, mensaje: fallo, stack }));
     } else {
       procesados.push(notificacion.id);
       console.log(JSON.stringify({ etapa: 'agenda_notificacion_enviada', estado: 'ok', id: notificacion.id, candidato_id: notificacion.candidato_id }));

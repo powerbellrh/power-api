@@ -19,7 +19,7 @@ const URL_FELICITACION = 'https://power-api-alpha.vercel.app/api/felicitacion';
 
 // Tiempo que se espera antes de disparar el flujo de WhatsApp de "Enviar agenda"
 // (se guarda en `notificaciones` y la envía después un cron, no este handler).
-const AGENDA_NOTIFICACION_RETRASO_MS = 5 * 60 * 1000;
+const AGENDA_NOTIFICACION_RETRASO_MS = 15 * 60 * 1000;
 
 const MESES = [
   'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
@@ -216,7 +216,7 @@ async function manejarHired(candidato) {
 
 // ****************************************************************************
 // STAGE "Enviar agenda" → agenda en Supabase el flujo de WhatsApp (lo dispara un
-// cron 5 minutos después, cancelable si el candidato es rechazado o cambia de etapa)
+// cron 15 minutos después, cancelable si el candidato es rechazado o cambia de etapa)
 // ****************************************************************************
 
 // Nota genérica en TeamTailor, ligada al candidato y a la postulación (job-application).
@@ -328,7 +328,7 @@ async function manejarEnviarAgenda(supabase, candidato, data) {
   }
 
   // El payload se resuelve por completo ahora (teléfono, nombres, vacante) y se
-  // congela en `notificaciones`; el cron que dispara el flujo 5 minutos después
+  // congela en `notificaciones`; el cron que dispara el flujo 15 minutos después
   // no vuelve a golpear TeamTailor, solo usa lo que ya se guardó aquí.
   const payload = {
     telefono,
