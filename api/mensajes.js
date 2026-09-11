@@ -14,6 +14,7 @@ const __dirname                      = dirname(fileURLToPath(import.meta.url));
 const PROMPT_AGENTE_CONVERSACIONAL   = readFileSync(join(__dirname, '../prompts/agente_conversacional.txt'), 'utf-8');
 const PROMPT_AGENTE_GENERAL          = readFileSync(join(__dirname, '../prompts/agente_general.txt'), 'utf-8');
 const PROMPT_PREGUNTAS_ENRIQUECIMIENTO = readFileSync(join(__dirname, '../prompts/preguntas_enriquecimiento.txt'), 'utf-8');
+const PROMPT_EVALUAR_BAJA            = readFileSync(join(__dirname, '../prompts/evaluar_baja.txt'), 'utf-8');
 const OPENROUTER_MODEL               = 'deepseek/deepseek-v4-flash-0731';
 const LIMITE_REINTENTOS              = 3;
 const MAXIMO_PREGUNTAS               = 5;
@@ -22,6 +23,12 @@ const REGEX_VACANTE                  = /#(\d{6,})/; // los ids de vacante tienen
 const REGEX_BAJA                     = /\bbaja\b/i; // palabra usada para solicitar la eliminación de datos
 const MENSAJE_IRRESPONSIVO           = 'Irresponsivo'; // valor fijo que manda ManyChat cuando pasa 1h sin respuesta del candidato
 const MENSAJE_DESPEDIDA_INACTIVIDAD  = 'Entendemos que quizás no es el mejor momento. Cuando quieras continuar con tu postulación, solo escríbenos 🙂';
+
+// Solicitud de eliminación de datos ("BAJA"): tag que se agrega en ManyChat (por
+// tag_id) y en TeamTailor (por nombre, dentro del arreglo `tags` del candidato)
+// cuando el LLM confirma que el mensaje es una solicitud real, no un falso positivo.
+const MANYCHAT_TAG_ID_BAJA           = 96343345;
+const TEAMTAILOR_TAG_BAJA            = 'Eliminación';
 
 const FOTO_PERFIL_DEFAULT      = 'https://i.ibb.co/JwvVrDr0/fotodesconocido.png';
 const FOTO_PERFIL_HOMBRE       = 'https://i.ibb.co/4RGYgcC4/fotohombre.png';
@@ -166,6 +173,40 @@ async function registrarSolicitudEliminacion(supabase, fila, log) {
 
   fila.solicitud_eliminacion = ahora;
   log('supabase_baja', { estado: 'ok' });
+}
+
+// Agrega el tag de "solicitud de eliminación" en ManyChat (por tag_id) y en
+// TeamTailor (por nombre, dentro del arreglo `tags` del candidato). Cada
+// plataforma se etiqueta de forma independiente: si una falla, no bloquea la otra.
+async function etiquetarSolicitudBaja({ fila, idSuscriptor, log }) {
+  try {
+    await mcCrear('/fb/subscriber/addTag', { subscriber_id: idSuscriptor, tag_id: MANYCHAT_TAG_ID_BAJA });
+    log('manychat_tag_baja', { estado: 'ok' });
+  } catch (e) {
+    log('manychat_tag_baja', { estado: 'error', error: e.message });
+  }
+
+  if (!fila.candidato) return;
+
+  try {
+    // El atributo `tags` de TeamTailor es un arreglo de nombres que el PATCH
+    // reemplaza por completo (no lo agrega) — hay que traer los tags actuales
+    // del candidato y anexar el nuevo, en vez de mandar solo el nuevo.
+    const candidatoActual = await ttObtener(`/candidates/${fila.candidato}`);
+    const tagsActuales = candidatoActual.data.attributes.tags ?? [];
+    if (!tagsActuales.includes(TEAMTAILOR_TAG_BAJA)) {
+      await ttActualizar(`/candidates/${fila.candidato}`, {
+        data: {
+          type:       'candidates',
+          id:         fila.candidato.toString(),
+          attributes: { tags: [...tagsActuales, TEAMTAILOR_TAG_BAJA] },
+        },
+      });
+    }
+    log('teamtailor_tag_baja', { estado: 'ok', candidato_id: fila.candidato });
+  } catch (e) {
+    log('teamtailor_tag_baja', { estado: 'error', candidato_id: fila.candidato, error: e.message });
+  }
 }
 
 async function agregarMensajeConversacion(supabase, fila, actor, texto, { actualizarTimestamp = false } = {}) {
@@ -483,6 +524,46 @@ async function generarPreguntasEnriquecimiento(conversacion) {
 
   const { preguntas } = typeof llamada.function.arguments === 'string' ? JSON.parse(llamada.function.arguments) : llamada.function.arguments;
   return preguntas.slice(0, 5);
+}
+
+const EVALUAR_BAJA_TOOL = {
+  type: 'function',
+  function: {
+    name:        'evaluar_baja',
+    description: 'Registra si el mensaje del candidato es una solicitud real de eliminar sus datos personales.',
+    parameters: {
+      type: 'object',
+      properties: {
+        es_solicitud_eliminacion: {
+          type:        'boolean',
+          description: 'true si el candidato está pidiendo eliminar sus datos; false si "baja" se usa en otro sentido no relacionado.',
+        },
+      },
+      required: ['es_solicitud_eliminacion'],
+    },
+  },
+};
+
+// El regex REGEX_BAJA solo detecta la palabra "baja" en el mensaje, sin distinguir
+// si es una solicitud real de eliminación de datos o un falso positivo ("me dieron
+// de baja en mi trabajo", "Baja California", etc.) — este LLM hace esa distinción.
+async function evaluarSolicitudBaja(mensaje) {
+  const datos = await orChatCompletion({
+    model:       OPENROUTER_MODEL,
+    reasoning:   { effort: 'low' },
+    messages: [
+      { role: 'system', content: PROMPT_EVALUAR_BAJA },
+      { role: 'user',   content: mensaje },
+    ],
+    tools:       [EVALUAR_BAJA_TOOL],
+    tool_choice: { type: 'function', function: { name: 'evaluar_baja' } },
+  });
+
+  const llamada = datos?.choices?.[0]?.message?.tool_calls?.find(c => c.function?.name === 'evaluar_baja');
+  if (!llamada) throw new Error('OpenRouter no devolvió una evaluación de baja válida');
+
+  const { es_solicitud_eliminacion } = typeof llamada.function.arguments === 'string' ? JSON.parse(llamada.function.arguments) : llamada.function.arguments;
+  return Boolean(es_solicitud_eliminacion);
 }
 
 async function generarRespuestaAgenteGeneral(conversacion) {
@@ -1060,7 +1141,22 @@ async function procesarMensaje({ idSuscriptor, telefono, mensaje, log }) {
   }
 
   if (REGEX_BAJA.test(mensaje)) {
-    await registrarSolicitudEliminacion(supabase, fila, log);
+    let esBajaReal;
+    try {
+      esBajaReal = await evaluarSolicitudBaja(mensaje);
+    } catch (e) {
+      log('evaluacion_baja', { estado: 'error', error: e.message });
+      // Si el LLM falla, se trata como solicitud real: es un derecho del candidato
+      // sobre sus datos personales, así que ante la duda se prefiere marcarla.
+      esBajaReal = true;
+    }
+
+    if (esBajaReal) {
+      await registrarSolicitudEliminacion(supabase, fila, log);
+      await etiquetarSolicitudBaja({ fila, idSuscriptor, log });
+    } else {
+      log('evaluacion_baja', { estado: 'falso_positivo' });
+    }
   }
 
   await agregarMensajeConversacion(supabase, fila, 'usuario', mensaje, { actualizarTimestamp: true });
