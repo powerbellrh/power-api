@@ -454,7 +454,7 @@ async function obtenerAnalisisEstructurado(bloqueCrudo, nombreCandidato, vacante
       tools:       [tool],
       tool_choice: { type: 'function', function: { name: nombreTool } },
       reasoning,
-      max_tokens:  80000,
+      max_tokens:  100000,
     }, process.env.OPENROUTER_API_KEY_INFORMES);
 
     const opcion = datos?.choices?.[0];
