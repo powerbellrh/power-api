@@ -415,7 +415,6 @@ async function obtenerAnalisisEstructurado(bloqueCrudo, nombreCandidato, vacante
     prompt     = PROMPT_ANALISIS_ESTRUCTURADO,
     tool       = INFORME_TOOL,
     nombreTool = 'informe_estructurado',
-    reasoning  = { max_tokens: 70000 },
   } = opciones;
 
   let mensajeUsuario = `Candidato: ${nombreCandidato}\nVacante: ${vacante}\n\n${bloqueCrudo}`;
@@ -453,7 +452,8 @@ async function obtenerAnalisisEstructurado(bloqueCrudo, nombreCandidato, vacante
       ],
       tools:       [tool],
       tool_choice: { type: 'function', function: { name: nombreTool } },
-      reasoning,
+      reasoning:   { effort: 'high' },
+      max_tokens:  80000,
     }, process.env.OPENROUTER_API_KEY_INFORMES);
 
     const llamada = datos?.choices?.[0]?.message?.tool_calls?.find(c => c.function?.name === nombreTool);
@@ -651,7 +651,6 @@ export default async function handler(req, res) {
       prompt:     PROMPT_ANALISIS_ESTRUCTURADO_OPERATIVO,
       tool:       INFORME_TOOL_OPERATIVO,
       nombreTool: 'informe_operativo_estructurado',
-      reasoning:  { effort: 'high' },
     } : {});
 
     let fotoFinal = urlFoto;
