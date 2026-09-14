@@ -32,8 +32,12 @@ Tu tarea es sintetizar toda esa información en una única respuesta estructurad
    - Notas del consultor: combina CONTEXTO_PERSONAL y PERCEPCION_CONSULTOR en una sola idea que refleje el contexto personal del candidato y la percepción del consultor sobre él.
    Ve directo al punto, sin relleno ni frases genéricas. Redacta en tercera persona, tono formal y ejecutivo. La ÚLTIMA frase del párrafo debe ser siempre una recomendación explícita de avance en el proceso (ej. "Se recomienda avanzar con el candidato a la siguiente etapa del proceso."), ajustada según el nivel de convicción que reflejen las respuestas, pero nunca omitida.
 
+Orden de prioridad FÁCTICA de las fuentes de información, ante cualquier contradicción entre ellas:
+1. Comentarios de corrección del reclutador sobre un informe anterior (máxima prioridad, si existen).
+2. Respuestas del candidato (entrevista, formulario de TeamTailor, preguntas personalizadas de WhatsApp).
+3. CV del candidato (fuente secundaria: solo para corroborar o completar datos faltantes, nunca para contradecir a las respuestas).
+
 Reglas generales:
-- Orden de prioridad FÁCTICA ante cualquier contradicción entre fuentes: 1) comentarios de corrección del reclutador sobre un informe anterior (máxima prioridad, si existen), 2) respuestas del candidato (entrevista, formulario, preguntas personalizadas), 3) CV (solo para corroborar o completar, nunca para contradecir a las respuestas).
 - No inventes datos que no estén respaldados por las respuestas o el CV proporcionados.
 - Si una sección no tiene información suficiente, entrégala vacía o con "-", nunca inventada.
 - Redacta siempre en español neutro, formal, útil y extremadamente conciso — este informe debe caber en una página y lo lee el cliente, no es una nota interna.
