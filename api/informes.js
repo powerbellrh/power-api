@@ -415,6 +415,7 @@ async function obtenerAnalisisEstructurado(bloqueCrudo, nombreCandidato, vacante
     prompt     = PROMPT_ANALISIS_ESTRUCTURADO,
     tool       = INFORME_TOOL,
     nombreTool = 'informe_estructurado',
+    reasoning  = { effort: 'medium' },
   } = opciones;
 
   let mensajeUsuario = `Candidato: ${nombreCandidato}\nVacante: ${vacante}\n\n${bloqueCrudo}`;
@@ -452,15 +453,28 @@ async function obtenerAnalisisEstructurado(bloqueCrudo, nombreCandidato, vacante
       ],
       tools:       [tool],
       tool_choice: { type: 'function', function: { name: nombreTool } },
-      reasoning:   { effort: 'high' },
+      reasoning,
       max_tokens:  80000,
     }, process.env.OPENROUTER_API_KEY_INFORMES);
 
-    const llamada = datos?.choices?.[0]?.message?.tool_calls?.find(c => c.function?.name === nombreTool);
-    if (!llamada) throw new Error('OpenRouter no devolvió una respuesta estructurada válida');
+    const opcion = datos?.choices?.[0];
+    const llamada = opcion?.message?.tool_calls?.find(c => c.function?.name === nombreTool);
+
+    console.log(JSON.stringify({
+      etapa: 'analisis_estructurado_debug', modelo: datos?.model, finish_reason: opcion?.finish_reason,
+      usage: datos?.usage, con_curriculum: conCurriculum, tiene_tool_call: !!llamada,
+    }));
+
+    if (!llamada) {
+      console.log(JSON.stringify({ etapa: 'analisis_estructurado_sin_tool_call', respuesta: datos }));
+      throw new Error('OpenRouter no devolvió una respuesta estructurada válida');
+    }
 
     const argumentos = llamada.function.arguments;
-    return typeof argumentos === 'string' ? JSON.parse(argumentos) : argumentos;
+    const analisis = typeof argumentos === 'string' ? JSON.parse(argumentos) : argumentos;
+
+    console.log(JSON.stringify({ etapa: 'analisis_estructurado_resultado', analisis }));
+    return analisis;
   }
 
   try {
@@ -634,6 +648,7 @@ export default async function handler(req, res) {
       evaluacion_supabase:   Object.keys(preguntasRespuestasEvaluacion).length,
       total_clasificadas:    Object.keys(clasificacionPorIndice).length,
       total_pares:           paresPreguntaRespuesta.length,
+      bloque_crudo:          bloqueCrudo,
     }));
 
     // Se refresca el CV justo antes de mandarlo a OpenRouter: la URL firmada de TeamTailor
@@ -651,6 +666,7 @@ export default async function handler(req, res) {
       prompt:     PROMPT_ANALISIS_ESTRUCTURADO_OPERATIVO,
       tool:       INFORME_TOOL_OPERATIVO,
       nombreTool: 'informe_operativo_estructurado',
+      reasoning:  { effort: 'high' },
     } : {});
 
     let fotoFinal = urlFoto;
