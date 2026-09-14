@@ -415,7 +415,7 @@ async function obtenerAnalisisEstructurado(bloqueCrudo, nombreCandidato, vacante
     prompt     = PROMPT_ANALISIS_ESTRUCTURADO,
     tool       = INFORME_TOOL,
     nombreTool = 'informe_estructurado',
-    reasoning  = { effort: 'high', max_tokens: 70000 },
+    reasoning  = { max_tokens: 70000 },
   } = opciones;
 
   let mensajeUsuario = `Candidato: ${nombreCandidato}\nVacante: ${vacante}\n\n${bloqueCrudo}`;
