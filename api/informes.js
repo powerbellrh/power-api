@@ -345,18 +345,12 @@ function extraerNombreInterno(datosVacante) {
   return attrs['internal-name'] || attrs.title || '-';
 }
 
-function extraerIdReclutador(datosVacante) {
-  return datosVacante.data?.relationships?.user?.data?.id ?? null;
+function extraerIdReclutador(datosReclutador) {
+  return datosReclutador?.data?.id ?? null;
 }
 
-function extraerNombreReclutador(datosVacante) {
-  const usuarioId = datosVacante.data?.relationships?.user?.data?.id;
-  if (!usuarioId) return null;
-
-  const usuario = datosVacante.included?.find(item => item.type === 'users' && item.id === usuarioId);
-  if (!usuario) return null;
-
-  const attrs = usuario.attributes ?? {};
+function extraerNombreReclutador(datosReclutador) {
+  const attrs = datosReclutador?.data?.attributes ?? {};
   return attrs.name || `${attrs['first-name'] ?? ''} ${attrs['last-name'] ?? ''}`.trim() || null;
 }
 
@@ -604,10 +598,19 @@ export default async function handler(req, res) {
       urlFoto = await asignarFotoGenerica(nombreCompleto, candidatoId);
     }
 
-    const datosVacante   = await ttObtener(`/jobs/${vacanteId}?include=user`, true);
+    const datosVacante   = await ttObtener(`/jobs/${vacanteId}`, true);
     const nombreInterno  = extraerNombreInterno(datosVacante);
-    const nombreReclutador = extraerNombreReclutador(datosVacante);
-    const idReclutador   = extraerIdReclutador(datosVacante);
+
+    // /jobs/:id/user hereda el líder del equipo/departamento cuando la vacante no tiene
+    // reclutador explícito asignado; relationships.user.data (vía ?include=user) no lo refleja.
+    let datosReclutador = null;
+    try {
+      datosReclutador = await ttObtener(`/jobs/${vacanteId}/user`, true);
+    } catch (e) {
+      console.log(JSON.stringify({ etapa: 'reclutador_vacante', estado: 'sin_reclutador', vacante_id: vacanteId, mensaje: e.message }));
+    }
+    const nombreReclutador = extraerNombreReclutador(datosReclutador);
+    const idReclutador   = extraerIdReclutador(datosReclutador);
     const esOperativo    = idReclutador != null && RECLUTADORES_OPERATIVA.has(idReclutador);
 
     const catalogoIntenciones = esOperativo ? INTENCIONES_OPERATIVO : INTENCIONES_ADMINISTRATIVO;
