@@ -15,6 +15,7 @@ const PROMPT_AGENTE_CONVERSACIONAL   = readFileSync(join(__dirname, '../prompts/
 const PROMPT_AGENTE_GENERAL          = readFileSync(join(__dirname, '../prompts/agente_general.txt'), 'utf-8');
 const PROMPT_PREGUNTAS_ENRIQUECIMIENTO = readFileSync(join(__dirname, '../prompts/preguntas_enriquecimiento.txt'), 'utf-8');
 const PROMPT_EVALUAR_BAJA            = readFileSync(join(__dirname, '../prompts/evaluar_baja.txt'), 'utf-8');
+const PROMPT_RECORDATORIO_INACTIVIDAD = readFileSync(join(__dirname, '../prompts/recordatorio_inactividad.txt'), 'utf-8');
 const OPENROUTER_MODEL               = 'deepseek/deepseek-v4-flash-0731';
 const LIMITE_REINTENTOS              = 3;
 const MAXIMO_PREGUNTAS               = 5;
@@ -1086,10 +1087,35 @@ export async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor
   log('completado', { estado: 'ok' });
 }
 
+// Redacta el recordatorio de inactividad de forma natural en vez de concatenar
+// literalmente el texto interno de la pregunta (que incluye notas técnicas entre
+// paréntesis pensadas para el LLM, no para mostrarse al candidato). Si la llamada
+// a OpenRouter falla, se usa la versión anterior (texto crudo) como respaldo.
+async function generarMensajeRecordatorio(pregunta) {
+  try {
+    const prompt = PROMPT_RECORDATORIO_INACTIVIDAD.replace('{{pregunta}}', pregunta.texto);
+    const datos  = await orChatCompletion({
+      model:     OPENROUTER_MODEL,
+      reasoning: { effort: 'low' },
+      messages:  [{ role: 'system', content: prompt }],
+    });
+
+    const mensaje = datos?.choices?.[0]?.message?.content?.trim();
+    return mensaje || `Hola! ¿Quisieras continuar con tu postulación?\n\n${pregunta.texto}`;
+  } catch (e) {
+    return `Hola! ¿Quisieras continuar con tu postulación?\n\n${pregunta.texto}`;
+  }
+}
+
 // ManyChat manda "Irresponsivo" cuando pasa 1h sin respuesta del candidato. Se le
 // pregunta si quiere continuar, recordándole la pregunta donde se quedó, hasta el
 // mismo límite de reintentos que el resto del flujo (comparten el contador).
 async function procesarRecordatorioInactividad({ supabase, fila, idSuscriptor, log }) {
+  if (fila.solicitud_eliminacion) {
+    log('recordatorio_inactividad', { estado: 'saltado', razon: 'solicitud_eliminacion' });
+    return;
+  }
+
   const itemsPreguntas = fila.preguntas ?? [];
   const pendiente      = itemsPreguntas.find(item => !item.respuesta);
 
@@ -1111,7 +1137,7 @@ async function procesarRecordatorioInactividad({ supabase, fila, idSuscriptor, l
   const esUltimoIntento = reintentosPrevios + 1 >= LIMITE_REINTENTOS;
   const mensajeRecordatorio = esUltimoIntento
     ? `${MENSAJE_DESPEDIDA_INACTIVIDAD}\n\n${NOTA_CANAL_WHATSAPP}\n${URL_CANAL_WHATSAPP}`
-    : `Hola! ¿Quisieras continuar con tu postulación?\n\n${pendiente.texto}`;
+    : await generarMensajeRecordatorio(pendiente);
 
   try {
     await enviarRespuestaCandidato(idSuscriptor, mensajeRecordatorio);
