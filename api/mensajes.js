@@ -66,7 +66,7 @@ const PREGUNTAS_OBLIGATORIAS_INICIO = [
 // Pregunta de cajón que siempre va al final, después de las específicas de la vacante.
 const PREGUNTA_OBLIGATORIA_FIN = {
   id: ID_PREGUNTA_EMPLEO,
-  texto: 'Último(s) empleo(s): empresa, puesto y actividades (con 1 empleo es suficiente, 2 es lo ideal)',
+  texto: 'Último(s) empleo(s): empresa, puesto y actividades por cada uno, separados por " | " si son varios (con 1 empleo es suficiente, 2 es lo ideal)',
   respuesta: '',
   tipo: 'text',
   enviado: false,
@@ -423,8 +423,13 @@ function normalizarRespuesta(id, respuesta) {
   }
 
   if (id === ID_PREGUNTA_DOMICILIO) {
-    const partes = respuesta.split(',').map(parte => parte.trim()).filter(Boolean);
-    return partes.length >= 3 ? partes.slice(0, 3).join(', ') : '';
+    // Antes se descartaba la respuesta completa (devolviendo '') cuando el candidato no
+    // separaba calle/colonia/municipio con exactamente 3 comas, lo que borraba domicilios
+    // válidos y hacía que el bot repitiera la pregunta como si nunca la hubiera contestado.
+    // Ahora se conserva el texto tal cual; es el LLM (guiado por el prompt) quien decide
+    // si falta algún dato y pide solo lo que falte.
+    const partes = respuesta.split(/[,\n]/).map(parte => parte.trim()).filter(Boolean);
+    return partes.length >= 3 ? partes.slice(0, 3).join(', ') : respuesta.trim();
   }
 
   return respuesta.trim();
