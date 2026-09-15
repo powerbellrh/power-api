@@ -10,7 +10,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const PROMPT_ANALISIS_ESTRUCTURADO           = readFileSync(join(__dirname, '../prompts/analisis_estructurado.txt'), 'utf-8');
 const PROMPT_ANALISIS_ESTRUCTURADO_OPERATIVO = readFileSync(join(__dirname, '../prompts/analisis_estructurado_operativo.txt'), 'utf-8');
-const OPENROUTER_MODEL             = 'z-ai/glm-5.3';
+const OPENROUTER_MODEL             = 'anthropic/claude-sonnet-5';
 const OPENROUTER_MODEL_IMAGEN      = 'google/gemini-3.1-flash-lite-image';
 const FOTO_PERFIL_DEFAULT          = 'https://i.ibb.co/JwvVrDr0/fotodesconocido.png';
 const FOTO_PERFIL_HOMBRE           = 'https://i.ibb.co/4RGYgcC4/fotohombre.png';
@@ -651,14 +651,31 @@ export default async function handler(req, res) {
       bloque_crudo:          bloqueCrudo,
     }));
 
-    // Se refresca el CV justo antes de mandarlo a OpenRouter: la URL firmada de TeamTailor
-    // expira en segundos, y para este punto ya pasaron las llamadas de clasificación de preguntas.
-    let urlCurriculumAnalisis = urlCurriculum;
-    try {
-      const candidatoParaAnalisis = await ttObtener(`/job-applications/${postulacionId}/candidate`, true);
-      urlCurriculumAnalisis = candidatoParaAnalisis.data?.attributes?.resume ?? urlCurriculum;
-    } catch (e) {
-      console.log(JSON.stringify({ etapa: 'refrescar_cv_analisis', estado: 'error', mensaje: e.message, postulacion_id: postulacionId }));
+    // El CV solo se usa como fuente de información cuando el candidato tiene pocas respuestas
+    // (menos de 5): en ese caso hay poco material de la entrevista para corroborar, así que se
+    // adjunta el CV para completar/corroborar datos. Con 5 respuestas o más, se vuelve al método
+    // previo a la adjunción del CV: el análisis se basa únicamente en las respuestas del candidato.
+    const RESPUESTAS_MINIMAS_SIN_CV = 5;
+    const usaCurriculumComoFuente   = paresPreguntaRespuesta.length < RESPUESTAS_MINIMAS_SIN_CV;
+    let urlCurriculumAnalisis = null;
+
+    console.log(JSON.stringify({
+      etapa: 'decision_fuente_cv', postulacion_id: postulacionId,
+      total_pares: paresPreguntaRespuesta.length, umbral_respuestas_minimas: RESPUESTAS_MINIMAS_SIN_CV,
+      usa_cv_como_fuente: usaCurriculumComoFuente, tiene_cv_disponible: !!urlCurriculum,
+      metodo: usaCurriculumComoFuente ? 'cv_como_fuente_secundaria' : 'previo_a_adjuncion_de_cv',
+    }));
+
+    if (usaCurriculumComoFuente && urlCurriculum) {
+      // Se refresca el CV justo antes de mandarlo a OpenRouter: la URL firmada de TeamTailor
+      // expira en segundos, y para este punto ya pasaron las llamadas de clasificación de preguntas.
+      urlCurriculumAnalisis = urlCurriculum;
+      try {
+        const candidatoParaAnalisis = await ttObtener(`/job-applications/${postulacionId}/candidate`, true);
+        urlCurriculumAnalisis = candidatoParaAnalisis.data?.attributes?.resume ?? urlCurriculum;
+      } catch (e) {
+        console.log(JSON.stringify({ etapa: 'refrescar_cv_analisis', estado: 'error', mensaje: e.message, postulacion_id: postulacionId }));
+      }
     }
 
     console.log(JSON.stringify({ etapa: 'analisis_ia', candidato: nombreCompleto, vacante: nombreInterno, tipo: esOperativo ? 'operativo' : 'estandar', con_cv: !!urlCurriculumAnalisis }));
