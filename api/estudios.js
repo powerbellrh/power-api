@@ -7,7 +7,7 @@ import { SALARIO_MINIMO_MENSUAL, SEMANAS_POR_MES } from '../lib/config.js';
 const __dirname                     = dirname(fileURLToPath(import.meta.url));
 const PROMPT_CONCLUSIONES           = readFileSync(join(__dirname, '../prompts/conclusiones_ia.txt'), 'utf-8');
 const PROMPT_CONCLUSIONES_GLASSDOOR = readFileSync(join(__dirname, '../prompts/conclusiones_ia_glassdoor.txt'), 'utf-8');
-const OPENROUTER_MODEL              = 'z-ai/glm-5.2';
+const OPENROUTER_MODEL              = 'z-ai/glm-5.3';
 
 const costo      = (ti, to) => +((ti / 1_000_000) + (to / 1_000_000 * 5)).toFixed(6);
 const redondear  = v => Math.round(v * 100) / 100;
