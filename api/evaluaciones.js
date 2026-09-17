@@ -42,16 +42,17 @@ export const PROMPTS = {
   AD:        readFileSync(join(__dirname, '../prompts/evaluacion_administrativa.txt'),   'utf-8'),
   OP:        readFileSync(join(__dirname, '../prompts/evaluacion_operativa.txt'),        'utf-8'),
   REEVAL_AD: readFileSync(join(__dirname, '../prompts/reevaluacion_administrativa.txt'), 'utf-8'),
+  REEVAL_OP: readFileSync(join(__dirname, '../prompts/reevaluacion_operativa.txt'),      'utf-8'),
 };
 
 const OPENROUTER_MODEL_AD        = 'z-ai/glm-5.3';
-const OPENROUTER_MODEL_OP        = 'deepseek/deepseek-v4-flash-0731';
+const OPENROUTER_MODEL_OP        = 'z-ai/glm-5.3';
 const OPENROUTER_MODEL_OP_VISION = 'anthropic/claude-haiku-4.5'; // GLM no tiene ruta en OpenRouter que acepte imágenes
 
 export const AI_CONFIG = {
-  AD:        { model: OPENROUTER_MODEL_AD,        max_tokens: 20000, reasoningEffort: 'high' },
-  OP:        { model: OPENROUTER_MODEL_OP,        max_tokens: 20000, reasoningEffort: 'max' },
-  OP_VISION: { model: OPENROUTER_MODEL_OP_VISION, max_tokens: 20000, reasoningEffort: 'high' },
+  AD:        { model: OPENROUTER_MODEL_AD,        max_tokens: 20000, reasoningEffort: 'high'   },
+  OP:        { model: OPENROUTER_MODEL_OP,        max_tokens: 30000, reasoningEffort: 'low'    },
+  OP_VISION: { model: OPENROUTER_MODEL_OP_VISION, max_tokens: 20000, reasoningEffort: 'high'   },
 };
 
 const TEAMTAILOR_BOT_USER_ID              = AD_TEAMTAILOR_BOT_USER_ID;
@@ -267,7 +268,10 @@ async function procesarReevaluacion(postulacionId, postulacion, supabase) {
     candidato_respuestas: respuestasOriginales,
     respuestas_preguntas_personalizadas: respuestasPersonalizadas,
     evaluacion_calificacion: calificacionOriginal,
+    vacante_tipo: vacanteTipo,
   } = postulacion;
+
+  const esAdministrativa = vacanteTipo === 'AD' || !vacanteTipo;
 
   let etapaActual = 'init';
   let candidateId = null;
@@ -293,20 +297,28 @@ async function procesarReevaluacion(postulacionId, postulacion, supabase) {
     const bloqueRespuestasPersonalizadas = construirBloqueRespuestasPersonalizadas(respuestasPersonalizadas);
     if (bloqueRespuestasPersonalizadas) bloqueCandidato += `\n\n${bloqueRespuestasPersonalizadas}`;
 
+    const resultadoOriginalTexto = esAdministrativa
+      ? (calificacionOriginal ?? 'desconocida')
+      : (calificacionOriginal === 20 ? 'APTO' : calificacionOriginal === 0 ? 'NO APTO' : 'desconocido');
+
     const fechaActual = new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Mexico_City' });
-    const promptSistemaConFecha = PROMPTS.REEVAL_AD
+    const promptReeval = esAdministrativa ? PROMPTS.REEVAL_AD : PROMPTS.REEVAL_OP;
+    const configReeval = esAdministrativa ? AI_CONFIG.AD     : AI_CONFIG.OP;
+    const promptSistemaConFecha = promptReeval
       .replace('{{fecha_actual}}', fechaActual)
-      .replace(/\{\{calificacion_original\}\}/g, calificacionOriginal ?? 'desconocida')
+      .replace(/\{\{calificacion_original\}\}/g, resultadoOriginalTexto)
       .replace(/\{\{titulo_vacante\}\}/g, tituloVacanteInterno);
 
-    const peticionModelo = construirPeticionOpenRouter(AI_CONFIG.AD, promptSistemaConFecha, bloqueVacante, bloqueCandidato, urlCurriculum, null);
+    const peticionModelo = construirPeticionOpenRouter(configReeval, promptSistemaConFecha, bloqueVacante, bloqueCandidato, urlCurriculum, null);
 
     etapaActual = 'modelo_ia';
     const { resultadoEvaluacion, contenidoPensamiento, tokensEntrada, tokensSalida } = await llamarOpenRouter(peticionModelo);
     console.log(JSON.stringify({ etapa: 'reevaluacion_modelo_ia', caracteres: resultadoEvaluacion.length, tokens_input: tokensEntrada, tokens_output: tokensSalida }));
 
     etapaActual = 'extraccion_resultados';
-    const calificacionGlobal = extraerCalificacion(resultadoEvaluacion);
+    const calificacionGlobal = esAdministrativa
+      ? extraerCalificacion(resultadoEvaluacion)
+      : estadoEvaluacionACalificacion(extraerEstadoEvaluacion(resultadoEvaluacion));
     if (calificacionGlobal === null) {
       console.log(JSON.stringify({ etapa: 'reevaluacion_extraccion_score', estado: 'null', candidato: candidatoNombre }));
     }
@@ -316,7 +328,7 @@ async function procesarReevaluacion(postulacionId, postulacion, supabase) {
       evaluacion_pensamiento:  contenidoPensamiento,
       evaluacion_calificacion: calificacionGlobal,
       evaluacion_resultado:    resultadoEvaluacion,
-      evaluacion_modelo:       AI_CONFIG.AD.model,
+      evaluacion_modelo:       configReeval.model,
       reevaluacion_completada: true,
       tokens_input:            tokensEntrada,
       tokens_output:           tokensSalida,
@@ -324,7 +336,7 @@ async function procesarReevaluacion(postulacionId, postulacion, supabase) {
     if (errorGuardado) throw errorGuardado;
 
     etapaActual = 'actualizar_foto';
-    if (calificacionGlobal !== null) {
+    if (calificacionGlobal !== null && esAdministrativa) {
       try {
         await ttActualizar(`/candidates/${candidateId}`, {
           data: { id: candidateId.toString(), type: 'candidates', attributes: { picture: obtenerUrlImagenPuntuacion(calificacionGlobal, true) } },

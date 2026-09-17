@@ -8,7 +8,7 @@ import { ttObtener, ttActualizar, ttCrear, ttSubirArchivoTransitorio, mcCrear } 
 import { orChatCompletion } from '../lib/openrouter.js';
 import { dormir }           from '../lib/evaluacion_postulacion.js';
 import { limpiarHtmlParaWhatsApp } from '../lib/formato_texto.js';
-import { TEAMTAILOR_ADDRESS_QUESTION_ID, TEAMTAILOR_EDAD_QUESTION_ID, TEAMTAILOR_EMPLEO_ANTERIOR_QUESTION_ID } from '../lib/config.js';
+import { TEAMTAILOR_ADDRESS_QUESTION_ID, TEAMTAILOR_EDAD_QUESTION_ID, TEAMTAILOR_EMPLEO_ANTERIOR_QUESTION_ID, TEAMTAILOR_USER_ID } from '../lib/config.js';
 
 const __dirname                      = dirname(fileURLToPath(import.meta.url));
 const PROMPT_AGENTE_CONVERSACIONAL   = readFileSync(join(__dirname, '../prompts/agente_conversacional.txt'), 'utf-8');
@@ -911,9 +911,10 @@ export async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor
     }
   }
 
-  const avanzo           = detectarAvance(itemsPreguntas, itemsConExtra);
-  const todasRespondidas = itemsConExtra.every(item => item.respuesta);
-  const nuevoReintentos  = avanzo ? 0 : (fila.reintentos ?? 0) + 1;
+  const avanzo               = detectarAvance(itemsPreguntas, itemsConExtra);
+  const todasBaseRespondidas = itemsConExtra.filter(item => item.tipo !== 'extra').every(item => item.respuesta);
+  const todasRespondidas     = itemsConExtra.every(item => item.respuesta);
+  const nuevoReintentos      = avanzo ? 0 : (fila.reintentos ?? 0) + 1;
 
   let mensajeAgente     = (resultadoAgente.mensaje ?? '').slice(0, 250);
   let reintentosFinales = nuevoReintentos;
@@ -975,7 +976,10 @@ export async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor
               data: {
                 type:       'notes',
                 attributes: { note: `❓ Pregunta: ${item.texto}\n💬 Respuesta: ${item.respuesta}` },
-                relationships: { candidate: { data: { id: id.toString(), type: 'candidates' } } },
+                relationships: {
+                  candidate: { data: { id: id.toString(), type: 'candidates' } },
+                  user:      { data: { id: TEAMTAILOR_USER_ID, type: 'users' } },
+                },
               },
             }),
             { nombre: itemNombre?.respuesta, genero, telefono, idVacante: fila.vacante, log },
@@ -1016,8 +1020,53 @@ export async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor
     .eq('id', fila.id);
   if (errorProgreso) log('supabase_preguntas', { estado: 'error', error: errorProgreso.message });
 
-  log('agente', { estado: 'ok', avanzo, todasRespondidas, reintentos: reintentosFinales });
+  log('agente', { estado: 'ok', avanzo, todasBaseRespondidas, todasRespondidas, reintentos: reintentosFinales });
 
+  // Primera evaluación: se dispara en cuanto termina el cuestionario base, sin
+  // esperar a las preguntas extra (que pueden tardar varios turnos más, o nunca
+  // generarse si falla la llamada al modelo).
+  if (todasBaseRespondidas && candidatoId) {
+    // Backfill: si esta fila nunca capturó el job-application id (candidatos
+    // creados antes de este cambio), se busca en TeamTailor y se persiste.
+    let postulacionId = fila.postulacion ?? null;
+    if (!postulacionId && fila.vacante) {
+      try {
+        postulacionId = await buscarPostulacionTeamTailor(candidatoId, fila.vacante);
+        if (postulacionId) {
+          fila.postulacion = postulacionId;
+          await supabase.from('chatbot').update({ postulacion: postulacionId }).eq('id', fila.id);
+          log('postulacion_recuperada', { estado: 'ok', postulacion_id: postulacionId });
+        }
+      } catch (e) {
+        log('postulacion_recuperada', { estado: 'error', error: e.message });
+      }
+    }
+
+    if (postulacionId) {
+      // Evita duplicar el encolado si el candidato reenvía algo después de completar.
+      const { data: yaEncolada } = await supabase.from('evaluaciones').select('postulacion_id').eq('postulacion_id', postulacionId).maybeSingle();
+
+      if (!yaEncolada) {
+        const { error: errorEncolado } = await supabase.from('evaluaciones').insert([{
+          postulacion_id:        postulacionId,
+          candidato_nombre:      itemNombre?.respuesta ?? '',
+          candidato_telefono:    telefono,
+          vacante_id:            fila.vacante,
+          vacante_tipo:          'OP',
+          evaluacion_agendada:   false,
+          evaluacion_completada: false,
+          origen:                'chatbot',
+        }]);
+        if (errorEncolado) log('evaluacion_encolada', { estado: 'error', error: errorEncolado.message });
+        else log('evaluacion_encolada', { estado: 'ok', postulacion_id: postulacionId });
+      }
+    } else {
+      log('evaluacion_encolada', { estado: 'omitida', razon: 'no se encontró postulacion_id', candidato_id: candidatoId });
+    }
+  }
+
+  // Segunda evaluación (reevaluación): se dispara al terminar las preguntas
+  // extra de enriquecimiento, si es que llegaron a generarse y contestarse.
   if (todasRespondidas && candidatoId) {
     try {
       const { candidatoId: candidatoIdValido } = await conCandidatoValido(
@@ -1035,44 +1084,15 @@ export async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor
     }
 
     const itemsExtra = itemsConExtra.filter(i => i.tipo === 'extra' && i.respuesta);
-    if (itemsExtra.length) {
-      // Backfill: si esta fila nunca capturó el job-application id (candidatos
-      // creados antes de este cambio), se busca en TeamTailor y se persiste.
-      let postulacionId = fila.postulacion ?? null;
-      if (!postulacionId && fila.vacante) {
-        try {
-          postulacionId = await buscarPostulacionTeamTailor(candidatoId, fila.vacante);
-          if (postulacionId) {
-            fila.postulacion = postulacionId;
-            await supabase.from('chatbot').update({ postulacion: postulacionId }).eq('id', fila.id);
-            log('postulacion_recuperada', { estado: 'ok', postulacion_id: postulacionId });
-          }
-        } catch (e) {
-          log('postulacion_recuperada', { estado: 'error', error: e.message });
-        }
-      }
-
-      if (postulacionId) {
-        // Evita duplicar el encolado si el candidato reenvía algo después de completar.
-        const { data: yaEncolada } = await supabase.from('evaluaciones').select('postulacion_id').eq('postulacion_id', postulacionId).maybeSingle();
-
-        if (!yaEncolada) {
-          const { error: errorEncolado } = await supabase.from('evaluaciones').insert([{
-            postulacion_id:        postulacionId,
-            candidato_nombre:      itemNombre?.respuesta ?? '',
-            candidato_telefono:    telefono,
-            vacante_id:            fila.vacante,
-            vacante_tipo:          'OP',
-            evaluacion_agendada:   false,
-            evaluacion_completada: false,
-            origen:                'chatbot',
-          }]);
-          if (errorEncolado) log('evaluacion_encolada', { estado: 'error', error: errorEncolado.message });
-          else log('evaluacion_encolada', { estado: 'ok', postulacion_id: postulacionId });
-        }
-      } else {
-        log('evaluacion_encolada', { estado: 'omitida', razon: 'no se encontró postulacion_id', candidato_id: candidatoId });
-      }
+    if (itemsExtra.length && fila.postulacion) {
+      const { error: errorReevaluacion } = await supabase.from('evaluaciones').update({
+        respuestas_preguntas_personalizadas: Object.fromEntries(itemsExtra.map(i => [i.texto, i.respuesta])),
+        reevaluacion_solicitada: true,
+      }).eq('postulacion_id', fila.postulacion);
+      if (errorReevaluacion) log('reevaluacion_solicitada', { estado: 'error', error: errorReevaluacion.message });
+      else log('reevaluacion_solicitada', { estado: 'ok', postulacion_id: fila.postulacion });
+    } else if (itemsExtra.length) {
+      log('reevaluacion_solicitada', { estado: 'omitida', razon: 'no se encontró postulacion_id', candidato_id: candidatoId });
     }
   }
 
