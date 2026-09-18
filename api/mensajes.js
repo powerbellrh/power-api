@@ -136,12 +136,16 @@ const ACTUALIZAR_VACANTE_TOOL = {
           type:        'string',
           description: 'Cuerpo completo de la vacante (contexto, oferta, responsabilidades, requisitos, cierre) en HTML, usando únicamente <p>, <strong> y <ul><li>. Cadena vacía si aún faltan secciones.',
         },
+        contexto: {
+          type:        'string',
+          description: 'Texto plano (sin HTML) de a quién contrata y una idea general del puesto, tal como lo dio la reclutadora — la misma información de la sección de contexto de "descripcion", pero sin formato. Se usa internamente para evaluar candidatos, no se publica. Cadena vacía si aún no se conoce.',
+        },
         confirmado: {
           type:        'boolean',
           description: 'true SOLO si la reclutadora confirmó explícitamente, en su último mensaje, que se cree la vacante con el resumen que ya se le mostró.',
         },
       },
-      required: ['mensaje', 'nombre_interno', 'titulo', 'descripcion', 'confirmado'],
+      required: ['mensaje', 'nombre_interno', 'titulo', 'descripcion', 'contexto', 'confirmado'],
     },
   },
 };
@@ -363,8 +367,11 @@ async function actualizarCandidatoTeamTailor(candidatoId, nombre, genero) {
 
 // Crea una vacante nueva en TeamTailor a partir de la plantilla administrativa
 // (copia triggers, formulario de aplicación, etc.; los atributos de abajo la sobrescriben),
-// publicada de inmediato (status "open"), asignada al usuario bot.
-async function crearVacanteTeamTailor({ nombreInterno, titulo, descripcion }) {
+// publicada de inmediato (status "open"), asignada al usuario bot. El "contexto" (a quién
+// contrata, idea general del puesto) se guarda en el campo personalizado con api-name
+// "contexto" (id AD_TEAMTAILOR_CUSTOM_FIELD_ID = 8036), el mismo que usa /evaluaciones para
+// generar preguntas y decidir inclusión/exclusión de candidatos en esta vacante.
+async function crearVacanteTeamTailor({ nombreInterno, titulo, descripcion, contexto }) {
   const respuesta = await ttCrear('/jobs', {
     data: {
       type: 'jobs',
@@ -374,6 +381,7 @@ async function crearVacanteTeamTailor({ nombreInterno, titulo, descripcion }) {
         'body':          descripcion,
         'status':        'open',
         'template-id':   TEAMTAILOR_TEMPLATE_ID_VACANTE,
+        'contexto':      contexto,
       },
       relationships: {
         user: { data: { id: TEAMTAILOR_USER_ID, type: 'users' } },
@@ -1272,7 +1280,7 @@ async function procesarRecordatorioInactividad({ supabase, fila, idSuscriptor, l
   log('recordatorio_inactividad', { estado: 'ok', reintentos: nuevosReintentos, ultimo_intento: esUltimoIntento, pregunta_id: pendiente.id });
 }
 
-const IDS_CAMPOS_BORRADOR_VACANTE = ['nombre_interno', 'titulo', 'descripcion'];
+const IDS_CAMPOS_BORRADOR_VACANTE = ['nombre_interno', 'titulo', 'descripcion', 'contexto'];
 
 // Flujo interno (no de candidatos): una reclutadora autorizada (NUMEROS_AUTORIZADOS_VACANTES)
 // crea una vacante en TeamTailor conversando por WhatsApp. Reutiliza la tabla `chatbot`
@@ -1299,16 +1307,16 @@ async function procesarCreacionVacante({ supabase, telefono, mensaje, idSuscript
     return;
   }
 
-  const { mensaje: mensajeAgente, nombre_interno: nombreInterno, titulo, descripcion, confirmado } = resultado;
+  const { mensaje: mensajeAgente, nombre_interno: nombreInterno, titulo, descripcion, contexto, confirmado } = resultado;
 
   const nuevasPreguntas = IDS_CAMPOS_BORRADOR_VACANTE.map(id => ({ id, respuesta: resultado[id] ?? '' }));
   fila.preguntas = nuevasPreguntas;
   const { error: errorActualizacion } = await supabase.from('chatbot').update({ preguntas: nuevasPreguntas }).eq('id', fila.id);
   if (errorActualizacion) log('supabase_preguntas', { estado: 'error', error: errorActualizacion.message });
 
-  if (confirmado && nombreInterno && titulo && descripcion) {
+  if (confirmado && nombreInterno && titulo && descripcion && contexto) {
     try {
-      const vacanteCreada = await crearVacanteTeamTailor({ nombreInterno, titulo, descripcion });
+      const vacanteCreada = await crearVacanteTeamTailor({ nombreInterno, titulo, descripcion, contexto });
       log('vacante_creada', { estado: 'ok', vacante_id: vacanteCreada.id, telefono });
 
       const mensajeExito = `Vacante creada: "${titulo}" (ID ${vacanteCreada.id})${vacanteCreada.url ? `\n${vacanteCreada.url}` : ''}`;
