@@ -8,7 +8,7 @@ import { ttObtener, ttActualizar, ttCrear, ttSubirArchivoTransitorio, mcCrear } 
 import { orChatCompletion } from '../lib/openrouter.js';
 import { dormir }           from '../lib/evaluacion_postulacion.js';
 import { limpiarHtmlParaWhatsApp } from '../lib/formato_texto.js';
-import { TEAMTAILOR_ADDRESS_QUESTION_ID, TEAMTAILOR_EDAD_QUESTION_ID, TEAMTAILOR_EMPLEO_ANTERIOR_QUESTION_ID, TEAMTAILOR_USER_ID, NUMEROS_AUTORIZADOS_VACANTES, TEAMTAILOR_TEMPLATE_ID_VACANTE } from '../lib/config.js';
+import { TEAMTAILOR_ADDRESS_QUESTION_ID, TEAMTAILOR_EDAD_QUESTION_ID, TEAMTAILOR_EMPLEO_ANTERIOR_QUESTION_ID, TEAMTAILOR_USER_ID, NUMEROS_AUTORIZADOS_VACANTES, TEAMTAILOR_TEMPLATE_ID_VACANTE, AD_TEAMTAILOR_CUSTOM_FIELD_ID } from '../lib/config.js';
 
 const __dirname                      = dirname(fileURLToPath(import.meta.url));
 const PROMPT_AGENTE_CONVERSACIONAL   = readFileSync(join(__dirname, '../prompts/agente_conversacional.txt'), 'utf-8');
@@ -379,7 +379,7 @@ async function actualizarCandidatoTeamTailor(candidatoId, nombre, genero) {
 // contrata, idea general del puesto) se guarda en el campo personalizado con api-name
 // "contexto" (id AD_TEAMTAILOR_CUSTOM_FIELD_ID = 8036), el mismo que usa /evaluaciones para
 // generar preguntas y decidir inclusión/exclusión de candidatos en esta vacante.
-async function crearVacanteTeamTailor({ nombreInterno, titulo, descripcion, contexto, ubicacionId }) {
+async function crearVacanteTeamTailor({ nombreInterno, titulo, descripcion, ubicacionId }) {
   const respuesta = await ttCrear('/jobs', {
     data: {
       type: 'jobs',
@@ -389,7 +389,6 @@ async function crearVacanteTeamTailor({ nombreInterno, titulo, descripcion, cont
         'body':          descripcion,
         'status':        'open',
         'template-id':   TEAMTAILOR_TEMPLATE_ID_VACANTE,
-        'contexto':      contexto,
       },
       relationships: {
         user:      { data: { id: TEAMTAILOR_USER_ID, type: 'users' } },
@@ -398,6 +397,21 @@ async function crearVacanteTeamTailor({ nombreInterno, titulo, descripcion, cont
     },
   });
   return { id: Number(respuesta.data.id), url: respuesta.data.links?.['careersite-job-url'] ?? null };
+}
+
+// El custom field "contexto" (id AD_TEAMTAILOR_CUSTOM_FIELD_ID = 8036) no se puede mandar
+// como atributo directo al crear el job (TeamTailor responde "Param not allowed"): hay que
+// crear su valor aparte, en la relación custom-field-values del job ya creado.
+async function establecerContextoVacanteTeamTailor(vacanteId, contexto) {
+  await ttCrear(`/jobs/${vacanteId}/custom-field-values`, {
+    data: {
+      type:       'custom-field-values',
+      attributes: { value: contexto },
+      relationships: {
+        'custom-field': { data: { id: AD_TEAMTAILOR_CUSTOM_FIELD_ID, type: 'custom-fields' } },
+      },
+    },
+  });
 }
 
 function normalizarTexto(texto) {
@@ -1400,8 +1414,15 @@ async function procesarCreacionVacante({ supabase, telefono, mensaje, idSuscript
   if (confirmado && nombreInterno && titulo && ubicacion && descripcion && contexto) {
     try {
       const ubicacionId = await obtenerOCrearUbicacionIdTeamTailor(ubicacion, log);
-      const vacanteCreada = await crearVacanteTeamTailor({ nombreInterno, titulo, descripcion, contexto, ubicacionId });
+      const vacanteCreada = await crearVacanteTeamTailor({ nombreInterno, titulo, descripcion, ubicacionId });
       log('vacante_creada', { estado: 'ok', vacante_id: vacanteCreada.id, telefono });
+
+      try {
+        await establecerContextoVacanteTeamTailor(vacanteCreada.id, contexto);
+        log('vacante_contexto', { estado: 'ok', vacante_id: vacanteCreada.id });
+      } catch (e) {
+        log('vacante_contexto', { estado: 'error', vacante_id: vacanteCreada.id, error: e.message });
+      }
 
       const mensajeExito = `Vacante creada: "${titulo}" (ID ${vacanteCreada.id})${vacanteCreada.url ? `\n${vacanteCreada.url}` : ''}`;
       await enviarRespuestaCandidato(idSuscriptor, mensajeExito);
