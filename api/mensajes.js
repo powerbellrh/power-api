@@ -8,7 +8,7 @@ import { ttObtener, ttActualizar, ttCrear, ttSubirArchivoTransitorio, mcCrear } 
 import { orChatCompletion } from '../lib/openrouter.js';
 import { dormir }           from '../lib/evaluacion_postulacion.js';
 import { limpiarHtmlParaWhatsApp } from '../lib/formato_texto.js';
-import { TEAMTAILOR_ADDRESS_QUESTION_ID, TEAMTAILOR_EDAD_QUESTION_ID, TEAMTAILOR_EMPLEO_ANTERIOR_QUESTION_ID, TEAMTAILOR_USER_ID } from '../lib/config.js';
+import { TEAMTAILOR_ADDRESS_QUESTION_ID, TEAMTAILOR_EDAD_QUESTION_ID, TEAMTAILOR_EMPLEO_ANTERIOR_QUESTION_ID, TEAMTAILOR_USER_ID, NUMEROS_AUTORIZADOS_VACANTES, TEAMTAILOR_TEMPLATE_ID_VACANTE } from '../lib/config.js';
 
 const __dirname                      = dirname(fileURLToPath(import.meta.url));
 const PROMPT_AGENTE_CONVERSACIONAL   = readFileSync(join(__dirname, '../prompts/agente_conversacional.txt'), 'utf-8');
@@ -16,6 +16,7 @@ const PROMPT_AGENTE_GENERAL          = readFileSync(join(__dirname, '../prompts/
 const PROMPT_PREGUNTAS_ENRIQUECIMIENTO = readFileSync(join(__dirname, '../prompts/preguntas_enriquecimiento.txt'), 'utf-8');
 const PROMPT_EVALUAR_BAJA            = readFileSync(join(__dirname, '../prompts/evaluar_baja.txt'), 'utf-8');
 const PROMPT_RECORDATORIO_INACTIVIDAD = readFileSync(join(__dirname, '../prompts/recordatorio_inactividad.txt'), 'utf-8');
+const PROMPT_AGENTE_CREACION_VACANTE = readFileSync(join(__dirname, '../prompts/agente_creacion_vacante.txt'), 'utf-8');
 const OPENROUTER_MODEL               = 'deepseek/deepseek-v4-flash-0731';
 const LIMITE_REINTENTOS              = 3;
 const MAXIMO_PREGUNTAS               = 5;
@@ -104,6 +105,40 @@ const ACTUALIZAR_PROGRESO_TOOL = {
         },
       },
       required: ['mensaje', 'genero', 'preguntas'],
+    },
+  },
+};
+
+const ACTUALIZAR_VACANTE_TOOL = {
+  type: 'function',
+  function: {
+    name: 'actualizar_vacante',
+    description: 'Genera la respuesta para la reclutadora y registra el estado más reciente de los datos de la vacante que se va a crear.',
+    parameters: {
+      type: 'object',
+      properties: {
+        mensaje: {
+          type:        'string',
+          description: 'Respuesta a enviar por WhatsApp a la reclutadora.',
+        },
+        nombre_interno: {
+          type:        'string',
+          description: 'Nombre interno de la vacante (uso administrativo, no se publica). Cadena vacía si aún no se conoce.',
+        },
+        titulo: {
+          type:        'string',
+          description: 'Título público de la vacante. Cadena vacía si aún no se conoce.',
+        },
+        descripcion: {
+          type:        'string',
+          description: 'Cuerpo completo de la vacante (contexto, oferta, responsabilidades, requisitos, cierre) en HTML, usando únicamente <p>, <strong> y <ul><li>. Cadena vacía si aún faltan secciones.',
+        },
+        confirmado: {
+          type:        'boolean',
+          description: 'true SOLO si la reclutadora confirmó explícitamente, en su último mensaje, que se cree la vacante con el resumen que ya se le mostró.',
+        },
+      },
+      required: ['mensaje', 'nombre_interno', 'titulo', 'descripcion', 'confirmado'],
     },
   },
 };
@@ -323,6 +358,28 @@ async function actualizarCandidatoTeamTailor(candidatoId, nombre, genero) {
   });
 }
 
+// Crea una vacante nueva en TeamTailor a partir de la plantilla administrativa
+// (copia triggers, formulario de aplicación, etc.; los atributos de abajo la sobrescriben),
+// publicada de inmediato (status "open"), asignada al usuario bot.
+async function crearVacanteTeamTailor({ nombreInterno, titulo, descripcion }) {
+  const respuesta = await ttCrear('/jobs', {
+    data: {
+      type: 'jobs',
+      attributes: {
+        'title':         titulo,
+        'internal-name': nombreInterno,
+        'body':          descripcion,
+        'status':        'open',
+        'template-id':   TEAMTAILOR_TEMPLATE_ID_VACANTE,
+      },
+      relationships: {
+        user: { data: { id: TEAMTAILOR_USER_ID, type: 'users' } },
+      },
+    },
+  });
+  return { id: Number(respuesta.data.id), url: respuesta.data.links?.['careersite-job-url'] ?? null };
+}
+
 function esRegistroNoEncontrado(e) {
   return /404/.test(e.message) && /Record not found/i.test(e.message);
 }
@@ -487,6 +544,24 @@ async function generarRespuestaAgente({ items, conversacion }) {
   });
 
   const llamada = datos?.choices?.[0]?.message?.tool_calls?.find(c => c.function?.name === 'actualizar_progreso');
+  if (!llamada) throw new Error('OpenRouter no devolvió una respuesta estructurada válida');
+
+  return typeof llamada.function.arguments === 'string' ? JSON.parse(llamada.function.arguments) : llamada.function.arguments;
+}
+
+async function generarRespuestaAgenteVacante(conversacion) {
+  const datos = await orChatCompletion({
+    model:       OPENROUTER_MODEL,
+    reasoning:   { effort: 'medium' },
+    messages: [
+      { role: 'system', content: PROMPT_AGENTE_CREACION_VACANTE },
+      { role: 'user',   content: conversacion },
+    ],
+    tools:       [ACTUALIZAR_VACANTE_TOOL],
+    tool_choice: { type: 'function', function: { name: 'actualizar_vacante' } },
+  });
+
+  const llamada = datos?.choices?.[0]?.message?.tool_calls?.find(c => c.function?.name === 'actualizar_vacante');
   if (!llamada) throw new Error('OpenRouter no devolvió una respuesta estructurada válida');
 
   return typeof llamada.function.arguments === 'string' ? JSON.parse(llamada.function.arguments) : llamada.function.arguments;
@@ -1175,8 +1250,77 @@ async function procesarRecordatorioInactividad({ supabase, fila, idSuscriptor, l
   log('recordatorio_inactividad', { estado: 'ok', reintentos: nuevosReintentos, ultimo_intento: esUltimoIntento, pregunta_id: pendiente.id });
 }
 
+const IDS_CAMPOS_BORRADOR_VACANTE = ['nombre_interno', 'titulo', 'descripcion'];
+
+// Flujo interno (no de candidatos): una reclutadora autorizada (NUMEROS_AUTORIZADOS_VACANTES)
+// crea una vacante en TeamTailor conversando por WhatsApp. Reutiliza la tabla `chatbot`
+// (misma fila por teléfono que usa el flujo de candidatos) guardando nombre interno, título
+// y descripción como si fueran "preguntas" en la columna `preguntas`, sin necesidad de una
+// tabla nueva — este teléfono nunca llega al flujo de postulación, así que no hay conflicto.
+async function procesarCreacionVacante({ supabase, telefono, mensaje, idSuscriptor, log }) {
+  let fila;
+  try {
+    ({ fila } = await obtenerOCrearContacto(supabase, idSuscriptor, telefono));
+  } catch (e) {
+    log('supabase_contacto', { estado: 'error', error: e.message });
+    return;
+  }
+
+  await agregarMensajeConversacion(supabase, fila, 'reclutadora', mensaje, { actualizarTimestamp: true });
+
+  let resultado;
+  try {
+    resultado = await generarRespuestaAgenteVacante(fila.conversacion);
+  } catch (e) {
+    log('agente_vacante', { estado: 'error', error: e.message });
+    await enviarRespuestaCandidato(idSuscriptor, MENSAJE_FALLBACK_ERROR);
+    return;
+  }
+
+  const { mensaje: mensajeAgente, nombre_interno: nombreInterno, titulo, descripcion, confirmado } = resultado;
+
+  const nuevasPreguntas = IDS_CAMPOS_BORRADOR_VACANTE.map(id => ({ id, respuesta: resultado[id] ?? '' }));
+  fila.preguntas = nuevasPreguntas;
+  const { error: errorActualizacion } = await supabase.from('chatbot').update({ preguntas: nuevasPreguntas }).eq('id', fila.id);
+  if (errorActualizacion) log('supabase_preguntas', { estado: 'error', error: errorActualizacion.message });
+
+  if (confirmado && nombreInterno && titulo && descripcion) {
+    try {
+      const vacanteCreada = await crearVacanteTeamTailor({ nombreInterno, titulo, descripcion });
+      log('vacante_creada', { estado: 'ok', vacante_id: vacanteCreada.id, telefono });
+
+      const mensajeExito = `Vacante creada: "${titulo}" (ID ${vacanteCreada.id})${vacanteCreada.url ? `\n${vacanteCreada.url}` : ''}`;
+      await enviarRespuestaCandidato(idSuscriptor, mensajeExito);
+      await agregarMensajeConversacion(supabase, fila, 'agente', mensajeExito);
+
+      // Se limpia el borrador para que el siguiente mensaje empiece una vacante nueva desde cero.
+      await supabase.from('chatbot').update({ preguntas: null, conversacion: null }).eq('id', fila.id);
+      log('completado', { estado: 'ok' });
+    } catch (e) {
+      log('vacante_creada', { estado: 'error', error: e.message });
+      await enviarRespuestaCandidato(idSuscriptor, 'Hubo un error creando la vacante en TeamTailor. Intenta confirmar de nuevo en un momento.');
+    }
+    return;
+  }
+
+  try {
+    await enviarRespuestaCandidato(idSuscriptor, mensajeAgente);
+    await agregarMensajeConversacion(supabase, fila, 'agente', mensajeAgente);
+  } catch (e) {
+    log('manychat_envio', { estado: 'error', error: e.message });
+    return;
+  }
+
+  log('completado', { estado: 'ok' });
+}
+
 async function procesarMensaje({ idSuscriptor, telefono, mensaje, log }) {
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+  if (NUMEROS_AUTORIZADOS_VACANTES.includes(telefono)) {
+    await procesarCreacionVacante({ supabase, telefono, mensaje, idSuscriptor, log });
+    return;
+  }
 
   let fila, esNuevo;
   try {
