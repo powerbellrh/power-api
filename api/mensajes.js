@@ -146,7 +146,7 @@ const ACTUALIZAR_VACANTE_TOOL = {
         },
         contexto: {
           type:        'string',
-          description: 'Texto plano (sin HTML) de a quién contrata y una idea general del puesto, tal como lo dio la reclutadora — la misma información de la sección de contexto de "descripcion", pero sin formato. Se usa internamente para evaluar candidatos, no se publica. Cadena vacía si aún no se conoce.',
+          description: 'Información interna (sin HTML) para el sistema que evalúa candidatos, genera preguntas de entrevista y decide inclusión/exclusión. Es DISTINTA de la presentación pública del anuncio, no se publica. Cadena vacía si aún no se conoce.',
         },
         confirmado: {
           type:        'boolean',
