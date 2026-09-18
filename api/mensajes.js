@@ -417,29 +417,42 @@ async function obtenerTodasLasUbicacionesTeamTailor() {
   return ubicaciones;
 }
 
-// Reutiliza una ubicación existente si la ciudad coincide (ignorando acentos y mayúsculas);
-// si no hay ninguna que coincida, crea una nueva en TeamTailor con lo que dio la reclutadora.
-async function buscarOCrearUbicacionTeamTailor(ubicacionTexto, log) {
+// Busca (sin crear) una ubicación existente cuya ciudad coincida con lo que dio la
+// reclutadora, ignorando acentos y mayúsculas. Se usa para mostrarle en el resumen a
+// qué location real de TeamTailor corresponde, antes de confirmar la creación.
+async function buscarUbicacionTeamTailor(ubicacionTexto) {
   const ciudad = ubicacionTexto.split(',')[0].trim();
   const ciudadNormalizada = normalizarTexto(ciudad);
 
   const ubicaciones = await obtenerTodasLasUbicacionesTeamTailor();
-  const coincidencia = ubicaciones.find(u =>
+  return ubicaciones.find(u =>
     normalizarTexto(u.attributes.city) === ciudadNormalizada || normalizarTexto(u.attributes.name).includes(ciudadNormalizada),
-  );
-  if (coincidencia) {
-    log('ubicacion_vacante', { estado: 'reutilizada', ubicacion_id: coincidencia.id, ciudad });
-    return Number(coincidencia.id);
-  }
+  ) ?? null;
+}
 
+async function crearUbicacionTeamTailor(ubicacionTexto) {
+  const ciudad = ubicacionTexto.split(',')[0].trim();
   const respuesta = await ttCrear('/locations', {
     data: {
       type: 'locations',
       attributes: { name: ubicacionTexto, city: ciudad, country: 'Mexico' },
     },
   });
-  log('ubicacion_vacante', { estado: 'creada', ubicacion_id: respuesta.data.id, ciudad });
-  return Number(respuesta.data.id);
+  return respuesta.data;
+}
+
+// Reutiliza la ubicación existente si hay coincidencia; si no, crea una nueva en
+// TeamTailor. Se usa únicamente al momento de crear la vacante (tras confirmación).
+async function obtenerOCrearUbicacionIdTeamTailor(ubicacionTexto, log) {
+  const coincidencia = await buscarUbicacionTeamTailor(ubicacionTexto);
+  if (coincidencia) {
+    log('ubicacion_vacante', { estado: 'reutilizada', ubicacion_id: coincidencia.id });
+    return Number(coincidencia.id);
+  }
+
+  const nueva = await crearUbicacionTeamTailor(ubicacionTexto);
+  log('ubicacion_vacante', { estado: 'creada', ubicacion_id: nueva.id });
+  return Number(nueva.id);
 }
 
 function esRegistroNoEncontrado(e) {
@@ -1361,8 +1374,23 @@ async function procesarCreacionVacante({ supabase, telefono, mensaje, idSuscript
   // Red de seguridad: si el modelo se equivoca y deja tags HTML en el mensaje o el anuncio
   // (el HTML real solo debe ir en "descripcion"), se limpian antes de mandarlos por WhatsApp.
   const { mensaje: mensajeAgenteCrudo, anuncio: anuncioCrudo, nombre_interno: nombreInterno, titulo, ubicacion, descripcion, contexto, confirmado } = resultado;
-  const mensajeAgente = limpiarHtmlParaWhatsApp(mensajeAgenteCrudo);
+  let mensajeAgente = limpiarHtmlParaWhatsApp(mensajeAgenteCrudo);
   const anuncioAgente = limpiarHtmlParaWhatsApp(anuncioCrudo);
+
+  // La línea de ubicación la arma el código (no el modelo): el LLM no tiene forma de saber
+  // qué locations existen ya en TeamTailor, así que se consulta la API y se le informa a la
+  // reclutadora a qué location real corresponde (o que se creará una nueva) antes de confirmar.
+  if (ubicacion?.trim()) {
+    try {
+      const coincidencia = await buscarUbicacionTeamTailor(ubicacion);
+      const lineaUbicacion = coincidencia
+        ? `Ubicación en TeamTailor: ${coincidencia.attributes.name} (ya existe)`
+        : `Ubicación en TeamTailor: se creará "${ubicacion}" (no encontré ninguna existente que coincida)`;
+      mensajeAgente = `${mensajeAgente}\n\n${lineaUbicacion}`;
+    } catch (e) {
+      log('ubicacion_vacante', { estado: 'error', error: e.message });
+    }
+  }
 
   const nuevasPreguntas = IDS_CAMPOS_BORRADOR_VACANTE.map(id => ({ id, respuesta: resultado[id] ?? '' }));
   fila.preguntas = nuevasPreguntas;
@@ -1371,7 +1399,7 @@ async function procesarCreacionVacante({ supabase, telefono, mensaje, idSuscript
 
   if (confirmado && nombreInterno && titulo && ubicacion && descripcion && contexto) {
     try {
-      const ubicacionId = await buscarOCrearUbicacionTeamTailor(ubicacion, log);
+      const ubicacionId = await obtenerOCrearUbicacionIdTeamTailor(ubicacion, log);
       const vacanteCreada = await crearVacanteTeamTailor({ nombreInterno, titulo, descripcion, contexto, ubicacionId });
       log('vacante_creada', { estado: 'ok', vacante_id: vacanteCreada.id, telefono });
 
