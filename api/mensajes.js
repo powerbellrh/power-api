@@ -122,7 +122,7 @@ const ACTUALIZAR_VACANTE_TOOL = {
       properties: {
         mensaje: {
           type:        'string',
-          description: 'Respuesta a enviar por WhatsApp a la reclutadora.',
+          description: 'Mensaje conversacional a enviar por WhatsApp a la reclutadora (preguntas, comentarios, o la pregunta de confirmación). Se manda como mensaje de WhatsApp aparte, ANTES del anuncio. Nunca incluyas aquí el anuncio completo ni tags HTML.',
         },
         nombre_interno: {
           type:        'string',
@@ -132,9 +132,17 @@ const ACTUALIZAR_VACANTE_TOOL = {
           type:        'string',
           description: 'Título público de la vacante. Cadena vacía si aún no se conoce.',
         },
+        ubicacion: {
+          type:        'string',
+          description: 'Ciudad (y estado si lo sabes) donde estará la vacante, tal como lo dio la reclutadora. Ejemplo: "Guadalajara, Jalisco". Cadena vacía si aún no se conoce.',
+        },
         descripcion: {
           type:        'string',
           description: 'Cuerpo completo de la vacante (contexto, oferta, responsabilidades, requisitos, cierre) en HTML, usando únicamente <p>, <strong> y <ul><li>. Cadena vacía si aún faltan secciones.',
+        },
+        anuncio: {
+          type:        'string',
+          description: 'La misma información de "descripcion", pero formateada para WhatsApp (negrita con *asteriscos*, viñetas con "- ", sin tags HTML). Se manda como un segundo mensaje de WhatsApp, justo después de "mensaje", cada vez que haya un resumen o vista previa del anuncio que mostrar. Cadena vacía si todavía no hay nada que mostrar.',
         },
         contexto: {
           type:        'string',
@@ -145,7 +153,7 @@ const ACTUALIZAR_VACANTE_TOOL = {
           description: 'true SOLO si la reclutadora confirmó explícitamente, en su último mensaje, que se cree la vacante con el resumen que ya se le mostró.',
         },
       },
-      required: ['mensaje', 'nombre_interno', 'titulo', 'descripcion', 'contexto', 'confirmado'],
+      required: ['mensaje', 'nombre_interno', 'titulo', 'ubicacion', 'descripcion', 'anuncio', 'contexto', 'confirmado'],
     },
   },
 };
@@ -371,7 +379,7 @@ async function actualizarCandidatoTeamTailor(candidatoId, nombre, genero) {
 // contrata, idea general del puesto) se guarda en el campo personalizado con api-name
 // "contexto" (id AD_TEAMTAILOR_CUSTOM_FIELD_ID = 8036), el mismo que usa /evaluaciones para
 // generar preguntas y decidir inclusión/exclusión de candidatos en esta vacante.
-async function crearVacanteTeamTailor({ nombreInterno, titulo, descripcion, contexto }) {
+async function crearVacanteTeamTailor({ nombreInterno, titulo, descripcion, contexto, ubicacionId }) {
   const respuesta = await ttCrear('/jobs', {
     data: {
       type: 'jobs',
@@ -384,11 +392,54 @@ async function crearVacanteTeamTailor({ nombreInterno, titulo, descripcion, cont
         'contexto':      contexto,
       },
       relationships: {
-        user: { data: { id: TEAMTAILOR_USER_ID, type: 'users' } },
+        user:      { data: { id: TEAMTAILOR_USER_ID, type: 'users' } },
+        locations: { data: [{ id: String(ubicacionId), type: 'locations' }] },
       },
     },
   });
   return { id: Number(respuesta.data.id), url: respuesta.data.links?.['careersite-job-url'] ?? null };
+}
+
+function normalizarTexto(texto) {
+  return (texto ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+}
+
+// Trae todas las ubicaciones existentes en TeamTailor (paginado: máximo 30 por página).
+async function obtenerTodasLasUbicacionesTeamTailor() {
+  const primeraPagina = await ttObtener('/locations?page[size]=30&page[number]=1');
+  const totalPaginas = primeraPagina.meta?.['page-count'] ?? 1;
+
+  let ubicaciones = primeraPagina.data ?? [];
+  for (let pagina = 2; pagina <= totalPaginas; pagina++) {
+    const siguiente = await ttObtener(`/locations?page[size]=30&page[number]=${pagina}`, true);
+    ubicaciones = ubicaciones.concat(siguiente.data ?? []);
+  }
+  return ubicaciones;
+}
+
+// Reutiliza una ubicación existente si la ciudad coincide (ignorando acentos y mayúsculas);
+// si no hay ninguna que coincida, crea una nueva en TeamTailor con lo que dio la reclutadora.
+async function buscarOCrearUbicacionTeamTailor(ubicacionTexto, log) {
+  const ciudad = ubicacionTexto.split(',')[0].trim();
+  const ciudadNormalizada = normalizarTexto(ciudad);
+
+  const ubicaciones = await obtenerTodasLasUbicacionesTeamTailor();
+  const coincidencia = ubicaciones.find(u =>
+    normalizarTexto(u.attributes.city) === ciudadNormalizada || normalizarTexto(u.attributes.name).includes(ciudadNormalizada),
+  );
+  if (coincidencia) {
+    log('ubicacion_vacante', { estado: 'reutilizada', ubicacion_id: coincidencia.id, ciudad });
+    return Number(coincidencia.id);
+  }
+
+  const respuesta = await ttCrear('/locations', {
+    data: {
+      type: 'locations',
+      attributes: { name: ubicacionTexto, city: ciudad, country: 'Mexico' },
+    },
+  });
+  log('ubicacion_vacante', { estado: 'creada', ubicacion_id: respuesta.data.id, ciudad });
+  return Number(respuesta.data.id);
 }
 
 function esRegistroNoEncontrado(e) {
@@ -1280,7 +1331,7 @@ async function procesarRecordatorioInactividad({ supabase, fila, idSuscriptor, l
   log('recordatorio_inactividad', { estado: 'ok', reintentos: nuevosReintentos, ultimo_intento: esUltimoIntento, pregunta_id: pendiente.id });
 }
 
-const IDS_CAMPOS_BORRADOR_VACANTE = ['nombre_interno', 'titulo', 'descripcion', 'contexto'];
+const IDS_CAMPOS_BORRADOR_VACANTE = ['nombre_interno', 'titulo', 'ubicacion', 'descripcion', 'contexto'];
 
 // Flujo interno (no de candidatos): una reclutadora autorizada (NUMEROS_AUTORIZADOS_VACANTES)
 // crea una vacante en TeamTailor conversando por WhatsApp. Reutiliza la tabla `chatbot`
@@ -1307,19 +1358,21 @@ async function procesarCreacionVacante({ supabase, telefono, mensaje, idSuscript
     return;
   }
 
-  // Red de seguridad: si el modelo se equivoca y deja tags HTML en el mensaje (el HTML
-  // real solo debe ir en "descripcion"), se limpian antes de mandarlo por WhatsApp.
-  const { mensaje: mensajeAgenteCrudo, nombre_interno: nombreInterno, titulo, descripcion, contexto, confirmado } = resultado;
+  // Red de seguridad: si el modelo se equivoca y deja tags HTML en el mensaje o el anuncio
+  // (el HTML real solo debe ir en "descripcion"), se limpian antes de mandarlos por WhatsApp.
+  const { mensaje: mensajeAgenteCrudo, anuncio: anuncioCrudo, nombre_interno: nombreInterno, titulo, ubicacion, descripcion, contexto, confirmado } = resultado;
   const mensajeAgente = limpiarHtmlParaWhatsApp(mensajeAgenteCrudo);
+  const anuncioAgente = limpiarHtmlParaWhatsApp(anuncioCrudo);
 
   const nuevasPreguntas = IDS_CAMPOS_BORRADOR_VACANTE.map(id => ({ id, respuesta: resultado[id] ?? '' }));
   fila.preguntas = nuevasPreguntas;
   const { error: errorActualizacion } = await supabase.from('chatbot').update({ preguntas: nuevasPreguntas }).eq('id', fila.id);
   if (errorActualizacion) log('supabase_preguntas', { estado: 'error', error: errorActualizacion.message });
 
-  if (confirmado && nombreInterno && titulo && descripcion && contexto) {
+  if (confirmado && nombreInterno && titulo && ubicacion && descripcion && contexto) {
     try {
-      const vacanteCreada = await crearVacanteTeamTailor({ nombreInterno, titulo, descripcion, contexto });
+      const ubicacionId = await buscarOCrearUbicacionTeamTailor(ubicacion, log);
+      const vacanteCreada = await crearVacanteTeamTailor({ nombreInterno, titulo, descripcion, contexto, ubicacionId });
       log('vacante_creada', { estado: 'ok', vacante_id: vacanteCreada.id, telefono });
 
       const mensajeExito = `Vacante creada: "${titulo}" (ID ${vacanteCreada.id})${vacanteCreada.url ? `\n${vacanteCreada.url}` : ''}`;
@@ -1336,9 +1389,16 @@ async function procesarCreacionVacante({ supabase, telefono, mensaje, idSuscript
     return;
   }
 
+  // El mensaje conversacional y el anuncio se mandan como dos mensajes de WhatsApp
+  // separados (mejor lectura que un solo bloque gigante), en ese orden.
   try {
     await enviarRespuestaCandidato(idSuscriptor, mensajeAgente);
     await agregarMensajeConversacion(supabase, fila, 'agente', mensajeAgente);
+
+    if (anuncioAgente) {
+      await enviarRespuestaCandidato(idSuscriptor, anuncioAgente);
+      await agregarMensajeConversacion(supabase, fila, 'agente', anuncioAgente);
+    }
   } catch (e) {
     log('manychat_envio', { estado: 'error', error: e.message });
     return;
