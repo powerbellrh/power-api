@@ -1307,7 +1307,10 @@ async function procesarCreacionVacante({ supabase, telefono, mensaje, idSuscript
     return;
   }
 
-  const { mensaje: mensajeAgente, nombre_interno: nombreInterno, titulo, descripcion, contexto, confirmado } = resultado;
+  // Red de seguridad: si el modelo se equivoca y deja tags HTML en el mensaje (el HTML
+  // real solo debe ir en "descripcion"), se limpian antes de mandarlo por WhatsApp.
+  const { mensaje: mensajeAgenteCrudo, nombre_interno: nombreInterno, titulo, descripcion, contexto, confirmado } = resultado;
+  const mensajeAgente = limpiarHtmlParaWhatsApp(mensajeAgenteCrudo);
 
   const nuevasPreguntas = IDS_CAMPOS_BORRADOR_VACANTE.map(id => ({ id, respuesta: resultado[id] ?? '' }));
   fila.preguntas = nuevasPreguntas;
