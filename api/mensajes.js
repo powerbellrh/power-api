@@ -18,6 +18,9 @@ const PROMPT_EVALUAR_BAJA            = readFileSync(join(__dirname, '../prompts/
 const PROMPT_RECORDATORIO_INACTIVIDAD = readFileSync(join(__dirname, '../prompts/recordatorio_inactividad.txt'), 'utf-8');
 const PROMPT_AGENTE_CREACION_VACANTE = readFileSync(join(__dirname, '../prompts/agente_creacion_vacante.txt'), 'utf-8');
 const OPENROUTER_MODEL               = 'deepseek/deepseek-v4-flash-0731';
+const OPENROUTER_MODEL_CREACION_VACANTE = 'z-ai/glm-5.3';
+const PRESUPUESTO_TOKENS_CREACION_VACANTE = 50000;
+const CARACTERES_POR_TOKEN_ESTIMADO  = 4; // aproximación estándar para no depender de un tokenizador
 const LIMITE_REINTENTOS              = 3;
 const MAXIMO_PREGUNTAS               = 5;
 const DESPLAZAMIENTO_CDMX_MS         = 6 * 60 * 60 * 1000; // Ciudad de México es UTC-6 todo el año
@@ -549,13 +552,32 @@ async function generarRespuestaAgente({ items, conversacion }) {
   return typeof llamada.function.arguments === 'string' ? JSON.parse(llamada.function.arguments) : llamada.function.arguments;
 }
 
+// Recorta la conversación a los últimos mensajes que quepan en el presupuesto de tokens
+// (estimado por caracteres, sin tokenizador), descartando los más antiguos primero.
+function recortarConversacionPorPresupuesto(conversacion, presupuestoTokens) {
+  const lineas = conversacion.split('\n');
+  const limiteCaracteres = presupuestoTokens * CARACTERES_POR_TOKEN_ESTIMADO;
+
+  let caracteresAcumulados = 0;
+  let desdeIndice = lineas.length;
+  for (let i = lineas.length - 1; i >= 0; i--) {
+    caracteresAcumulados += lineas[i].length + 1;
+    if (caracteresAcumulados > limiteCaracteres) break;
+    desdeIndice = i;
+  }
+
+  return lineas.slice(desdeIndice).join('\n');
+}
+
 async function generarRespuestaAgenteVacante(conversacion) {
+  const conversacionRecortada = recortarConversacionPorPresupuesto(conversacion, PRESUPUESTO_TOKENS_CREACION_VACANTE);
+
   const datos = await orChatCompletion({
-    model:       OPENROUTER_MODEL,
-    reasoning:   { effort: 'medium' },
+    model:       OPENROUTER_MODEL_CREACION_VACANTE,
+    reasoning:   { effort: 'low' },
     messages: [
       { role: 'system', content: PROMPT_AGENTE_CREACION_VACANTE },
-      { role: 'user',   content: conversacion },
+      { role: 'user',   content: conversacionRecortada },
     ],
     tools:       [ACTUALIZAR_VACANTE_TOOL],
     tool_choice: { type: 'function', function: { name: 'actualizar_vacante' } },
