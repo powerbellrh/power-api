@@ -74,7 +74,7 @@ const INFORME_TOOL = {
         datos_personales: {
           type: 'object',
           properties: {
-            estado_civil:   { type: 'string', description: 'Una sola línea, ej. "Casado(a)".' },
+            estado_civil:   { type: 'string', description: 'Una sola línea, ej. "Soltero(a)" o "Casado(a)". Usa ÚNICAMENTE lo que el candidato indicó explícitamente; nunca lo asumas ni uses "Casado(a)" por defecto. Si no está indicado, usa "-".' },
             educacion:      { type: 'string', description: 'Una sola línea, ej. "Lic. en Administración".' },
             domicilio:      { type: 'string', description: 'Una sola línea.' },
             sueldo_deseado: { type: 'string', description: 'Una sola línea. Si el candidato especifica que es nominal o libre, inclúyelo.' },
@@ -100,13 +100,13 @@ const INFORME_TOOL = {
         },
         apego_vacante: {
           type: 'array',
-          description: 'Hasta 5 áreas a evaluar (idealmente 5, una por cada área central discutida en la entrevista), derivadas directamente de las respuestas del candidato. No repetir áreas equivalentes.',
+          description: 'Hasta 5 áreas a evaluar (idealmente 5, una por cada área central discutida en la entrevista), derivadas directamente de las respuestas del candidato. No repetir áreas equivalentes. Prioriza evidencia positiva y concreta de experiencia relevante sobre carencias; solo reporta que el candidato NO tiene experiencia en algo si es un requisito central de la vacante y no hay evidencia positiva disponible para esa área.',
           maxItems: 5,
           items: {
             type: 'object',
             properties: {
               area:      { type: 'string', description: '2-5 palabras.' },
-              evidencia: { type: 'string', description: 'Una sola línea (máx. ~12 palabras), un hecho concreto.' },
+              evidencia: { type: 'string', description: 'Una sola línea (máx. ~12 palabras), un hecho concreto y de preferencia positivo/relevante sobre la experiencia del candidato.' },
             },
             required: ['area', 'evidencia'],
           },
@@ -145,7 +145,7 @@ const INFORME_TOOL_OPERATIVO = {
         datos_personales: {
           type: 'object',
           properties: {
-            estado_civil:   { type: 'string', description: 'Una sola línea, ej. "Casado(a)".' },
+            estado_civil:   { type: 'string', description: 'Una sola línea, ej. "Soltero(a)" o "Casado(a)". Usa ÚNICAMENTE lo que el candidato indicó explícitamente; nunca lo asumas ni uses "Casado(a)" por defecto. Si no está indicado, usa "-".' },
             educacion:      { type: 'string', description: 'Una sola línea, ej. "Lic. en Administración".' },
             domicilio:      { type: 'string', description: 'Una sola línea.' },
             sueldo_deseado: { type: 'string', description: 'Una sola línea. Si el candidato especifica que es nominal o libre, inclúyelo.' },
