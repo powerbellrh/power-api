@@ -4,7 +4,7 @@ import { dirname, join } from 'path';
 import { createClient }  from '@supabase/supabase-js';
 import { ttObtener, ttActualizar, ttCrear, ttSubirArchivoTransitorio } from '../lib/clientes_api.js';
 import { orChatCompletion, orGenerarImagen } from '../lib/openrouter.js';
-import { analizarRespuestas } from '../lib/evaluacion_postulacion.js';
+import { analizarRespuestas, normalizarTelefonoMx } from '../lib/evaluacion_postulacion.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -607,6 +607,8 @@ export default async function handler(req, res) {
     const nombreCompleto = `${primerNombre} ${apellido}`.trim();
     let urlFoto          = attrs.picture ?? null;
     const urlCurriculum  = attrs.resume ?? null;
+    // Sin "+" ni "521": ManyChat/el reclutador operativo lo necesita en formato local de 10 dígitos.
+    const telefonoLocal   = normalizarTelefonoMx(attrs.phone)?.replace(/^521/, '') ?? null;
 
     if (!urlFoto) {
       console.log(JSON.stringify({ etapa: 'validacion', estado: 'sin_foto', mensaje: 'candidato sin foto de perfil, asignando foto genérica', postulacion_id: postulacionId }));
@@ -723,6 +725,7 @@ export default async function handler(req, res) {
       }),
       ...(urlCurriculumFinal ? { curriculum: urlCurriculumFinal } : {}),
       ...(nombreReclutador ? { reclutador: nombreReclutador } : {}),
+      ...(esOperativo && telefonoLocal ? { telefono: telefonoLocal } : {}),
     });
 
   } catch (error) {
