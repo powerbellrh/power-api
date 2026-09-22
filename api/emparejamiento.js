@@ -100,7 +100,7 @@ function normalizarTexto(texto) {
     .toLowerCase();
 }
 
-async function detectarUbicacionPorLlm(texto) {
+export async function detectarUbicacionPorLlm(texto) {
   const datos = await orChatCompletion({
     model:      OPENROUTER_MODEL,
     reasoning:  { enabled: false },
@@ -122,7 +122,7 @@ async function detectarUbicacionPorLlm(texto) {
   };
 }
 
-async function buscarUbicacion(supabase, estado, ciudad) {
+export async function buscarUbicacion(supabase, estado, ciudad) {
   if (!ciudad) return null;
 
   // TODO: reemplazar la comparación exacta por búsqueda difusa (pg_trgm) para tolerar
@@ -139,7 +139,7 @@ async function buscarUbicacion(supabase, estado, ciudad) {
   return encontrada ?? null;
 }
 
-async function detectarHabilidadesPorLlm(texto, habilidadesDisponibles) {
+export async function detectarHabilidadesPorLlm(texto, habilidadesDisponibles) {
   const listaHabilidades = habilidadesDisponibles.map(habilidad => `- ${habilidad}`).join('\n');
   const prompt = PROMPT_EXTRACCION_HABILIDADES.replace('{{habilidades}}', listaHabilidades);
 

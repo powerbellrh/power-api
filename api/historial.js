@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
+import { waitUntil }    from '@vercel/functions';
 import { ttObtener, ttCrear, mcCrear, mcObtener } from '../lib/clientes_api.js';
 import { limpiarTelefono, normalizarTelefonoMx } from '../lib/evaluacion_postulacion.js';
+import { respaldarEnAgenda } from '../lib/backfill_agenda.js';
 import {
   AGENDA_MANYCHAT_FLOW_NS,
   AGENDA_MANYCHAT_FIELD_RECLUTADORA_NOMBRE,
@@ -190,6 +192,12 @@ async function manejarEnviadoACliente(supabase, data, candidato) {
     if (error) throw new Error(`Supabase insert failed: ${error.message}`);
     console.log(JSON.stringify({ etapa: 'powerdelivery', estado: 'ok', accion: 'insert', candidato_id: candidato.id }));
   }
+
+  // Respaldo en la tabla nueva `agenda` (con backfill de vacante/candidato/postulación
+  // vía Teamtailor + IA si todavía no existen). Corre en segundo plano con `waitUntil`
+  // para no bloquear la respuesta del webhook con las llamadas a Teamtailor/OpenRouter.
+  const supabaseNueva = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+  waitUntil(respaldarEnAgenda(supabaseNueva, { candidato, candidatoTT, data, entrevista, reclutadorValor, powerIDUrl }));
 }
 
 // ****************************************************************************
