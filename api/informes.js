@@ -354,6 +354,13 @@ function extraerNombreReclutador(datosReclutador) {
   return attrs.name || `${attrs['first-name'] ?? ''} ${attrs['last-name'] ?? ''}`.trim() || null;
 }
 
+function extraerNombreEtapa(datosPostulacion) {
+  const idEtapa = datosPostulacion?.data?.relationships?.stage?.data?.id ?? null;
+  if (!idEtapa) return null;
+  const etapaIncluida = (datosPostulacion.included ?? []).find(r => r.type === 'stages' && r.id === idEtapa);
+  return etapaIncluida?.attributes?.name ?? null;
+}
+
 function limpiarValor(valor, fallback = '-') {
   if (valor == null) return fallback;
   const texto = String(valor).trim();
@@ -630,6 +637,18 @@ export default async function handler(req, res) {
     const idReclutador   = extraerIdReclutador(datosReclutador);
     const esOperativo    = idReclutador != null && RECLUTADORES_OPERATIVA.has(idReclutador);
 
+    // Candidatos en "Inbox" no pasan por entrevista presencial: el informe se arma solo con
+    // sus respuestas de evaluación/postulación, y se marca con este flag para que el consumidor
+    // (ManyChat/power_informe.py) los reconozca y los trate distinto.
+    let enEtapaInbox = false;
+    try {
+      const datosPostulacion = await ttObtener(`/job-applications/${postulacionId}?include=stage`, true);
+      const nombreEtapa = extraerNombreEtapa(datosPostulacion);
+      enEtapaInbox = (nombreEtapa ?? '').trim().toLowerCase() === 'inbox';
+    } catch (e) {
+      console.log(JSON.stringify({ etapa: 'obtener_etapa_postulacion', estado: 'error', mensaje: e.message, postulacion_id: postulacionId }));
+    }
+
     const catalogoIntenciones = esOperativo ? INTENCIONES_OPERATIVO : INTENCIONES_ADMINISTRATIVO;
 
     const { respuestas: respuestasCrudas, preguntas: preguntasIncluidas } = await obtenerRespuestasCandidato(candidatoId);
@@ -657,14 +676,16 @@ export default async function handler(req, res) {
     // (menos de 5): en ese caso hay poco material de la entrevista para corroborar, así que se
     // adjunta el CV para completar/corroborar datos. Con 5 respuestas o más, se vuelve al método
     // previo a la adjunción del CV: el análisis se basa únicamente en las respuestas del candidato.
+    // Los candidatos en "Inbox" nunca tuvieron entrevista, así que el CV siempre se adjunta como
+    // fuente sin importar cuántas respuestas de evaluación/postulación tengan.
     const RESPUESTAS_MINIMAS_SIN_CV = 5;
-    const usaCurriculumComoFuente   = paresPreguntaRespuesta.length < RESPUESTAS_MINIMAS_SIN_CV;
+    const usaCurriculumComoFuente   = enEtapaInbox || paresPreguntaRespuesta.length < RESPUESTAS_MINIMAS_SIN_CV;
     let urlCurriculumAnalisis = null;
 
     console.log(JSON.stringify({
       etapa: 'decision_fuente_cv', postulacion_id: postulacionId,
       total_pares: paresPreguntaRespuesta.length, umbral_respuestas_minimas: RESPUESTAS_MINIMAS_SIN_CV,
-      usa_cv_como_fuente: usaCurriculumComoFuente, tiene_cv_disponible: !!urlCurriculum,
+      usa_cv_como_fuente: usaCurriculumComoFuente, tiene_cv_disponible: !!urlCurriculum, en_etapa_inbox: enEtapaInbox,
       metodo: usaCurriculumComoFuente ? 'cv_como_fuente_secundaria' : 'previo_a_adjuncion_de_cv',
     }));
 
@@ -713,7 +734,7 @@ export default async function handler(req, res) {
       console.log(JSON.stringify({ etapa: 'refrescar_cv', estado: 'error', mensaje: e.message, postulacion_id: postulacionId }));
     }
 
-    console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', candidato: nombreCompleto, postulacion_id: postulacionId }));
+    console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', candidato: nombreCompleto, postulacion_id: postulacionId, en_etapa_inbox: enEtapaInbox }));
 
     return res.status(200).json({
       tipo:        esOperativo ? 'operativo' : 'administrativo',
@@ -726,6 +747,7 @@ export default async function handler(req, res) {
       ...(urlCurriculumFinal ? { curriculum: urlCurriculumFinal } : {}),
       ...(nombreReclutador ? { reclutador: nombreReclutador } : {}),
       ...(esOperativo && telefonoLocal ? { telefono: telefonoLocal } : {}),
+      ...(enEtapaInbox ? { inbox: true } : {}),
     });
 
   } catch (error) {
