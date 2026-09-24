@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { waitUntil }    from '@vercel/functions';
 import { ttObtener, ttCrear, mcCrear, mcObtener } from '../lib/clientes_api.js';
 import { limpiarTelefono, normalizarTelefonoMx } from '../lib/evaluacion_postulacion.js';
-import { respaldarEnAgenda } from '../lib/backfill_agenda.js';
+import { registrarEnAgenda } from '../lib/backfill_agenda.js';
 import {
   AGENDA_MANYCHAT_FLOW_NS,
   AGENDA_MANYCHAT_FIELD_RECLUTADORA_NOMBRE,
@@ -51,20 +51,6 @@ function construirCitado(fecha, hora) {
   return `${formatearFechaEspanol(fecha)} a las ${decimalAHora12(hora)}`;
 }
 
-function fechaMexico(fecha) {
-  return fecha.toLocaleString('sv-SE', { timeZone: 'America/Mexico_City' }).split(' ')[0];
-}
-
-function timestampMexico(fechaIso) {
-  const mexicoStr = new Date(fechaIso).toLocaleString('sv-SE', {
-    timeZone: 'America/Mexico_City',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-    hour12: false,
-  });
-  return `${mexicoStr}-06:00`;
-}
-
 function timestampCita(fecha, hora) {
   const horas   = Math.floor(hora);
   const minutos = Math.round((hora - horas) * 100);
@@ -89,7 +75,7 @@ function obtenerCampoPersonalizado(candidato, nombre) {
 // STAGE "ENVIADO A CLIENTE" → genera PowerID y guarda/actualiza en Supabase
 // ****************************************************************************
 
-async function manejarEnviadoACliente(supabase, data, candidato) {
+async function manejarEnviadoACliente(data, candidato) {
   const fecha      = obtenerCampoPersonalizado(candidato, 'fecha-de-cita');
   const hora       = obtenerCampoPersonalizado(candidato, 'hora-de-cita');
   const reclutador = obtenerCampoPersonalizado(candidato, 'reclutador');
@@ -100,8 +86,6 @@ async function manejarEnviadoACliente(supabase, data, candidato) {
   }
 
   const entrevista      = timestampCita(fecha, hora);
-  const creadoTimestamp = timestampMexico(data.updated_at);
-  const hoy             = fechaMexico(new Date());
   const reclutadorValor = Array.isArray(reclutador) ? reclutador[0] : reclutador;
 
   // PASO 1: Datos de vacante y foto de candidato (para PowerID)
@@ -148,56 +132,11 @@ async function manejarEnviadoACliente(supabase, data, candidato) {
     console.log(JSON.stringify({ etapa: 'powerid_generado', estado: 'error', candidato_id: candidato.id, mensaje: e.message }));
   }
 
-  // PASO 3: Buscar duplicado de hoy en Supabase
-  const { data: registros, error: errorBusqueda } = await supabase
-    .from('PowerDelivery')
-    .select('id,creado')
-    .eq('candidato', candidato.id);
-
-  if (errorBusqueda) throw new Error(`Supabase select failed: ${errorBusqueda.message}`);
-
-  const registroExistente = (registros || []).find(r => fechaMexico(new Date(r.creado)) === hoy);
-
-  // PASO 4: Teléfono, nombre y vacante/empresa desde TeamTailor
-  const telefono = candidatoTT?.phone ? normalizarTelefonoMx(candidatoTT.phone) : null;
-  const nombre   = [candidatoTT?.['first-name'], candidatoTT?.['last-name']].filter(Boolean).join(' ') || null;
-
-  let nombrevacante = nombreInternoVacante;
-  let empresa       = null;
-  if (nombrevacante?.includes(' - ')) {
-    const [emp, ...resto] = nombrevacante.split(' - ');
-    empresa       = emp.trim();
-    nombrevacante = resto.join(' - ').trim();
-  }
-
-  const payload = {
-    candidato:    candidato.id,
-    vacante:      data.job_id,
-    entrevista,
-    reclutador:   reclutadorValor,
-    creado:       creadoTimestamp,
-    telefono,
-    nombre,
-    nombrevacante,
-    empresa,
-    powerID:      powerIDUrl,
-  };
-
-  if (registroExistente) {
-    const { error } = await supabase.from('PowerDelivery').update(payload).eq('id', registroExistente.id);
-    if (error) throw new Error(`Supabase update failed: ${error.message}`);
-    console.log(JSON.stringify({ etapa: 'powerdelivery', estado: 'ok', accion: 'update', id: registroExistente.id }));
-  } else {
-    const { error } = await supabase.from('PowerDelivery').insert([payload]);
-    if (error) throw new Error(`Supabase insert failed: ${error.message}`);
-    console.log(JSON.stringify({ etapa: 'powerdelivery', estado: 'ok', accion: 'insert', candidato_id: candidato.id }));
-  }
-
-  // Respaldo en la tabla nueva `agenda` (con backfill de vacante/candidato/postulación
+  // Registro en la tabla `agenda` (con backfill de vacante/candidato/postulación
   // vía Teamtailor + IA si todavía no existen). Corre en segundo plano con `waitUntil`
   // para no bloquear la respuesta del webhook con las llamadas a Teamtailor/OpenRouter.
-  const supabaseNueva = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-  waitUntil(respaldarEnAgenda(supabaseNueva, { candidato, candidatoTT, data, entrevista, reclutadorValor, powerIDUrl }));
+  const supabaseAgenda = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+  waitUntil(registrarEnAgenda(supabaseAgenda, { candidato, candidatoTT, data, entrevista, reclutadorValor, powerIDUrl }));
 }
 
 // ****************************************************************************
@@ -454,8 +393,6 @@ export default async function handler(req, res) {
   }
 
   const stage = (data.stage_name || '').toLowerCase().trim();
-  // `notificaciones` vive en el proyecto de Supabase principal, no en el de
-  // HISTORIAL_SUPABASE_URL (ese solo tiene la tabla PowerDelivery).
   const supabaseNotificaciones = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
   // Si la postulación fue rechazada o ya no está en "enviar agenda" (se movió a
@@ -478,8 +415,7 @@ export default async function handler(req, res) {
 
   try {
     if (stage === 'enviado a cliente') {
-      const supabaseHistorial = createClient(process.env.HISTORIAL_SUPABASE_URL, process.env.HISTORIAL_SUPABASE_SERVICE_ROLE_KEY);
-      await manejarEnviadoACliente(supabaseHistorial, data, candidato);
+      await manejarEnviadoACliente(data, candidato);
     } else if (stage === 'enviar agenda') {
       await manejarEnviarAgenda(supabaseNotificaciones, candidato, data);
     } else {
