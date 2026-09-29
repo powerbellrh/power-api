@@ -1,0 +1,169 @@
+import { createClient } from '@supabase/supabase-js';
+import { ttObtener, mcCrear } from '../lib/clientes_api.js';
+import { limpiarTelefono, normalizarTelefonoMx } from '../lib/evaluacion_postulacion.js';
+import { MANYCHAT_TAG_ID_BAJA, TEAMTAILOR_TAG_BAJA } from '../lib/config.js';
+
+const BUCKETS_CANDIDATO = ['powerID', 'felicitaciones'];
+
+// Webhook de TeamTailor (candidato actualizado o eliminado). No se confía en el cuerpo: solo se
+// toma el id del candidato y se verifica contra la API de TeamTailor que realmente tenga el tag
+// de eliminación o que ya no exista (404), así un POST ajeno no puede disparar borrados.
+function extraerIdCandidato(cuerpo) {
+  const id = cuerpo?.candidate?.id ?? cuerpo?.id ?? cuerpo?.data?.id;
+  return id ? String(id) : null;
+}
+
+async function obtenerCandidatoTT(idTT) {
+  try {
+    return await ttObtener(`/candidates/${idTT}`);
+  } catch (error) {
+    if (error.message.includes('→ 404')) return null;
+    throw error;
+  }
+}
+
+// Ids de postulaciones (job-applications) de TeamTailor: se leen de la propia API mientras el
+// candidato exista, además de las que ya se conocen en Supabase.
+async function obtenerPostulacionesTT(idTT) {
+  try {
+    const respuesta = await ttObtener(`/candidates/${idTT}/job-applications`, true);
+    return (respuesta.data ?? []).map(ja => Number(ja.id));
+  } catch (error) {
+    console.log(JSON.stringify({ etapa: 'privacidad_postulaciones_tt', estado: 'error', candidato_id: idTT, mensaje: error.message }));
+    return [];
+  }
+}
+
+async function eliminarFilas(supabase, tabla, columna, valores) {
+  if (!valores.length) return 0;
+
+  const { count, error } = await supabase.from(tabla).delete({ count: 'exact' }).in(columna, valores);
+  if (error) throw new Error(`${tabla}.${columna}: ${error.message}`);
+  return count ?? 0;
+}
+
+// Los archivos del candidato viven en `<id_teamtailor>/...` dentro de cada bucket.
+async function eliminarArchivos(supabase, idTT) {
+  let total = 0;
+  for (const bucket of BUCKETS_CANDIDATO) {
+    const { data: archivos, error } = await supabase.storage.from(bucket).list(idTT, { limit: 1000 });
+    if (error) throw new Error(`storage ${bucket}: ${error.message}`);
+    if (!archivos?.length) continue;
+
+    const { error: errorBorrado } = await supabase.storage.from(bucket).remove(archivos.map(a => `${idTT}/${a.name}`));
+    if (errorBorrado) throw new Error(`storage ${bucket}: ${errorBorrado.message}`);
+    total += archivos.length;
+  }
+  return total;
+}
+
+// Mismo tag de baja que pone el chatbot; se hace antes de borrar `chatbot`, de donde sale el
+// id de suscriptor de ManyChat.
+async function etiquetarBajaManyChat(idsSuscriptor) {
+  for (const idSuscriptor of idsSuscriptor) {
+    try {
+      await mcCrear('/fb/subscriber/addTag', { subscriber_id: idSuscriptor, tag_id: MANYCHAT_TAG_ID_BAJA });
+      console.log(JSON.stringify({ etapa: 'privacidad_manychat_tag', estado: 'ok' }));
+    } catch (error) {
+      console.log(JSON.stringify({ etapa: 'privacidad_manychat_tag', estado: 'error', mensaje: error.message }));
+    }
+  }
+}
+
+// `candidatoTT` es null cuando el candidato ya fue eliminado en TeamTailor: entonces solo se
+// dispone del id, y el teléfono y las postulaciones salen de Supabase.
+async function eliminarDatosCandidato(supabase, idTT, candidatoTT) {
+  const idNumerico = Number(idTT);
+
+  const telefonoTT = candidatoTT?.data.attributes.phone;
+  const telefonos  = new Set([limpiarTelefono(telefonoTT), normalizarTelefonoMx(telefonoTT)].filter(Boolean));
+
+  const { data: candidatosPorId, error: errorCandidatos } = await supabase
+    .from('candidatos').select('id, telefono').eq('id_team_tailor', idTT);
+  if (errorCandidatos) throw errorCandidatos;
+  (candidatosPorId ?? []).forEach(c => c.telefono && telefonos.add(c.telefono));
+
+  const { data: chatsPorId, error: errorChatsId } = await supabase
+    .from('chatbot').select('id, telefono, manychat, postulacion').eq('candidato', idNumerico);
+  if (errorChatsId) throw errorChatsId;
+  (chatsPorId ?? []).forEach(c => c.telefono && telefonos.add(c.telefono));
+
+  // Se completa por teléfono: cubre filas creadas antes de guardar el id de TeamTailor.
+  const listaTelefonos = [...telefonos];
+  const { data: candidatosPorTelefono, error: errorCandidatosTel } = listaTelefonos.length
+    ? await supabase.from('candidatos').select('id').in('telefono', listaTelefonos)
+    : { data: [], error: null };
+  if (errorCandidatosTel) throw errorCandidatosTel;
+
+  const { data: chatsPorTelefono, error: errorChatsTel } = listaTelefonos.length
+    ? await supabase.from('chatbot').select('id, manychat, postulacion').in('telefono', listaTelefonos)
+    : { data: [], error: null };
+  if (errorChatsTel) throw errorChatsTel;
+
+  const chats          = [...(chatsPorId ?? []), ...(chatsPorTelefono ?? [])];
+  const idsChat        = [...new Set(chats.map(c => c.id))];
+  const idsCandidato   = [...new Set([...(candidatosPorId ?? []), ...(candidatosPorTelefono ?? [])].map(c => c.id))];
+  const idsSuscriptor  = [...new Set(chats.map(c => c.manychat).filter(Boolean))];
+
+  const { data: notificaciones, error: errorNotificaciones } = await supabase
+    .from('notificaciones').select('postulacion_id').eq('candidato_id', idNumerico);
+  if (errorNotificaciones) throw errorNotificaciones;
+
+  const { data: postulaciones, error: errorPostulaciones } = idsCandidato.length
+    ? await supabase.from('postulaciones').select('id, id_team_tailor').in('id_candidato', idsCandidato)
+    : { data: [], error: null };
+  if (errorPostulaciones) throw errorPostulaciones;
+
+  const idsPostulacion   = (postulaciones ?? []).map(p => p.id);
+  const idsPostulacionTT = [...new Set([
+    ...(postulaciones ?? []).map(p => p.id_team_tailor),
+    ...chats.map(c => c.postulacion),
+    ...(notificaciones ?? []).map(n => n.postulacion_id),
+    ...(candidatoTT ? await obtenerPostulacionesTT(idTT) : []),
+  ].map(Number).filter(Number.isFinite))];
+
+  await etiquetarBajaManyChat(idsSuscriptor);
+
+  // Primero lo que depende de otras filas, al final `candidatos`.
+  const eliminados = {};
+  eliminados.agenda          = await eliminarFilas(supabase, 'agenda',         'id_postulacion',     idsPostulacion);
+  eliminados.evaluaciones    = await eliminarFilas(supabase, 'evaluaciones',   'postulacion_id',     idsPostulacionTT);
+  eliminados.evaluaciones   += await eliminarFilas(supabase, 'evaluaciones',   'candidato_telefono', listaTelefonos);
+  eliminados.notificaciones  = await eliminarFilas(supabase, 'notificaciones', 'candidato_id',       [idNumerico]);
+  eliminados.postulaciones   = await eliminarFilas(supabase, 'postulaciones',  'id',                 idsPostulacion);
+  eliminados.chatbot         = await eliminarFilas(supabase, 'chatbot',        'id',                 idsChat);
+  eliminados.candidatos      = await eliminarFilas(supabase, 'candidatos',     'id',                 idsCandidato);
+  eliminados.archivos        = await eliminarArchivos(supabase, idTT);
+  return eliminados;
+}
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST')
+    return res.status(405).json({ error: 'Método no permitido, usa POST' });
+
+  // Log de inspección temporal: cuerpo completo y encabezados del webhook tal como llegan de
+  // TeamTailor, para revisar la forma del payload en los eventos update y destroy.
+  console.log(JSON.stringify({ etapa: 'privacidad_webhook_recibido', metodo: req.method, encabezados: req.headers, body: req.body ?? null }));
+
+  const idTT = extraerIdCandidato(req.body);
+  console.log(JSON.stringify({ etapa: 'privacidad_webhook', evento: req.body?.event_name ?? null, candidato_id: idTT }));
+
+  if (!idTT) return res.status(200).json({ status: 'ignored', reason: 'missing_candidate_id' });
+
+  try {
+    const candidatoTT = await obtenerCandidatoTT(idTT);
+
+    // Un 404 significa que TeamTailor ya eliminó al candidato (evento destroy): se borra igual.
+    if (candidatoTT && !(candidatoTT.data.attributes.tags ?? []).includes(TEAMTAILOR_TAG_BAJA))
+      return res.status(200).json({ status: 'ignored', reason: 'without_deletion_tag' });
+
+    const supabase   = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+    const eliminados = await eliminarDatosCandidato(supabase, idTT, candidatoTT);
+
+    console.log(JSON.stringify({ etapa: 'privacidad_eliminacion', estado: 'ok', motivo: candidatoTT ? 'etiqueta' : 'eliminado_en_teamtailor', candidato_id: idTT, ...eliminados }));
+    return res.status(200).json({ status: 'success', eliminados });
+  } catch (error) {
+    console.log(JSON.stringify({ etapa: 'privacidad_eliminacion', estado: 'error', candidato_id: idTT, mensaje: error.message }));
+    return res.status(500).json({ status: 'error', message: error.message });
+  }
+}

@@ -8,7 +8,7 @@ import { ttObtener, ttActualizar, ttCrear, ttSubirArchivoTransitorio, mcCrear } 
 import { orChatCompletion } from '../lib/openrouter.js';
 import { dormir }           from '../lib/evaluacion_postulacion.js';
 import { limpiarHtmlParaWhatsApp } from '../lib/formato_texto.js';
-import { TEAMTAILOR_ADDRESS_QUESTION_ID, TEAMTAILOR_EDAD_QUESTION_ID, TEAMTAILOR_EMPLEO_ANTERIOR_QUESTION_ID, TEAMTAILOR_USER_ID, NUMEROS_AUTORIZADOS_VACANTES, TEAMTAILOR_TEMPLATE_ID_VACANTE, AD_TEAMTAILOR_CUSTOM_FIELD_ID } from '../lib/config.js';
+import { TEAMTAILOR_ADDRESS_QUESTION_ID, TEAMTAILOR_EDAD_QUESTION_ID, TEAMTAILOR_EMPLEO_ANTERIOR_QUESTION_ID, TEAMTAILOR_USER_ID, NUMEROS_AUTORIZADOS_VACANTES, TEAMTAILOR_TEMPLATE_ID_VACANTE, AD_TEAMTAILOR_CUSTOM_FIELD_ID, MANYCHAT_TAG_ID_BAJA, TEAMTAILOR_TAG_BAJA } from '../lib/config.js';
 
 const __dirname                      = dirname(fileURLToPath(import.meta.url));
 const PROMPT_AGENTE_CONVERSACIONAL   = readFileSync(join(__dirname, '../prompts/agente_conversacional.txt'), 'utf-8');
@@ -28,12 +28,6 @@ const REGEX_VACANTE                  = /#(\d{6,})/; // los ids de vacante tienen
 const REGEX_BAJA                     = /\bbaja\b/i; // palabra usada para solicitar la eliminación de datos
 const MENSAJE_IRRESPONSIVO           = 'Irresponsivo'; // valor fijo que manda ManyChat cuando pasa 1h sin respuesta del candidato
 const MENSAJE_DESPEDIDA_INACTIVIDAD  = 'Entendemos que quizás no es el mejor momento. Cuando quieras continuar con tu postulación, solo escríbenos 🙂';
-
-// Solicitud de eliminación de datos ("BAJA"): tag que se agrega en ManyChat (por
-// tag_id) y en TeamTailor (por nombre, dentro del arreglo `tags` del candidato)
-// cuando el LLM confirma que el mensaje es una solicitud real, no un falso positivo.
-const MANYCHAT_TAG_ID_BAJA           = 96343345;
-const TEAMTAILOR_TAG_BAJA            = 'Eliminación';
 
 const FOTO_PERFIL_DEFAULT      = 'https://i.ibb.co/JwvVrDr0/fotodesconocido.png';
 const FOTO_PERFIL_HOMBRE       = 'https://i.ibb.co/4RGYgcC4/fotohombre.png';
