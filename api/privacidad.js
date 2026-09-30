@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
-import { ttObtener, mcCrear } from '../lib/clientes_api.js';
+import { ttObtener, mcCrear, mcObtener } from '../lib/clientes_api.js';
 import { limpiarTelefono, normalizarTelefonoMx } from '../lib/evaluacion_postulacion.js';
-import { MANYCHAT_TAG_ID_BAJA, TEAMTAILOR_TAG_BAJA } from '../lib/config.js';
+import { MANYCHAT_TAG_ID_BAJA, TEAMTAILOR_TAG_BAJA, AGENDA_MANYCHAT_FIELD_CANDIDATO_TEAMTAILOR_ID } from '../lib/config.js';
 
 const BUCKETS_CANDIDATO = ['powerID', 'felicitaciones'];
 
@@ -57,8 +57,24 @@ async function eliminarArchivos(supabase, idTT) {
   return total;
 }
 
+// Suscriptores de ManyChat que guardan el id de TeamTailor del candidato en su campo
+// personalizado. Cubre a quienes no tienen fila en `chatbot` (ej. llegaron por la agenda).
+async function buscarSuscriptoresManyChat(idTT) {
+  try {
+    const respuesta = await mcObtener('/fb/subscriber/findByCustomField', {
+      field_id:    AGENDA_MANYCHAT_FIELD_CANDIDATO_TEAMTAILOR_ID,
+      field_value: idTT,
+    });
+    const datos = respuesta.data;
+    return (Array.isArray(datos) ? datos : datos ? [datos] : []).map(s => s.id);
+  } catch (error) {
+    console.log(JSON.stringify({ etapa: 'privacidad_manychat_busqueda', estado: 'error', candidato_id: idTT, mensaje: error.message }));
+    return [];
+  }
+}
+
 // Mismo tag de baja que pone el chatbot; se hace antes de borrar `chatbot`, de donde sale el
-// id de suscriptor de ManyChat.
+// id de suscriptor de ManyChat (junto con los que se buscan por el id de TeamTailor).
 async function etiquetarBajaManyChat(idsSuscriptor) {
   for (const idSuscriptor of idsSuscriptor) {
     try {
@@ -103,7 +119,7 @@ async function eliminarDatosCandidato(supabase, idTT, candidatoTT) {
   const chats          = [...(chatsPorId ?? []), ...(chatsPorTelefono ?? [])];
   const idsChat        = [...new Set(chats.map(c => c.id))];
   const idsCandidato   = [...new Set([...(candidatosPorId ?? []), ...(candidatosPorTelefono ?? [])].map(c => c.id))];
-  const idsSuscriptor  = [...new Set(chats.map(c => c.manychat).filter(Boolean))];
+  const idsSuscriptor  = [...new Set([...chats.map(c => c.manychat), ...await buscarSuscriptoresManyChat(idTT)].filter(Boolean).map(Number))];
 
   const { data: notificaciones, error: errorNotificaciones } = await supabase
     .from('notificaciones').select('postulacion_id').eq('candidato_id', idNumerico);
@@ -141,9 +157,9 @@ export default async function handler(req, res) {
   if (req.method !== 'POST')
     return res.status(405).json({ error: 'Método no permitido, usa POST' });
 
-  // Log de inspección temporal: cuerpo completo y encabezados del webhook tal como llegan de
-  // TeamTailor, para revisar la forma del payload en los eventos update y destroy.
-  console.log(JSON.stringify({ etapa: 'privacidad_webhook_recibido', metodo: req.method, encabezados: req.headers, body: req.body ?? null }));
+  // Log de inspección: cuerpo completo del webhook tal como llega de TeamTailor. No se
+  // registran los encabezados porque incluyen tokens de Vercel.
+  console.log(JSON.stringify({ etapa: 'privacidad_webhook_recibido', metodo: req.method, body: req.body ?? null }));
 
   const idTT = extraerIdCandidato(req.body);
   console.log(JSON.stringify({ etapa: 'privacidad_webhook', evento: req.body?.event_name ?? null, candidato_id: idTT }));
