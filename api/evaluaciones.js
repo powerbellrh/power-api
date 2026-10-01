@@ -49,8 +49,8 @@ const OPENROUTER_MODEL_AD        = 'z-ai/glm-5.3-flash';
 const OPENROUTER_MODEL_OP        = 'z-ai/glm-5.3-flash';
 
 export const AI_CONFIG = {
-  AD:        { model: OPENROUTER_MODEL_AD,        max_tokens: 30000, reasoningEffort: 'max'    },
-  OP:        { model: OPENROUTER_MODEL_OP,        max_tokens: 30000, reasoningEffort: 'max'    },
+  AD:        { model: OPENROUTER_MODEL_AD,        max_tokens: 30000, reasoningEffort: 'high'   },
+  OP:        { model: OPENROUTER_MODEL_OP,        max_tokens: 30000, reasoningEffort: 'high'   },
 };
 
 const TEAMTAILOR_BOT_USER_ID              = AD_TEAMTAILOR_BOT_USER_ID;
