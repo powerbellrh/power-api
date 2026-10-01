@@ -5,7 +5,8 @@ import { dirname, join }    from 'path';
 import PDFDocument           from 'pdfkit';
 import { waitUntil }        from '@vercel/functions';
 import { ttObtener, ttActualizar, ttCrear, ttSubirArchivoTransitorio, mcCrear } from '../lib/clientes_api.js';
-import { orChatCompletion } from '../lib/openrouter.js';
+import { orChatCompletion, orGenerarImagen } from '../lib/openrouter.js';
+import { createCanvas, loadImage } from 'canvas';
 import { dormir }           from '../lib/evaluacion_postulacion.js';
 import { limpiarHtmlParaWhatsApp } from '../lib/formato_texto.js';
 import { TEAMTAILOR_ADDRESS_QUESTION_ID, TEAMTAILOR_EDAD_QUESTION_ID, TEAMTAILOR_EMPLEO_ANTERIOR_QUESTION_ID, TEAMTAILOR_USER_ID, NUMEROS_AUTORIZADOS_VACANTES, TEAMTAILOR_TEMPLATE_ID_VACANTE, AD_TEAMTAILOR_CUSTOM_FIELD_ID, MANYCHAT_TAG_ID_BAJA, TEAMTAILOR_TAG_BAJA } from '../lib/config.js';
@@ -27,7 +28,9 @@ const DESPLAZAMIENTO_CDMX_MS         = 6 * 60 * 60 * 1000; // Ciudad de México 
 const REGEX_VACANTE                  = /#(\d{6,})/; // los ids de vacante tienen 6+ dígitos; evita falsos positivos con números de calle
 const REGEX_BAJA                     = /\bbaja\b/i; // palabra usada para solicitar la eliminación de datos
 const MENSAJE_IRRESPONSIVO           = 'Irresponsivo'; // valor fijo que manda ManyChat cuando pasa 1h sin respuesta del candidato
-const MENSAJE_DESPEDIDA_INACTIVIDAD  = 'Entendemos que quizás no es el mejor momento. Cuando quieras continuar con tu postulación, solo escríbenos 🙂';
+const REGEX_CANCELAR_VACANTE         = /^(cancelar|cancela|descartar|descarta|abandonar)( la)?( vacante)?$/; // comandos exactos de la reclutadora para cortar el borrador
+const REGEX_NUEVA_VACANTE            = /^nueva vacante$/;
+const MENSAJE_DESPEDIDA_INACTIVIDAD  ='Entendemos que quizás no es el mejor momento. Cuando quieras continuar con tu postulación, solo escríbenos 🙂';
 
 const FOTO_PERFIL_DEFAULT      = 'https://i.ibb.co/JwvVrDr0/fotodesconocido.png';
 const FOTO_PERFIL_HOMBRE       = 'https://i.ibb.co/4RGYgcC4/fotohombre.png';
@@ -49,6 +52,22 @@ const NOTA_VACANTES = 'Puedes checar nuestras vacantes activas con el siguiente 
 
 const FLOW_NS_RESPUESTA          = 'content20260807162104_695716';
 const ID_CAMPO_MENSAJE_CANDIDATO = 14851295;
+
+// Flujo que solo muestra una imagen (no recolecta respuestas, por eso nunca debe ser el último
+// flujo enviado: después se manda el flujo de respuesta para que la reclutadora pueda contestar).
+// La URL de la imagen se pasa por el campo personalizado de texto ID_CAMPO_IMAGEN_VACANTE.
+const FLOW_NS_IMAGEN_VACANTE     = 'content20261001153457_138346';
+const ID_CAMPO_IMAGEN_VACANTE    = 15021836;
+
+const BUCKET_BANNERS                  = 'banners';
+const OPENROUTER_MODEL_IMAGEN_VACANTE = 'google/gemini-3.1-flash-lite-image';
+const MAXIMO_IMAGENES_VACANTE         = 5; // cada imagen cuesta ~$0.034 USD
+const ANCHO_IMAGEN_VACANTE            = 1200;
+const ALTO_IMAGEN_VACANTE             = 400;
+const EXPIRACION_URL_IMAGEN_SEGUNDOS  = 24 * 60 * 60;
+// Estilo fijo de la imagen: lo único que cambia entre vacantes es la escena (la redacta el agente
+// y recoge los comentarios de la reclutadora). Se genera en 4:1 y se recorta a 1200x400.
+const PROMPT_BASE_IMAGEN_VACANTE = 'Photorealistic commercial stock photograph, shot on a full-frame camera with shallow depth of field, natural soft lighting, candid and authentic, Latin American setting. Ultra-wide panoramic banner composition with ONE single main person placed at the far left or far right edge of the frame, fully inside the frame and not cut off. The center of the frame must be clean, blurred and uncluttered (soft out-of-focus background only) so text can be placed in the middle. Absolutely no text, no letters, no signs, no logos, no labels and no writing on any object or clothing, no watermarks. ';
 
 const ID_PREGUNTA_NOMBRE    = 'nombre';
 const ID_PREGUNTA_DOMICILIO = String(TEAMTAILOR_ADDRESS_QUESTION_ID);
@@ -146,8 +165,16 @@ const ACTUALIZAR_VACANTE_TOOL = {
           type:        'boolean',
           description: 'true SOLO si la reclutadora confirmó explícitamente, en su último mensaje, que se cree la vacante con el resumen que ya se le mostró.',
         },
+        escena_imagen: {
+          type:        'string',
+          description: 'Descripción breve EN INGLÉS de la escena de la foto que acompaña al anuncio (persona realizando el puesto, lugar, ropa), basada en el puesto y SIN texto. Incorpora, acumulados, los comentarios de la reclutadora sobre cómo debe verse la imagen. Cadena vacía si aún no se conoce el puesto.',
+        },
+        generar_imagen: {
+          type:        'boolean',
+          description: 'true SOLO si la reclutadora pidió otra imagen o dio comentarios sobre cómo debe ser la imagen en su último mensaje. La primera imagen se genera automáticamente, no hace falta marcarlo.',
+        },
       },
-      required: ['mensaje', 'nombre_interno', 'titulo', 'ubicacion', 'descripcion', 'anuncio', 'contexto', 'confirmado'],
+      required: ['mensaje', 'nombre_interno', 'titulo', 'ubicacion', 'descripcion', 'anuncio', 'contexto', 'confirmado', 'escena_imagen', 'generar_imagen'],
     },
   },
 };
@@ -373,7 +400,7 @@ async function actualizarCandidatoTeamTailor(candidatoId, nombre, genero) {
 // contrata, idea general del puesto) se guarda en el campo personalizado con api-name
 // "contexto" (id AD_TEAMTAILOR_CUSTOM_FIELD_ID = 8036), el mismo que usa /evaluaciones para
 // generar preguntas y decidir inclusión/exclusión de candidatos en esta vacante.
-async function crearVacanteTeamTailor({ nombreInterno, titulo, descripcion, ubicacionId }) {
+async function crearVacanteTeamTailor({ nombreInterno, titulo, descripcion, ubicacionId, imagenUrl }) {
   const respuesta = await ttCrear('/jobs', {
     data: {
       type: 'jobs',
@@ -383,6 +410,8 @@ async function crearVacanteTeamTailor({ nombreInterno, titulo, descripcion, ubic
         'body':          descripcion,
         'status':        'open',
         'template-id':   TEAMTAILOR_TEMPLATE_ID_VACANTE,
+        // Debe ir en la creación: la plantilla ya trae una imagen y un PATCH posterior no la reemplaza.
+        ...(imagenUrl && { 'picture': imagenUrl }),
       },
       relationships: {
         user:      { data: { id: TEAMTAILOR_USER_ID, type: 'users' } },
@@ -1352,7 +1381,58 @@ async function procesarRecordatorioInactividad({ supabase, fila, idSuscriptor, l
   log('recordatorio_inactividad', { estado: 'ok', reintentos: nuevosReintentos, ultimo_intento: esUltimoIntento, pregunta_id: pendiente.id });
 }
 
-const IDS_CAMPOS_BORRADOR_VACANTE = ['nombre_interno', 'titulo', 'ubicacion', 'descripcion', 'contexto'];
+const IDS_CAMPOS_BORRADOR_VACANTE = ['nombre_interno', 'titulo', 'ubicacion', 'descripcion', 'contexto', 'escena_imagen'];
+
+// Genera la imagen en 4:1 y la recorta al centro a 1200x400 (OpenRouter no ofrece 3:1).
+async function generarImagenVacante(escena) {
+  const datos = await orGenerarImagen({
+    model:        OPENROUTER_MODEL_IMAGEN_VACANTE,
+    prompt:       `${PROMPT_BASE_IMAGEN_VACANTE}${escena}`,
+    resolution:   '1K',
+    aspect_ratio: '4:1',
+  });
+  const imagen = datos?.data?.[0];
+  if (!imagen?.b64_json) throw new Error('OpenRouter no devolvió una imagen válida');
+
+  const original = await loadImage(Buffer.from(imagen.b64_json, 'base64'));
+  const escala = Math.max(ANCHO_IMAGEN_VACANTE / original.width, ALTO_IMAGEN_VACANTE / original.height);
+  const lienzo = createCanvas(ANCHO_IMAGEN_VACANTE, ALTO_IMAGEN_VACANTE);
+  lienzo.getContext('2d').drawImage(
+    original,
+    (ANCHO_IMAGEN_VACANTE - original.width * escala) / 2,
+    (ALTO_IMAGEN_VACANTE - original.height * escala) / 2,
+    original.width * escala,
+    original.height * escala,
+  );
+  return lienzo.toBuffer('image/png');
+}
+
+// Se guarda la ruta (no la URL firmada) porque la URL caduca y el borrador puede durar más.
+async function subirImagenVacante(supabase, telefono, buffer) {
+  const ruta = `${telefono}/vacante-${Date.now()}.png`;
+  const { error } = await supabase.storage.from(BUCKET_BANNERS).upload(ruta, buffer, { contentType: 'image/png', upsert: false });
+  if (error) throw new Error(`Supabase storage upload failed (${BUCKET_BANNERS}): ${error.message}`);
+  return ruta;
+}
+
+async function urlFirmadaImagenVacante(supabase, ruta) {
+  const { data, error } = await supabase.storage.from(BUCKET_BANNERS).createSignedUrl(ruta, EXPIRACION_URL_IMAGEN_SEGUNDOS);
+  if (error) throw new Error(`Supabase storage signed url failed (${BUCKET_BANNERS}): ${error.message}`);
+  return data.signedUrl;
+}
+
+// Pasa la URL por el campo personalizado y dispara el flujo que muestra la imagen.
+async function enviarImagenVacante(idSuscriptor, url) {
+  await mcCrear('/fb/subscriber/setCustomField', {
+    subscriber_id: idSuscriptor,
+    field_id:      ID_CAMPO_IMAGEN_VACANTE,
+    field_value:   url,
+  });
+  await mcCrear('/fb/sending/sendFlow', {
+    subscriber_id: idSuscriptor,
+    flow_ns:       FLOW_NS_IMAGEN_VACANTE,
+  });
+}
 
 // Flujo interno (no de candidatos): una reclutadora autorizada (NUMEROS_AUTORIZADOS_VACANTES)
 // crea una vacante en TeamTailor conversando por WhatsApp. Reutiliza la tabla `chatbot`
@@ -1360,12 +1440,36 @@ const IDS_CAMPOS_BORRADOR_VACANTE = ['nombre_interno', 'titulo', 'ubicacion', 'd
 // y descripción como si fueran "preguntas" en la columna `preguntas`, sin necesidad de una
 // tabla nueva — este teléfono nunca llega al flujo de postulación, así que no hay conflicto.
 async function procesarCreacionVacante({ supabase, telefono, mensaje, idSuscriptor, log }) {
+  // El reenganche de 1h de ManyChat es solo para candidatos: aquí no debe llegar al agente.
+  if (mensaje === MENSAJE_IRRESPONSIVO) {
+    log('reenganche_vacante', { estado: 'ignorado' });
+    return;
+  }
+
   let fila;
   try {
     ({ fila } = await obtenerOCrearContacto(supabase, idSuscriptor, telefono));
   } catch (e) {
     log('supabase_contacto', { estado: 'error', error: e.message });
     return;
+  }
+
+  // Comandos para cortar el borrador en curso (aún no existe nada en TeamTailor, solo el
+  // borrador en `chatbot`): "cancelar" lo descarta y termina; "nueva vacante" lo descarta y
+  // sigue el flujo con este mensaje como inicio de una vacante nueva.
+  const comando = normalizarTexto(mensaje).replace(/[^a-z\s]/g, '').replace(/\s+/g, ' ').trim();
+  const cancelar = REGEX_CANCELAR_VACANTE.test(comando);
+  if (cancelar || REGEX_NUEVA_VACANTE.test(comando)) {
+    const { error: errorLimpieza } = await supabase.from('chatbot').update({ preguntas: null, conversacion: null }).eq('id', fila.id);
+    if (errorLimpieza) log('supabase_borrador', { estado: 'error', error: errorLimpieza.message });
+    fila.preguntas    = null;
+    fila.conversacion = null;
+    log('vacante_descartada', { estado: 'ok', comando });
+
+    if (cancelar) {
+      await enviarRespuestaCandidato(idSuscriptor, 'Listo, descarté el borrador de la vacante. Escríbeme cuando quieras crear otra.');
+      return;
+    }
   }
 
   await agregarMensajeConversacion(supabase, fila, 'reclutadora', mensaje, { actualizarTimestamp: true });
@@ -1381,7 +1485,7 @@ async function procesarCreacionVacante({ supabase, telefono, mensaje, idSuscript
 
   // Red de seguridad: si el modelo se equivoca y deja tags HTML en el mensaje o el anuncio
   // (el HTML real solo debe ir en "descripcion"), se limpian antes de mandarlos por WhatsApp.
-  const { mensaje: mensajeAgenteCrudo, anuncio: anuncioCrudo, nombre_interno: nombreInterno, titulo, ubicacion, descripcion, contexto, confirmado } = resultado;
+  const { mensaje: mensajeAgenteCrudo, anuncio: anuncioCrudo, nombre_interno: nombreInterno, titulo, ubicacion, descripcion, contexto, confirmado, escena_imagen: escenaImagen, generar_imagen: generarImagen } = resultado;
   let mensajeAgente = limpiarHtmlParaWhatsApp(mensajeAgenteCrudo);
   const anuncioAgente = limpiarHtmlParaWhatsApp(anuncioCrudo);
 
@@ -1400,7 +1504,35 @@ async function procesarCreacionVacante({ supabase, telefono, mensaje, idSuscript
     }
   }
 
-  const nuevasPreguntas = IDS_CAMPOS_BORRADOR_VACANTE.map(id => ({ id, respuesta: resultado[id] ?? '' }));
+  // La imagen se genera sola la primera vez que el resumen está completo (antes de la
+  // confirmación) y de nuevo cuando la reclutadora la pide o da comentarios sobre ella.
+  const previas = Object.fromEntries((fila.preguntas ?? []).map(p => [p.id, p.respuesta]));
+  let imagenRuta      = previas.imagen_ruta ?? '';
+  let imagenIntentos  = Number(previas.imagen_intentos) || 0;
+  let imagenNueva     = false;
+  const resumenCompleto = Boolean(nombreInterno && titulo && ubicacion && descripcion && contexto);
+
+  if (!confirmado && resumenCompleto && (!imagenRuta || generarImagen)) {
+    if (imagenIntentos >= MAXIMO_IMAGENES_VACANTE) {
+      mensajeAgente = `${mensajeAgente}\n\nYa generé ${MAXIMO_IMAGENES_VACANTE} imágenes para esta vacante y no puedo hacer más. Dime si continuamos con la última.`;
+    } else {
+      try {
+        const escena = escenaImagen?.trim() || `A professional working as "${titulo}" in a realistic workplace`;
+        imagenRuta = await subirImagenVacante(supabase, telefono, await generarImagenVacante(escena));
+        imagenIntentos++;
+        imagenNueva = true;
+        log('imagen_vacante', { estado: 'ok', ruta: imagenRuta, intento: imagenIntentos });
+      } catch (e) {
+        log('imagen_vacante', { estado: 'error', error: e.message });
+      }
+    }
+  }
+
+  const nuevasPreguntas = [
+    ...IDS_CAMPOS_BORRADOR_VACANTE.map(id => ({ id, respuesta: resultado[id] ?? '' })),
+    { id: 'imagen_ruta',     respuesta: imagenRuta },
+    { id: 'imagen_intentos', respuesta: String(imagenIntentos) },
+  ];
   fila.preguntas = nuevasPreguntas;
   const { error: errorActualizacion } = await supabase.from('chatbot').update({ preguntas: nuevasPreguntas }).eq('id', fila.id);
   if (errorActualizacion) log('supabase_preguntas', { estado: 'error', error: errorActualizacion.message });
@@ -1408,7 +1540,15 @@ async function procesarCreacionVacante({ supabase, telefono, mensaje, idSuscript
   if (confirmado && nombreInterno && titulo && ubicacion && descripcion && contexto) {
     try {
       const ubicacionId = await obtenerOCrearUbicacionIdTeamTailor(ubicacion, log);
-      const vacanteCreada = await crearVacanteTeamTailor({ nombreInterno, titulo, descripcion, ubicacionId });
+      let imagenUrl = null;
+      if (imagenRuta) {
+        try {
+          imagenUrl = await urlFirmadaImagenVacante(supabase, imagenRuta);
+        } catch (e) {
+          log('imagen_vacante', { estado: 'error_url', error: e.message });
+        }
+      }
+      const vacanteCreada = await crearVacanteTeamTailor({ nombreInterno, titulo, descripcion, ubicacionId, imagenUrl });
       log('vacante_creada', { estado: 'ok', vacante_id: vacanteCreada.id, telefono });
 
       try {
@@ -1433,7 +1573,17 @@ async function procesarCreacionVacante({ supabase, telefono, mensaje, idSuscript
   }
 
   // El mensaje conversacional y el anuncio se mandan como dos mensajes de WhatsApp
-  // separados (mejor lectura que un solo bloque gigante), en ese orden.
+  // separados (mejor lectura que un solo bloque gigante), en ese orden. Antes va la imagen
+  // (si hay una nueva); el flujo de respuesta debe ser el último que se envíe.
+  if (imagenNueva) {
+    try {
+      await enviarImagenVacante(idSuscriptor, await urlFirmadaImagenVacante(supabase, imagenRuta));
+      await agregarMensajeConversacion(supabase, fila, 'agente', '[Se envió la imagen propuesta para la vacante]');
+    } catch (e) {
+      log('imagen_vacante', { estado: 'error_envio', error: e.message });
+    }
+  }
+
   try {
     await enviarRespuestaCandidato(idSuscriptor, mensajeAgente);
     await agregarMensajeConversacion(supabase, fila, 'agente', mensajeAgente);
