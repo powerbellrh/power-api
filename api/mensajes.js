@@ -424,17 +424,32 @@ async function crearVacanteTeamTailor({ nombreInterno, titulo, descripcion, ubic
 
 // El custom field "contexto" (id AD_TEAMTAILOR_CUSTOM_FIELD_ID = 8036) no se puede mandar
 // como atributo directo al crear el job (TeamTailor responde "Param not allowed"): hay que
-// crear su valor aparte, en la relación custom-field-values del job ya creado.
-async function establecerContextoVacanteTeamTailor(vacanteId, contexto) {
-  await ttCrear(`/jobs/${vacanteId}/custom-field-values`, {
+// crear su valor aparte en POST /custom-field-values, ligándolo al job con "owner".
+// (/jobs/{id}/custom-field-values solo sirve para leer: el POST ahí da 404.) Si falla, se
+// reintenta una vez; devuelve si quedó guardado para avisarle a la reclutadora.
+// Ojo: el listado de valores del job tarda unos segundos en reflejar el valor recién creado.
+async function establecerContextoVacanteTeamTailor(vacanteId, contexto, log) {
+  const cuerpo = {
     data: {
       type:       'custom-field-values',
       attributes: { value: contexto },
       relationships: {
         'custom-field': { data: { id: AD_TEAMTAILOR_CUSTOM_FIELD_ID, type: 'custom-fields' } },
+        owner:          { data: { id: String(vacanteId), type: 'jobs' } },
       },
     },
-  });
+  };
+
+  for (let intento = 1; intento <= 2; intento++) {
+    try {
+      await ttCrear('/custom-field-values', cuerpo, intento > 1);
+      log('vacante_contexto', { estado: 'ok', vacante_id: vacanteId, intento });
+      return true;
+    } catch (e) {
+      log('vacante_contexto', { estado: 'error', vacante_id: vacanteId, intento, error: e.message });
+    }
+  }
+  return false;
 }
 
 function normalizarTexto(texto) {
@@ -1520,20 +1535,8 @@ async function procesarCreacionVacante({ supabase, telefono, mensaje, idSuscript
   let mensajeAgente = limpiarHtmlParaWhatsApp(mensajeAgenteCrudo);
   const anuncioAgente = limpiarHtmlParaWhatsApp(anuncioCrudo);
 
-  // La línea de ubicación la arma el código (no el modelo): el LLM no tiene forma de saber
-  // qué locations existen ya en TeamTailor, así que se consulta la API y se le informa a la
-  // reclutadora a qué location real corresponde (o que se creará una nueva) antes de confirmar.
-  if (ubicacion?.trim()) {
-    try {
-      const coincidencia = await buscarUbicacionTeamTailor(ubicacion);
-      const lineaUbicacion = coincidencia
-        ? `Ubicación en TeamTailor: ${coincidencia.attributes.name} (ya existe)`
-        : `Ubicación en TeamTailor: se creará "${ubicacion}" (no encontré ninguna existente que coincida)`;
-      mensajeAgente = `${mensajeAgente}\n\n${lineaUbicacion}`;
-    } catch (e) {
-      log('ubicacion_vacante', { estado: 'error', error: e.message });
-    }
-  }
+  // La ubicación no se menciona en la conversación: se resuelve en silencio al confirmar
+  // (obtenerOCrearUbicacionIdTeamTailor busca la existente o crea una nueva).
 
   // La imagen se genera sola la primera vez que el resumen está completo (antes de la
   // confirmación) y de nuevo cuando la reclutadora la pide o da comentarios sobre ella.
@@ -1555,12 +1558,19 @@ async function procesarCreacionVacante({ supabase, telefono, mensaje, idSuscript
         log('imagen_vacante', { estado: 'ok', ruta: imagenRuta, intento: imagenIntentos });
       } catch (e) {
         log('imagen_vacante', { estado: 'error', error: e.message });
+        // El resumen del agente promete una imagen: si no hay ninguna, se avisa en vez de callar.
+        if (!imagenRuta) mensajeAgente = `${mensajeAgente}\n\nNo pude generar la imagen propuesta. Si quieres, pídeme otra; si no, la vacante se sube sin imagen.`;
       }
     }
   }
 
+  // El anuncio solo viene cuando el agente lo muestra; se guarda para reenviarlo al crear la
+  // vacante (texto listo para copiar a Indeed), cuando el modelo ya no lo repite.
+  const anuncioFinal = anuncioAgente || previas.anuncio || '';
+
   const nuevasPreguntas = [
     ...IDS_CAMPOS_BORRADOR_VACANTE.map(id => ({ id, respuesta: resultado[id] ?? '' })),
+    { id: 'anuncio',         respuesta: anuncioFinal },
     { id: 'imagen_ruta',     respuesta: imagenRuta },
     { id: 'imagen_intentos', respuesta: String(imagenIntentos) },
   ];
@@ -1582,14 +1592,27 @@ async function procesarCreacionVacante({ supabase, telefono, mensaje, idSuscript
       const vacanteCreada = await crearVacanteTeamTailor({ nombreInterno, titulo, descripcion, ubicacionId, imagenUrl });
       log('vacante_creada', { estado: 'ok', vacante_id: vacanteCreada.id, telefono });
 
-      try {
-        await establecerContextoVacanteTeamTailor(vacanteCreada.id, contexto);
-        log('vacante_contexto', { estado: 'ok', vacante_id: vacanteCreada.id });
-      } catch (e) {
-        log('vacante_contexto', { estado: 'error', vacante_id: vacanteCreada.id, error: e.message });
-      }
+      const contextoGuardado = await establecerContextoVacanteTeamTailor(vacanteCreada.id, contexto, log);
 
-      const mensajeExito = `Vacante creada: "${titulo}" (ID ${vacanteCreada.id})${vacanteCreada.url ? `\n${vacanteCreada.url}` : ''}`;
+      // Cierre: imagen usada, anuncio listo para Indeed y resumen corto de lo configurado en
+      // TeamTailor (el resumen va al final porque el flujo de respuesta debe ser el último).
+      if (imagenUrl) {
+        try {
+          await enviarImagenVacante(idSuscriptor, imagenUrl);
+        } catch (e) {
+          log('imagen_vacante', { estado: 'error_envio', error: e.message });
+        }
+      }
+      if (anuncioFinal) await enviarRespuestaCandidato(idSuscriptor, anuncioFinal);
+
+      const mensajeExito = [
+        `Vacante creada en TeamTailor (ID ${vacanteCreada.id})${vacanteCreada.url ? `\n${vacanteCreada.url}` : ''}`,
+        `Nombre interno: ${nombreInterno}\nTítulo: ${titulo}\nUbicación: ${ubicacion}`,
+        contextoGuardado
+          ? 'Contexto: guardado'
+          : 'Contexto: NO se pudo guardar, hay que cargarlo a mano en TeamTailor (campo "Contexto")',
+        imagenUrl && anuncioFinal ? 'Arriba van la imagen y el anuncio por si los necesitas para Indeed.' : null,
+      ].filter(Boolean).join('\n\n');
       await enviarRespuestaCandidato(idSuscriptor, mensajeExito);
       await agregarMensajeConversacion(supabase, fila, 'agente', mensajeExito);
 
