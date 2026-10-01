@@ -18,8 +18,8 @@ const PROMPT_PREGUNTAS_ENRIQUECIMIENTO = readFileSync(join(__dirname, '../prompt
 const PROMPT_EVALUAR_BAJA            = readFileSync(join(__dirname, '../prompts/evaluar_baja.txt'), 'utf-8');
 const PROMPT_RECORDATORIO_INACTIVIDAD = readFileSync(join(__dirname, '../prompts/recordatorio_inactividad.txt'), 'utf-8');
 const PROMPT_AGENTE_CREACION_VACANTE = readFileSync(join(__dirname, '../prompts/agente_creacion_vacante.txt'), 'utf-8');
-const OPENROUTER_MODEL               = 'deepseek/deepseek-v4.1-flash';
-const OPENROUTER_MODEL_CREACION_VACANTE = 'z-ai/glm-5.3';
+const OPENROUTER_MODEL               = 'z-ai/glm-5.3-flash';
+const OPENROUTER_MODEL_CREACION_VACANTE = 'z-ai/glm-5.3-flash';
 const PRESUPUESTO_TOKENS_CREACION_VACANTE = 50000;
 const CARACTERES_POR_TOKEN_ESTIMADO  = 4; // aproximación estándar para no depender de un tokenizador
 const LIMITE_REINTENTOS              = 3;
@@ -139,7 +139,7 @@ const ACTUALIZAR_VACANTE_TOOL = {
         },
         nombre_interno: {
           type:        'string',
-          description: 'Nombre interno de la vacante (uso administrativo, no se publica), con el formato "Cliente - Vacante" o "Cliente - Vacante (Ubicación)" si la reclutadora incluyó la ubicación en el nombre. Ejemplo: "Península - Almacenista". Cadena vacía si aún no se conoce.',
+          description: 'Nombre interno de la vacante, con el formato "Cliente - Vacante" o "Cliente - Vacante (Ubicación)" si la reclutadora incluyó la ubicación en el nombre. Ejemplo: "Península - Almacenista". Cadena vacía si aún no se conoce.',
         },
         titulo: {
           type:        'string',
