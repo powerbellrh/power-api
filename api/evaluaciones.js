@@ -45,14 +45,12 @@ export const PROMPTS = {
   REEVAL_OP: readFileSync(join(__dirname, '../prompts/reevaluacion_operativa.txt'),      'utf-8'),
 };
 
-const OPENROUTER_MODEL_AD        = 'z-ai/glm-5.3';
-const OPENROUTER_MODEL_OP        = 'z-ai/glm-5.3';
-const OPENROUTER_MODEL_OP_VISION = 'anthropic/claude-haiku-4.5'; // GLM no tiene ruta en OpenRouter que acepte imágenes
+const OPENROUTER_MODEL_AD        = 'z-ai/glm-5.3-flash';
+const OPENROUTER_MODEL_OP        = 'z-ai/glm-5.3-flash';
 
 export const AI_CONFIG = {
-  AD:        { model: OPENROUTER_MODEL_AD,        max_tokens: 20000, reasoningEffort: 'high'   },
-  OP:        { model: OPENROUTER_MODEL_OP,        max_tokens: 30000, reasoningEffort: 'low'    },
-  OP_VISION: { model: OPENROUTER_MODEL_OP_VISION, max_tokens: 20000, reasoningEffort: 'high'   },
+  AD:        { model: OPENROUTER_MODEL_AD,        max_tokens: 30000, reasoningEffort: 'max'    },
+  OP:        { model: OPENROUTER_MODEL_OP,        max_tokens: 30000, reasoningEffort: 'max'    },
 };
 
 const TEAMTAILOR_BOT_USER_ID              = AD_TEAMTAILOR_BOT_USER_ID;
@@ -125,7 +123,7 @@ export function construirPeticionOpenRouter(tipoConfig, promptSistema, bloqueVac
 }
 
 // Orden de motores de parseo de PDF a probar cuando uno falla (p. ej. "rate limited" de Mistral OCR).
-// 'native' se excluye: ninguno de los modelos usados (GLM, deepseek, claude-haiku) soporta file input nativo en OpenRouter.
+// 'native' se excluye: ninguno de los modelos usados (GLM) soporta file input nativo en OpenRouter.
 const MOTORES_PDF_FALLBACK = ['mistral-ocr', 'cloudflare-ai'];
 const INTENTOS_POR_MOTOR_PDF = 1;
 
@@ -477,8 +475,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
 
     const esAdministrativa = vacanteTipo === 'AD' || !vacanteTipo;
 
-    // GLM no soporta imágenes en OpenRouter: si el OP depende de la imagen de su historial, usar un modelo con visión
-    const tipoConfigModelo = urlImagenDeRespuestas ? AI_CONFIG.OP_VISION : tipoConfig;
+    const tipoConfigModelo = tipoConfig;
 
     const bloqueVacante   = construirBloqueInfoVacante(tituloVacante, descripcionVacanteLimpia, ubicacionVacante, contextoCampoPersonalizado);
     const bloqueCandidato = construirBloqueInfoCandidato(candidatoNombre, candidatoRespuestas);
@@ -495,7 +492,7 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
       evaluacion_modelo:   tipoConfigModelo.model,
     }).eq('postulacion_id', postulacionId);
 
-    // PASO 10: Llamar al modelo (OpenRouter: GLM para AD, GLM u OP_VISION para OP según si hay imagen)
+    // PASO 10: Llamar al modelo (OpenRouter: GLM)
     etapaActual = 'modelo_ia';
     const { resultadoEvaluacion, contenidoPensamiento, tokensEntrada, tokensSalida, tokensCreacionCache, tokensLecturaCache } =
       await llamarOpenRouter(peticionModelo);
