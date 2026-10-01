@@ -18,7 +18,7 @@ const PROMPT_PREGUNTAS_ENRIQUECIMIENTO = readFileSync(join(__dirname, '../prompt
 const PROMPT_EVALUAR_BAJA            = readFileSync(join(__dirname, '../prompts/evaluar_baja.txt'), 'utf-8');
 const PROMPT_RECORDATORIO_INACTIVIDAD = readFileSync(join(__dirname, '../prompts/recordatorio_inactividad.txt'), 'utf-8');
 const PROMPT_AGENTE_CREACION_VACANTE = readFileSync(join(__dirname, '../prompts/agente_creacion_vacante.txt'), 'utf-8');
-const OPENROUTER_MODEL               = 'deepseek/deepseek-v4-flash-0731';
+const OPENROUTER_MODEL               = 'deepseek/deepseek-v4.1-flash';
 const OPENROUTER_MODEL_CREACION_VACANTE = 'z-ai/glm-5.3';
 const PRESUPUESTO_TOKENS_CREACION_VACANTE = 50000;
 const CARACTERES_POR_TOKEN_ESTIMADO  = 4; // aproximación estándar para no depender de un tokenizador
@@ -139,7 +139,7 @@ const ACTUALIZAR_VACANTE_TOOL = {
         },
         nombre_interno: {
           type:        'string',
-          description: 'Nombre interno de la vacante (uso administrativo, no se publica). Cadena vacía si aún no se conoce.',
+          description: 'Nombre interno de la vacante (uso administrativo, no se publica), con el formato "Cliente - Vacante" o "Cliente - Vacante (Ubicación)" si la reclutadora incluyó la ubicación en el nombre. Ejemplo: "Península - Almacenista". Cadena vacía si aún no se conoce.',
         },
         titulo: {
           type:        'string',
@@ -605,6 +605,19 @@ function normalizarRespuesta(id, respuesta) {
   return respuesta.trim();
 }
 
+// Recorta al límite de WhatsApp sin dejar la frase a medias: corta en el último signo
+// de cierre de oración que quepa; si no hay ninguno, en el último espacio.
+function recortarEnOracion(texto, maximo = 250) {
+  if (texto.length <= maximo) return texto;
+
+  const corte = texto.slice(0, maximo);
+  const ultimoCierre = Math.max(corte.lastIndexOf('. '), corte.lastIndexOf('? '), corte.lastIndexOf('! '), corte.lastIndexOf('\n'));
+  if (ultimoCierre >= maximo * 0.4) return corte.slice(0, ultimoCierre + 1).trim();
+
+  const ultimoEspacio = corte.lastIndexOf(' ');
+  return `${corte.slice(0, ultimoEspacio > 0 ? ultimoEspacio : maximo).trim()}...`;
+}
+
 function generarDespedida(nombre) {
   const inicio = nombre ? `${nombre}, gracias` : 'Gracias';
   return `${inicio} por tu tiempo. Una reclutadora se pondrá en contacto contigo lo más pronto posible para continuar con tu proceso.`.slice(0, 250);
@@ -683,7 +696,7 @@ async function generarRespuestaAgenteVacante(conversacion) {
 
   const datos = await orChatCompletion({
     model:       OPENROUTER_MODEL_CREACION_VACANTE,
-    reasoning:   { effort: 'low' },
+    reasoning:   { effort: 'medium' },
     messages: [
       { role: 'system', content: PROMPT_AGENTE_CREACION_VACANTE },
       { role: 'user',   content: conversacionRecortada },
@@ -762,7 +775,7 @@ const EVALUAR_BAJA_TOOL = {
 async function evaluarSolicitudBaja(mensaje) {
   const datos = await orChatCompletion({
     model:       OPENROUTER_MODEL,
-    reasoning:   { effort: 'low' },
+    reasoning:   { effort: 'medium' },
     messages: [
       { role: 'system', content: PROMPT_EVALUAR_BAJA },
       { role: 'user',   content: mensaje },
@@ -781,7 +794,7 @@ async function evaluarSolicitudBaja(mensaje) {
 async function generarRespuestaAgenteGeneral(conversacion) {
   const datos = await orChatCompletion({
     model:     OPENROUTER_MODEL,
-    reasoning: { effort: 'low' },
+    reasoning: { effort: 'medium' },
     messages: [
       { role: 'system', content: PROMPT_AGENTE_GENERAL },
       { role: 'user',   content: conversacion },
@@ -790,7 +803,7 @@ async function generarRespuestaAgenteGeneral(conversacion) {
 
   const texto = datos?.choices?.[0]?.message?.content?.trim();
   if (!texto) throw new Error('OpenRouter no devolvió una respuesta válida');
-  return texto.slice(0, 250);
+  return recortarEnOracion(texto);
 }
 
 // ============================================================================
@@ -1122,7 +1135,7 @@ export async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor
   const todasRespondidas     = itemsConExtra.every(item => item.respuesta);
   const nuevoReintentos      = avanzo ? 0 : (fila.reintentos ?? 0) + 1;
 
-  let mensajeAgente     = (resultadoAgente.mensaje ?? '').slice(0, 250);
+  let mensajeAgente     = recortarEnOracion(resultadoAgente.mensaje ?? '');
   let reintentosFinales = nuevoReintentos;
 
   if (todasRespondidas) {
@@ -1139,7 +1152,7 @@ export async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor
     const nombreCandidato = itemsConExtra.find(item => item.id === ID_PREGUNTA_NOMBRE)?.respuesta;
     const primeraExtra    = itemsConExtra.find(item => item.tipo === 'extra')?.texto ?? '';
     const inicio          = nombreCandidato ? `Gracias, ${nombreCandidato}` : 'Gracias';
-    mensajeAgente = `${inicio}. Ya casi terminamos, solo unas preguntas más para conocer mejor tu perfil: ${primeraExtra}`.slice(0, 250);
+    mensajeAgente = `${inicio}. Ya casi terminamos, solo unas preguntas más para conocer mejor tu perfil: ${primeraExtra}`;
   }
 
   // ── Sincronización con TeamTailor: alta de candidato/postulación + respuestas ──
@@ -1318,19 +1331,37 @@ export async function procesarCandidatoConVacante({ supabase, fila, idSuscriptor
 // paréntesis pensadas para el LLM, no para mostrarse al candidato). Si la llamada
 // a OpenRouter falla, se usa la versión anterior (texto crudo) como respaldo.
 async function generarMensajeRecordatorio(pregunta) {
+  const respaldo = `Hola! ¿Quisieras continuar con tu postulación?\n\n${pregunta.texto}`;
+
   try {
     const prompt = PROMPT_RECORDATORIO_INACTIVIDAD.replace('{{pregunta}}', pregunta.texto);
     const datos  = await orChatCompletion({
       model:     OPENROUTER_MODEL,
-      reasoning: { effort: 'low' },
-      messages:  [{ role: 'system', content: prompt }],
+      reasoning:   { effort: 'medium' },
+      messages:  [
+        { role: 'system', content: prompt },
+        { role: 'user',   content: 'Redacta el mensaje de recordatorio.' },
+      ],
     });
 
     const mensaje = datos?.choices?.[0]?.message?.content?.trim();
-    return mensaje || `Hola! ¿Quisieras continuar con tu postulación?\n\n${pregunta.texto}`;
+    if (!esRecordatorioValido(mensaje)) {
+      console.log(JSON.stringify({ etapa: 'recordatorio_inactividad_llm', estado: 'descartado', mensaje }));
+      return respaldo;
+    }
+    return mensaje;
   } catch (e) {
-    return `Hola! ¿Quisieras continuar con tu postulación?\n\n${pregunta.texto}`;
+    return respaldo;
   }
+}
+
+// El modelo a veces devuelve fragmentos de instrucciones ("Mensaje:", "{{...}}",
+// "No uses viñetas...") en lugar del recordatorio; eso no debe llegar al candidato.
+function esRecordatorioValido(mensaje) {
+  if (!mensaje || mensaje.length < 20 || mensaje.length > 400) return false;
+  if (/^[\s.\-*•]/.test(mensaje)) return false;
+  if (/\{\{|\}\}|\*\*|^\s*(mensaje|respuesta|tu mensaje)\s*:|\n\s*(mensaje|respuesta)\s*:|instrucci|\(a\)|\(o\)|\(as?\)/im.test(mensaje)) return false;
+  return mensaje.includes('?');
 }
 
 // ManyChat manda "Irresponsivo" cuando pasa 1h sin respuesta del candidato. Se le

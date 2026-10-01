@@ -8,7 +8,7 @@ const __dirname                     = dirname(fileURLToPath(import.meta.url));
 const PROMPT_EXTRACCION_HABILIDADES = readFileSync(join(__dirname, '../prompts/extraccion_habilidades.txt'), 'utf-8');
 const PROMPT_VERIFICACION_MATCH     = readFileSync(join(__dirname, '../prompts/verificacion_emparejamiento.txt'), 'utf-8');
 const PROMPT_NORMALIZACION_DOMICILIO = readFileSync(join(__dirname, '../prompts/normalizacion_domicilio.txt'), 'utf-8');
-const OPENROUTER_MODEL              = 'deepseek/deepseek-v4-flash-0731';
+const OPENROUTER_MODEL              = 'deepseek/deepseek-v4.1-flash';
 
 const DOMICILIO_TOOL = {
   type: 'function',
@@ -103,7 +103,7 @@ function normalizarTexto(texto) {
 export async function detectarUbicacionPorLlm(texto) {
   const datos = await orChatCompletion({
     model:      OPENROUTER_MODEL,
-    reasoning:  { enabled: false },
+    reasoning:  { effort: 'medium' },
     messages: [
       { role: 'system', content: PROMPT_NORMALIZACION_DOMICILIO },
       { role: 'user',   content: texto },
@@ -145,7 +145,7 @@ export async function detectarHabilidadesPorLlm(texto, habilidadesDisponibles) {
 
   const datos = await orChatCompletion({
     model:      OPENROUTER_MODEL,
-    reasoning:  { enabled: false },
+    reasoning:  { effort: 'medium' },
     messages: [
       { role: 'system', content: prompt },
       { role: 'user',   content: texto },
@@ -180,7 +180,7 @@ async function verificarCompatibilidad(candidato, descripcion) {
 
   const datos = await orChatCompletion({
     model:      OPENROUTER_MODEL,
-    reasoning:  { enabled: false },
+    reasoning:  { effort: 'medium' },
     messages: [
       { role: 'user', content: prompt },
     ],
