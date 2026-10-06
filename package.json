@@ -8,5 +8,8 @@
     "@vercel/functions": "^3.7.1",
     "canvas": "^3.2.0",
     "pdfkit": "^0.19.1"
+  },
+  "scripts": {
+    "test": "node --test"
   }
 }
