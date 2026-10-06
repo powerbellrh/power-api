@@ -47,15 +47,26 @@ test('si el modelo trata de usted, se le pide corregir y se envía la versión c
   assert.equal(fila.reintentos, 0);
 });
 
-test('si el modelo nunca termina en pregunta, se manda la pregunta pendiente', async () => {
+test('si el mensaje del modelo no termina en pregunta, se le agrega la pregunta pendiente sin reintentar', async () => {
   entorno = crearEntorno({ fila: { vacante: 555, preguntas: preguntasPostulacion({ nombre: 'Luis' }) } });
   const { fila } = entorno;
-  const sinPregunta = agente(fila, { mensaje: 'Gracias por tus datos.', respuestas: { 73101: 'Calle 1, Centro, Tonalá' } });
-  entorno.encolarModelo(sinPregunta, sinPregunta);
+  entorno.encolarModelo(agente(fila, { mensaje: 'Gracias por tus datos.', respuestas: { 73101: 'Calle 1, Centro, Tonalá' } }));
 
   await entorno.escribir('Calle 1, Centro, Tonalá');
 
-  assert.deepEqual(entorno.mensajesEnviados, ['¿Cuál es tu edad?']);
+  assert.equal(entorno.peticionesModelo.length, 1);
+  assert.deepEqual(entorno.mensajesEnviados, ['Gracias por tus datos. ¿Cuál es tu edad?']);
+});
+
+test('si el modelo usa el nombre del candidato, se quita sin reintentar (casos #16930 y #15414)', async () => {
+  entorno = crearEntorno({ fila: { vacante: 555, preguntas: preguntasPostulacion({ nombre: 'María del Pilar Orozco' }) } });
+  const { fila } = entorno;
+  entorno.encolarModelo(agente(fila, { mensaje: 'Gracias, María. Ahora, ¿cuál es tu edad?', respuestas: { 73101: 'Tomas Dosal 4539, Lomas del Paraíso, Guadalajara' } }));
+
+  await entorno.escribir('C. Tomas Dosal #4539, col. Lomas del Paraíso, Guadalajara');
+
+  assert.equal(entorno.peticionesModelo.length, 1);
+  assert.deepEqual(entorno.mensajesEnviados, ['Gracias. Ahora, ¿cuál es tu edad?']);
 });
 
 test('el candidato recibe su nombre solo en el turno en que lo da', async () => {

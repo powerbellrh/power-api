@@ -1,13 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  copiaTextoDelCandidato, detectarIntencion, esRespuestaGeneralValida, finalizarMensajeAgente, INTENCION, validarMensajeAgente,
+  copiaTextoDelCandidato, detectarIntencion, esRespuestaGeneralValida, finalizarMensajeAgente, INTENCION, quitarNombre, validarMensajeAgente,
 } from '../lib/chatbot/guardrails.js';
 import { esRecordatorioValido } from '../lib/chatbot/inactividad.js';
 import { aplicarRespuestas, detectarAvance, normalizarRespuesta } from '../lib/chatbot/preguntas.js';
 import { nombrePila, recortarEnOracion } from '../lib/chatbot/utilidades.js';
 
-const validar = (mensaje, extra = {}) => validarMensajeAgente(mensaje, { nombrePila: '', mensajeCandidato: '', ...extra });
+const validar = (mensaje, extra = {}) => validarMensajeAgente(mensaje, { mensajeCandidato: '', ...extra });
 const todas   = resultado => [...resultado.criticas, ...resultado.menores];
 
 // Los mensajes de estos tests son fragmentos de conversaciones reales del 6 de octubre de 2026.
@@ -37,17 +37,23 @@ test('detecta frases que prometen el final de las preguntas', () => {
   assert.ok(validar('Para terminar, ¿cuánto tiempo hiciste de camino?').menores.includes('frase_prohibida'));
 });
 
-test('exige terminar con una pregunta mientras haya pendientes', () => {
-  assert.ok(validar('Gracias por tus datos. Quedaron registrados.').criticas.includes('sin_pregunta'));
+test('un mensaje vacío es una violación crítica', () => {
   assert.ok(validar('').criticas.includes('vacio'));
-  assert.ok(validar('Gracias. ¿Cuál es tu edad? Quedo atento.').criticas.includes('sin_pregunta'));
   assert.deepEqual(validar('Gracias. ¿Cuál es tu edad?').criticas, []);
 });
 
-test('detecta el nombre del candidato dentro del mensaje', () => {
-  assert.ok(validar('Gracias, Luis. ¿Cuál es tu edad?', { nombrePila: 'Luis' }).menores.includes('nombre_en_mensaje'));
-  assert.ok(!validar('Gracias. ¿Cuál es tu edad?', { nombrePila: 'Luis' }).menores.includes('nombre_en_mensaje'));
-  assert.ok(!validar('Gracias, Luis. ¿Cuál es tu edad?', { nombrePila: '' }).menores.includes('nombre_en_mensaje'));
+test('quitarNombre elimina el nombre usado de saludo o de vocativo', () => {
+  assert.equal(quitarNombre('Gracias, María. Ahora, ¿podrías decirme tu domicilio completo?', 'María'), 'Gracias. Ahora, ¿podrías decirme tu domicilio completo?');
+  assert.equal(quitarNombre('¡Perfecto, Noé! ¿Cuál es tu edad?', 'Noé'), '¡Perfecto! ¿Cuál es tu edad?');
+  assert.equal(quitarNombre('Brenda, ¿cuál es tu domicilio?', 'Brenda'), '¿Cuál es tu domicilio?');
+  assert.equal(quitarNombre('María, no te preocupes: hay transporte. ¿Cómo llegarías?', 'María'), 'No te preocupes: hay transporte. ¿Cómo llegarías?');
+  assert.equal(quitarNombre('Gracias, Gerardo. Para continuar, ¿me compartes tu domicilio?', 'gerardo'), 'Gracias. Para continuar, ¿me compartes tu domicilio?');
+});
+
+test('quitarNombre no toca palabras que solo contienen el nombre ni mensajes sin nombre', () => {
+  assert.equal(quitarNombre('Gracias. ¿Cuál es tu edad?', 'Luis'), 'Gracias. ¿Cuál es tu edad?');
+  assert.equal(quitarNombre('Gracias, Luisa. ¿Cuál es tu edad?', 'Luis'), 'Gracias, Luisa. ¿Cuál es tu edad?');
+  assert.equal(quitarNombre('Gracias, Luis. ¿Cuál es tu edad?', ''), 'Gracias, Luis. ¿Cuál es tu edad?');
 });
 
 test('detecta cuando el bot copia lo que escribió el candidato', () => {
@@ -62,21 +68,38 @@ test('marca los mensajes de más de 250 caracteres', () => {
   assert.ok(validar(`${'palabra '.repeat(40)}¿Cuál es tu edad?`).menores.includes('muy_largo'));
 });
 
-test('finalizarMensajeAgente quita emojis, respeta el límite y termina en pregunta', () => {
-  const respaldo = '¿Cuál es tu edad?';
-  assert.equal(finalizarMensajeAgente('Gracias 😊. ¿Cuál es tu edad?', { preguntaRespaldo: respaldo, nombreNuevo: '' }), 'Gracias . ¿Cuál es tu edad?');
-  assert.equal(finalizarMensajeAgente('Gracias por tus datos.', { preguntaRespaldo: respaldo, nombreNuevo: '' }), respaldo);
-  assert.equal(finalizarMensajeAgente('', { preguntaRespaldo: respaldo, nombreNuevo: '' }), respaldo);
+const SIN_NOMBRE = { nombreConocido: '', nombreNuevo: '' };
 
-  // Si al recortar se pierde la pregunta final, se usa la respaldo
+test('finalizarMensajeAgente quita emojis y siempre termina en la pregunta pendiente', () => {
+  const pendiente = '¿Cuál es tu edad?';
+  assert.equal(finalizarMensajeAgente('Gracias 😊. ¿Cuál es tu edad?', { preguntaPendiente: pendiente, ...SIN_NOMBRE }), 'Gracias . ¿Cuál es tu edad?');
+  assert.equal(finalizarMensajeAgente('', { preguntaPendiente: pendiente, ...SIN_NOMBRE }), pendiente);
+
+  // Un mensaje que no termina en pregunta conserva lo que dijo y recibe la pregunta pendiente al final
+  assert.equal(finalizarMensajeAgente('Gracias por tus datos.', { preguntaPendiente: pendiente, ...SIN_NOMBRE }), 'Gracias por tus datos. ¿Cuál es tu edad?');
+
+  // Si el mensaje ya hace una pregunta no se duplica (caso #16920: "¿Tienes experiencia...? Descríbela por favor")
+  assert.equal(finalizarMensajeAgente('¿Tienes experiencia en almacenes? Descríbela por favor', { preguntaPendiente: '¿Tienes experiencia en almacenes?', ...SIN_NOMBRE }), '¿Tienes experiencia en almacenes? Descríbela por favor');
+
+  // Si al recortar se pierde la pregunta final, se agrega
   const largo = `${'Dato registrado correctamente. '.repeat(12)}¿Cuál es tu edad?`;
-  assert.equal(finalizarMensajeAgente(largo, { preguntaRespaldo: respaldo, nombreNuevo: '' }), respaldo);
+  const final = finalizarMensajeAgente(largo, { preguntaPendiente: pendiente, ...SIN_NOMBRE });
+  assert.ok(final.endsWith('¿Cuál es tu edad?') && final.length < 300);
+});
+
+test('los textos de respaldo de las preguntas de cajón terminan en pregunta', async () => {
+  const { PREGUNTA_PARA_CANDIDATO } = await import('../lib/chatbot/constantes.js');
+  for (const texto of Object.values(PREGUNTA_PARA_CANDIDATO)) assert.ok(texto.trim().endsWith('?'), texto);
 });
 
 test('el nombre se usa una sola vez, en el turno en que el candidato lo da', () => {
-  const respaldo = '¿Cuál es tu domicilio?';
-  assert.equal(finalizarMensajeAgente('Perfecto. ¿Cuál es tu domicilio?', { preguntaRespaldo: respaldo, nombreNuevo: 'Brenda' }), 'Mucho gusto, Brenda. Perfecto. ¿Cuál es tu domicilio?');
-  assert.equal(finalizarMensajeAgente('Brenda, ¿cuál es tu domicilio?', { preguntaRespaldo: respaldo, nombreNuevo: 'Brenda' }), 'Brenda, ¿cuál es tu domicilio?');
+  const pendiente = '¿Cuál es tu domicilio?';
+  // Turno en que da su nombre: único saludo por nombre
+  assert.equal(finalizarMensajeAgente('Perfecto. ¿Cuál es tu domicilio?', { preguntaPendiente: pendiente, nombreConocido: 'Brenda', nombreNuevo: 'Brenda' }), 'Mucho gusto, Brenda. Perfecto. ¿Cuál es tu domicilio?');
+  // Si el modelo además lo usa, se quita para no repetirlo
+  assert.equal(finalizarMensajeAgente('Brenda, ¿cuál es tu domicilio?', { preguntaPendiente: pendiente, nombreConocido: 'Brenda', nombreNuevo: 'Brenda' }), 'Mucho gusto, Brenda. ¿Cuál es tu domicilio?');
+  // En los turnos siguientes nunca aparece (casos reales #16930 y #15414)
+  assert.equal(finalizarMensajeAgente('Gracias, María. Ahora, ¿podrías decirme tu domicilio completo: calle, colonia y municipio?', { preguntaPendiente: pendiente, nombreConocido: 'María', nombreNuevo: '' }), 'Gracias. Ahora, ¿podrías decirme tu domicilio completo: calle, colonia y municipio?');
 });
 
 test('nombrePila usa solo el primer nombre', () => {
