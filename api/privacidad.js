@@ -86,9 +86,25 @@ async function etiquetarBajaManyChat(idsSuscriptor) {
   }
 }
 
+// Conversaciones del chatbot de pasos (`conversaciones`): por teléfono y por el candidato de Supabase al que apuntan.
+async function buscarConversaciones(supabase, telefonos, idsCandidato) {
+  const consultas = [
+    telefonos.length    ? supabase.from('conversaciones').select('id, manychat').in('telefono', telefonos)         : null,
+    idsCandidato.length ? supabase.from('conversaciones').select('id, manychat').in('id_candidato', idsCandidato)  : null,
+  ].filter(Boolean);
+
+  const filas = [];
+  for (const consulta of consultas) {
+    const { data, error } = await consulta;
+    if (error) throw error;
+    filas.push(...(data ?? []));
+  }
+  return filas;
+}
+
 // `candidatoTT` es null cuando el candidato ya fue eliminado en TeamTailor: entonces solo se
 // dispone del id, y el teléfono y las postulaciones salen de Supabase.
-async function eliminarDatosCandidato(supabase, idTT, candidatoTT) {
+export async function eliminarDatosCandidato(supabase, idTT, candidatoTT) {
   const idNumerico = Number(idTT);
 
   const telefonoTT = candidatoTT?.data.attributes.phone;
@@ -119,7 +135,9 @@ async function eliminarDatosCandidato(supabase, idTT, candidatoTT) {
   const chats          = [...(chatsPorId ?? []), ...(chatsPorTelefono ?? [])];
   const idsChat        = [...new Set(chats.map(c => c.id))];
   const idsCandidato   = [...new Set([...(candidatosPorId ?? []), ...(candidatosPorTelefono ?? [])].map(c => c.id))];
-  const idsSuscriptor  = [...new Set([...chats.map(c => c.manychat), ...await buscarSuscriptoresManyChat(idTT)].filter(Boolean).map(Number))];
+  const conversaciones = await buscarConversaciones(supabase, listaTelefonos, idsCandidato);
+  const idsConversacion = [...new Set(conversaciones.map(c => c.id))];
+  const idsSuscriptor  = [...new Set([...chats.map(c => c.manychat), ...conversaciones.map(c => c.manychat), ...await buscarSuscriptoresManyChat(idTT)].filter(Boolean).map(Number))];
 
   const { data: notificaciones, error: errorNotificaciones } = await supabase
     .from('notificaciones').select('postulacion_id').eq('candidato_id', idNumerico);
@@ -148,6 +166,7 @@ async function eliminarDatosCandidato(supabase, idTT, candidatoTT) {
   eliminados.notificaciones  = await eliminarFilas(supabase, 'notificaciones', 'candidato_id',       [idNumerico]);
   eliminados.postulaciones   = await eliminarFilas(supabase, 'postulaciones',  'id',                 idsPostulacion);
   eliminados.chatbot         = await eliminarFilas(supabase, 'chatbot',        'id',                 idsChat);
+  eliminados.conversaciones  = await eliminarFilas(supabase, 'conversaciones', 'id',                 idsConversacion);
   eliminados.candidatos      = await eliminarFilas(supabase, 'candidatos',     'id',                 idsCandidato);
   eliminados.archivos        = await eliminarArchivos(supabase, idTT);
   return eliminados;
