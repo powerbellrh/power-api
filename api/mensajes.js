@@ -4,7 +4,7 @@ import { NUMEROS_AUTORIZADOS_VACANTES } from '../lib/config.js';
 import { agregarMensajeConversacion, obtenerOCrearContacto, registrarMensajeCandidato } from '../lib/chatbot/almacen.js';
 import { procesarSolicitudBaja }      from '../lib/chatbot/baja.js';
 import { MENSAJE_IRRESPONSIVO }       from '../lib/chatbot/constantes.js';
-import { procesarCreacionVacante }    from '../lib/chatbot/creacion_vacante.js';
+import { procesarCreacionVacante }    from '../lib/chatbot/vacantes/flujo.js';
 import { ESTADO, estadoDe }           from '../lib/chatbot/estado.js';
 import { procesarInactividad }        from '../lib/chatbot/inactividad.js';
 import { responder }                  from '../lib/chatbot/manychat.js';
