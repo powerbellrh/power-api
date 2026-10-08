@@ -170,7 +170,7 @@ test('con calle y municipio se pide la colonia una sola vez', async () => {
 test('el relleno ("sí quiero", "interesante, continuamos") no se mezcla en la experiencia que se guarda', async () => {
   const conversacion = conversacionNueva();
   const extractores = crearExtractores({
-    empleos: [[], [], [{ empresa: 'AlanoEscort', puesto: 'Supervisor operativo', actividades: '' }]],
+    empleos: [[], [], []], // el modelo no logra estructurar nada
   });
   const opciones = { extractores };
   await llegaVacante(conversacion, sinPreguntas, { ...opciones, conocidos });
@@ -194,7 +194,7 @@ test('lo que se le pide de la experiencia se pide menos cada vez: un negocio sin
   assert.equal(conversacion.paso, PASO.EXPERIENCIA);
 
   d = await escribir(conversacion, 'No tenian nombre', opciones);
-  assert.equal(conversacion.temporal.datos.experiencia, 'Ayudante - Vendía tamales');
+  assert.equal(conversacion.temporal.datos.experiencia, '(empresa no indicada) - Ayudante - Vendía tamales');
   assert.notEqual(conversacion.paso, PASO.EXPERIENCIA);
 });
 
@@ -274,7 +274,7 @@ test('"voy a cumplir 21" es 20 y la edad escrita con letra se entiende', async (
 
 // ── Preguntas extra ──────────────────────────────────────────────────────────
 
-test('las preguntas extra se pasan al tuteo y se descartan las de usted, sueldo, motivo de salida de un empleo vigente y las repetidas', async () => {
+test('las preguntas extra se pasan al tuteo y se descartan las de usted, sueldo y motivo de salida', async () => {
   const conversacion = conversacionNueva();
   const extractores = crearExtractores({
     empleos: [[{ empresa: 'Mercurio', puesto: 'Guardia', actividades: 'Rondines' }]],
@@ -283,32 +283,16 @@ test('las preguntas extra se pasan al tuteo y se descartan las de usted, sueldo,
       '¿Cuenta con licencia o sabe manejar moto?',               // usted a medias: se descarta
       '¿Cómo le harías con tu expectativa de 13000 si la vacante ofrece 10000?', // sueldo
       '¿Por qué solo puedes trabajar el turno matutino?',        // lleva a contar su situación personal
-      '¿Tienes experiencia con atención a clientes?',            // ya se preguntó en la vacante
-      '¿Por qué dejaste tu último empleo?',                      // sigue trabajando ahí
+      '¿Por qué dejaste tu último empleo?',                      // motivo de salida
       '¿Tienes teléfono de contacto activo?',
       '¿Cuántos años tienes de experiencia en seguridad?',
     ]],
   });
   const opciones = { extractores };
   await llegaVacante(conversacion, sinPreguntas, { ...opciones, conocidos });
-  conversacion.temporal.preguntas = [{ id: 9, tipo: 'Texto', texto: '¿Tienes experiencia en atención a clientes?' }];
-  conversacion.temporal.datos.respuestas = { 9: 'Sí' };
 
   await escribir(conversacion, 'Actualmente trabajo en Mercurio como guardia, hago rondines', opciones);
   assert.equal(conversacion.paso, PASO.EXTRAS);
   assert.deepEqual(conversacion.temporal.extras.map(extra => extra.texto), ['¿Has trabajado antes en seguridad?', '¿Cuántos años tienes de experiencia en seguridad?']);
   assert.match(extractores.argumentos.extras[0].relato, /Actualmente trabajo en Mercurio/, 'el modelo ve lo que escribió el candidato');
-});
-
-test('el motivo de salida sí se pregunta si el candidato ya no está en ese empleo', async () => {
-  const conversacion = conversacionNueva();
-  const extractores = crearExtractores({
-    empleos: [[{ empresa: 'Oxxo', puesto: 'Encargado', actividades: 'Inventario' }]],
-    extras: [['¿Por qué dejaste tu último empleo?']],
-  });
-  const opciones = { extractores };
-  await llegaVacante(conversacion, sinPreguntas, { ...opciones, conocidos });
-
-  await escribir(conversacion, 'Oxxo, encargado, inventario', opciones);
-  assert.deepEqual(conversacion.temporal.extras.map(extra => extra.texto), ['¿Por qué dejaste tu último empleo?']);
 });

@@ -44,7 +44,7 @@ const recepcion = texto => enviarMensaje(texto, { flujo: FLUJOS.RECEPCION.flow_n
 const conversacion = () => entorno.supabase.tablas.conversaciones.find(c => c.telefono === TELEFONO);
 const tipos = (metodo, patron) => entorno.llamadasTT_(metodo, patron);
 
-const extrasDePrueba = ['¿Has manejado montacargas?', '¿Tienes transporte propio?', '¿Cuándo podrías empezar?', '¿Por qué dejaste tu último empleo?', '¿Qué esperas del puesto?'];
+const extrasDePrueba = ['¿Has manejado montacargas?', '¿Tienes transporte propio?', '¿Cuándo podrías empezar?', '¿Has trabajado en bodega?', '¿Qué esperas del puesto?'];
 
 test('postulación completa: se guarda en Supabase, se sincroniza con TeamTailor y se encola la evaluación', async () => {
   entorno = crearEntornoConversaciones({ tablas: semilla() });

@@ -7,9 +7,10 @@ import { leerSolicitud } from '../lib/chatbot/solicitud.js';
 import { rechazarSolicitud } from '../lib/http.js';
 
 // Cuánto se espera por más mensajes del candidato antes de contestar (ver juntarMensajesSeguidos en el orquestador).
-// En 0 no se espera: se prefiere contestar en ~3 segundos a juntar las respuestas que el candidato parte en varios
-// mensajes. Subirlo retrasa todas las respuestas en esa misma cantidad.
-const ESPERA_MENSAJES_SEGUIDOS_MS = 0;
+// Los candidatos parten una respuesta en varios mensajes seguidos (nombre y edad, el domicilio por partes): esperar
+// unos segundos permite contestarlos juntos en vez de uno por uno. Cada respuesta del bot se retrasa esa misma cantidad
+// (en 0 no se espera).
+const ESPERA_MENSAJES_SEGUIDOS_MS = 3000;
 
 // Endpoint de los flujos de ManyChat con espera de respuesta (ver lib/chatbot/manychat.js): cada flujo manda aquí el
 // texto del contacto (`respuesta`) o el aviso de que no contestó, junto con su `flujo`. La postulación se lleva con

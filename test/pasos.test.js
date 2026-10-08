@@ -8,7 +8,7 @@ import {
 
 import { conversacionNueva, crearExtractores, escribir, llegaVacante, otraVacante, turno, vacante } from './pasos_ayudas.js';
 
-const extrasDePrueba = ['¿Qué turno prefieres?', '¿Tienes transporte propio?', '¿Cuándo podrías empezar?', '¿Por qué dejaste tu último empleo?', '¿Qué esperas del puesto?'];
+const extrasDePrueba = ['¿Qué turno prefieres?', '¿Tienes transporte propio?', '¿Cuándo podrías empezar?', '¿Has operado montacargas?', '¿Qué esperas del puesto?'];
 
 test('flujo completo: vacante, nombre, edad, domicilio, preguntas, experiencia, extras y despedida', async () => {
   const conversacion = conversacionNueva();
@@ -162,7 +162,7 @@ test('el domicilio se completa por partes y solo se pide lo que falta', async ()
 
   d = await escribir(conversacion, 'colonia Americana', opciones);
   assert.equal(d.mensajes[0], 'Me falta tu municipio. ¿Cuál es?');
-  assert.equal(conversacion.intentos, 2);
+  assert.equal(conversacion.intentos, 0, 'dar un dato nuevo no cuenta como intento fallido');
 
   d = await escribir(conversacion, 'Guadalajara', opciones);
   assert.equal(conversacion.paso, PASO.PREGUNTAS);
@@ -170,17 +170,35 @@ test('el domicilio se completa por partes y solo se pide lo que falta', async ()
   assert.deepEqual(conversacion.temporal.parcial, {});
 });
 
-test('si al domicilio le faltan datos a la tercera respuesta, se guarda todo lo que escribió el candidato', async () => {
+test('un domicilio dado en tres mensajes con un dato cada uno no agota los intentos: se sigue pidiendo el municipio', async () => {
   const conversacion = conversacionNueva();
-  const opciones = { extractores: crearExtractores({ domicilio: [{ calle: 'Vallarta 1234' }, {}, {}] }) };
+  const opciones = { extractores: crearExtractores({ domicilio: [{ colonia: 'Miravalle' }, { calle: 'Federico Chopan' }, { calle: 'Federico Chopan 4082' }, { municipio: 'Guadalajara' }] }) };
+  await llegaVacante(conversacion, vacante, { ...opciones, conocidos: { nombre: 'Ana', edad: '28' } });
+
+  await escribir(conversacion, 'Colonia Miravalle', opciones);
+  await escribir(conversacion, 'Calle Federico Chopan', opciones);
+  const d = await escribir(conversacion, 'Federico Chopan 4082', opciones);
+  assert.equal(conversacion.paso, PASO.DOMICILIO, 'sin municipio todavía no se avanza');
+  assert.equal(d.mensajes[0], 'Me falta tu municipio. ¿Cuál es?');
+
+  await escribir(conversacion, 'Guadalajara', opciones);
+  assert.equal(conversacion.paso, PASO.PREGUNTAS);
+  assert.equal(conversacion.temporal.datos.domicilio, 'Federico Chopan 4082, Miravalle, Guadalajara');
+});
+
+test('si al domicilio le faltan datos y el candidato no aporta nada nuevo tres veces, se guarda todo lo que escribió', async () => {
+  const conversacion = conversacionNueva();
+  const opciones = { extractores: crearExtractores({ domicilio: [{ calle: 'Vallarta 1234' }, {}, {}, {}] }) };
   await llegaVacante(conversacion, vacante, { ...opciones, conocidos: { nombre: 'Ana', edad: '28' } });
 
   await escribir(conversacion, 'Vallarta 1234', opciones);
   await escribir(conversacion, 'no sé qué más', opciones);
   await escribir(conversacion, 'ya te dije', opciones);
+  assert.equal(conversacion.paso, PASO.DOMICILIO);
+  await escribir(conversacion, 'eso es todo', opciones);
 
   assert.equal(conversacion.paso, PASO.PREGUNTAS);
-  assert.equal(conversacion.temporal.datos.domicilio, 'Vallarta 1234, no sé qué más, ya te dije');
+  assert.equal(conversacion.temporal.datos.domicilio, 'Vallarta 1234, no sé qué más, ya te dije, eso es todo');
 });
 
 test('una duda del candidato en una pregunta de texto se manda a la reclutadora y se repite la pregunta', async () => {
@@ -229,6 +247,19 @@ test('si no se pueden generar las preguntas extra, la postulación termina al re
   const d = await escribir(conversacion, 'Oxxo, encargado, inventario', opciones);
   assert.equal(conversacion.paso, PASO.COMPLETADA);
   assert.deepEqual(d.efectos.map(e => e.tipo), ['guardar_datos', 'base_completa', 'completada']);
+});
+
+test('las preguntas extra descartan los temas prohibidos, como el motivo de salida de un empleo', async () => {
+  const conversacion = conversacionNueva();
+  const extractores = crearExtractores({
+    empleos: [[{ empresa: 'Oxxo', puesto: 'Encargado', actividades: 'Inventario' }]],
+    extras:  [['¿Por qué terminaste en ese empleo?', '¿Cuánto ganabas en ese empleo?', '¿Tienes hijos?', '¿Tienes licencia de manejo?']],
+  });
+  const opciones = { extractores };
+  await llegaVacante(conversacion, { ...vacante, preguntas: [] }, { ...opciones, conocidos: { nombre: 'Ana', edad: '28', domicilio: 'a, b, c' } });
+
+  await escribir(conversacion, 'Oxxo, encargado, inventario', opciones);
+  assert.deepEqual(conversacion.temporal.extras, [{ texto: '¿Tienes licencia de manejo?' }]);
 });
 
 test('al cambiar de vacante se conservan los datos personales y se avisa', async () => {

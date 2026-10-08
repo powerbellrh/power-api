@@ -227,9 +227,25 @@ test('los empleos se completan por turnos y nunca se pierde uno ya registrado', 
   assert.equal(serializarEmpleos(empleos), 'Walmart - Cajero - Cobraba y acomodaba producto');
 });
 
-test('una empresa o puesto que no aparece en el texto se descarta; las actividades se pueden resumir', () => {
-  const empleos = fusionarEmpleos([], [{ empresa: 'Coca-Cola', puesto: 'Supervisor', actividades: 'Coordinaba al equipo' }], 'estuve en Pepsi como ayudante');
-  assert.deepEqual(empleos, [{ empresa: '', puesto: '', actividades: 'Coordinaba al equipo' }]);
+test('una empresa, puesto o actividad que no aparece en el texto se descarta; las actividades se pueden resumir', () => {
+  const inventado = fusionarEmpleos([], [{ empresa: 'Coca-Cola', puesto: 'Supervisor', actividades: 'Coordinaba al equipo' }], 'estuve en Pepsi como ayudante');
+  assert.deepEqual(inventado, []);
+
+  const resumido = fusionarEmpleos([], [{ empresa: 'Pepsi', puesto: 'Ayudante', actividades: 'Cargaba cajas de refresco' }], 'ayudante en Pepsi, cargaba las cajas y los refrescos');
+  assert.equal(resumido[0].actividades, 'Cargaba cajas de refresco');
+});
+
+test('las actividades que el modelo toma de la vacante y no del candidato se descartan', () => {
+  const texto = 'mi último empleo fue encargado de turno en Oxxo';
+  const empleos = fusionarEmpleos([], [{ empresa: 'Oxxo', puesto: 'Encargado de turno', actividades: 'Inventarios y control de entradas y salidas de mercancía' }], texto);
+  assert.deepEqual(empleos, [{ empresa: 'Oxxo', puesto: 'Encargado de turno', actividades: '' }]);
+});
+
+test('lo que falta de un empleo se marca al serializarlo', () => {
+  assert.equal(serializarEmpleos([{ empresa: '', puesto: 'Atención a clientes', actividades: 'Atendía contribuyentes' }]), '(empresa no indicada) - Atención a clientes - Atendía contribuyentes');
+  assert.equal(serializarEmpleos([{ empresa: 'Oxxo', puesto: '', actividades: 'Cobraba' }]), 'Oxxo - (puesto no indicado) - Cobraba');
+  assert.equal(serializarEmpleos([{ empresa: 'Oxxo', puesto: '', actividades: '' }]), 'Oxxo', 'lo que falta al final no se marca');
+  assert.equal(serializarEmpleos([{ empresa: '', puesto: '', actividades: '' }]), '');
 });
 
 test('dos empleos se serializan separados por barra', () => {
