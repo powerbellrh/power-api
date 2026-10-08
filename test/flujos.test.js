@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { crearEntorno, item } from './entorno.js';
+import { crearEntorno, item } from './entorno_mensajes.js';
 import {
   ENLACE_VACANTES, MENSAJE_BAJA, MENSAJE_DERIVADO, MENSAJE_DESPEDIDA_COMPLETADO, MENSAJE_DESPEDIDA_INACTIVIDAD,
   MENSAJE_DESPEDIDA_LIMITE, MENSAJE_LIMITE_PREGUNTAS_GENERALES, MENSAJE_PEDIR_NOMBRE, MENSAJE_RECORDATORIO_COMPLETADO,

@@ -12,6 +12,7 @@ import { procesarPostulacion }        from '../lib/chatbot/postulacion.js';
 import { procesarSinPostulacion }     from '../lib/chatbot/sin_postulacion.js';
 import { MENSAJE_BIENVENIDA_MANYCHAT, MENSAJE_DERIVADO } from '../lib/chatbot/textos.js';
 import { detectarYCargarVacante }     from '../lib/chatbot/vacante_detectada.js';
+import { rechazarSolicitud } from '../lib/http.js';
 
 // Camino de un mensaje de WhatsApp (ManyChat → este endpoint):
 //
@@ -73,16 +74,7 @@ async function procesarMensaje({ idSuscriptor, telefono, mensaje, log }) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    console.log(JSON.stringify({ etapa: 'request', estado: 'error', mensaje: `method not allowed: ${req.method}` }));
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const claveApi = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
-  if (process.env.POWERBELL_API_KEY && claveApi !== process.env.POWERBELL_API_KEY) {
-    console.log(JSON.stringify({ etapa: 'auth', estado: 'error', mensaje: 'unauthorized' }));
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  if (rechazarSolicitud(req, res)) return;
 
   const cuerpo = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
 

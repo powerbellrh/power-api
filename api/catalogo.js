@@ -1,6 +1,7 @@
 import { ttObtener, mcCrear } from '../lib/clientes_api.js';
 import { CAT_MANYCHAT_FIELD_INFO_VACANTE, CAT_MANYCHAT_FIELD_ID_VACANTE, CAT_MANYCHAT_FLOW_NS } from '../lib/config.js';
 import { limpiarHtmlParaWhatsApp } from '../lib/formato_texto.js';
+import { rechazarSolicitud } from '../lib/http.js';
 
 const CAT_MANYCHAT_FIELDS = {
   info_vacante: CAT_MANYCHAT_FIELD_INFO_VACANTE,
@@ -12,16 +13,7 @@ const CAT_MANYCHAT_FIELDS = {
 // ============================================================================
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    console.log(JSON.stringify({ etapa: 'request', estado: 'error', mensaje: `method not allowed: ${req.method}` }));
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const claveApi = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
-  if (process.env.POWERBELL_API_KEY && claveApi !== process.env.POWERBELL_API_KEY) {
-    console.log(JSON.stringify({ etapa: 'auth', estado: 'error', mensaje: 'unauthorized' }));
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  if (rechazarSolicitud(req, res)) return;
 
   const cuerpo = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
 

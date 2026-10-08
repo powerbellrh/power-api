@@ -1,5 +1,6 @@
 import { ttActualizar, ttCrear, mcCrear } from '../lib/clientes_api.js';
 import { AD_TEAMTAILOR_QUESTION_EXPERIENCIA_ID as TT_PREGUNTA_EXPERIENCIA_ID, MANYCHAT_FIELD_EXPERIENCIA_ID } from '../lib/config.js';
+import { rechazarSolicitud } from '../lib/http.js';
 
 const EXTENSIONES_IMAGEN    = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'];
 const EXTENSIONES_DOCUMENTO = ['doc', 'docx', 'document'];
@@ -15,16 +16,7 @@ const obtenerExtension = (url) => {
 // ============================================================================
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    console.log(JSON.stringify({ etapa: 'request', estado: 'error', mensaje: `method not allowed: ${req.method}` }));
-    return res.status(405).json({ error: 'Método no permitido, usa POST' });
-  }
-
-  const claveApi = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
-  if (process.env.POWERBELL_API_KEY && claveApi !== process.env.POWERBELL_API_KEY) {
-    console.log(JSON.stringify({ etapa: 'auth', estado: 'error', mensaje: 'unauthorized' }));
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  if (rechazarSolicitud(req, res)) return;
 
   const { candidato: candidatoId, experiencia: experienciaUrl, manychat: idSuscriptor } = req.body ?? {};
 

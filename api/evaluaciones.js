@@ -1,12 +1,7 @@
 import { createClient }     from '@supabase/supabase-js';
-import { readFileSync }     from 'fs';
-import { fileURLToPath }    from 'url';
-import { dirname, join }    from 'path';
 import { waitUntil }        from '@vercel/functions';
 import {
   contieneUrl,
-  limpiarTelefono,
-  normalizarTelefonoMx,
   limpiarHtml,
   extraerPrimerasNuevePreguntas,
   extraerPrimerasTresPreguntas,
@@ -23,6 +18,7 @@ import {
   obtenerCalificacionEstadoEvaluacion,
   construirNotaTeamtailor,
 } from '../lib/evaluacion_postulacion.js';
+import { limpiarTelefono, normalizarTelefonoMx } from '../lib/telefono.js';
 import { ttObtener, ttActualizar, ttCrear, mcCrear, mcObtener } from '../lib/clientes_api.js';
 import { orChatCompletion } from '../lib/openrouter.js';
 import {
@@ -35,14 +31,15 @@ import {
   MANYCHAT_FIELD_PREGUNTA,
   EVALUACION_MAX_INTENTOS,
 } from '../lib/config.js';
+import { leerPrompt }       from '../lib/prompts.js';
+import { rechazarSolicitud } from '../lib/http.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export const PROMPTS = {
-  AD:        readFileSync(join(__dirname, '../prompts/evaluacion_administrativa.txt'),   'utf-8'),
-  OP:        readFileSync(join(__dirname, '../prompts/evaluacion_operativa.txt'),        'utf-8'),
-  REEVAL_AD: readFileSync(join(__dirname, '../prompts/reevaluacion_administrativa.txt'), 'utf-8'),
-  REEVAL_OP: readFileSync(join(__dirname, '../prompts/reevaluacion_operativa.txt'),      'utf-8'),
+  AD:        leerPrompt('evaluacion_administrativa'),
+  OP:        leerPrompt('evaluacion_operativa'),
+  REEVAL_AD: leerPrompt('reevaluacion_administrativa'),
+  REEVAL_OP: leerPrompt('reevaluacion_operativa'),
 };
 
 const OPENROUTER_MODEL_AD        = 'z-ai/glm-5.3-flash';
@@ -752,12 +749,7 @@ async function manejarEvaluacion(req, res, supabase) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST')
-    return res.status(405).json({ error: 'Método no permitido, usa POST' });
-
-  const claveApi = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
-  if (process.env.POWERBELL_API_KEY && claveApi !== process.env.POWERBELL_API_KEY)
-    return res.status(401).json({ error: 'Unauthorized' });
+  if (rechazarSolicitud(req, res)) return;
 
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
   const cuerpo   = req.body ?? {};

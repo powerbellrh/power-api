@@ -1,13 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 import { EVALUACIONES_URL, EVALUACION_MAX_INTENTOS } from '../lib/config.js';
+import { dormir } from '../lib/utilidades.js';
 
 const TAMANO_LOTE   = 5;
 const RETRASO_MS      = 5000;
 const URL_EVALUACIONES = EVALUACIONES_URL;
 // Debe superar el maxDuration de /api/evaluaciones (300s) para no reintentar un intento aún en curso
 const UMBRAL_ATASCO_MS = 6 * 60 * 1000;
-
-const dormir = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export default async function handler(req, res) {
   const encabezadoAuth = req.headers['authorization'];

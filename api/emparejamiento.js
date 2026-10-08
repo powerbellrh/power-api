@@ -1,13 +1,11 @@
-import { readFileSync }      from 'fs';
-import { fileURLToPath }     from 'url';
-import { dirname, join }     from 'path';
 import { createClient }      from '@supabase/supabase-js';
 import { orChatCompletion }  from '../lib/openrouter.js';
+import { leerPrompt }        from '../lib/prompts.js';
+import { rechazarSolicitud } from '../lib/http.js';
 
-const __dirname                     = dirname(fileURLToPath(import.meta.url));
-const PROMPT_EXTRACCION_HABILIDADES = readFileSync(join(__dirname, '../prompts/extraccion_habilidades.txt'), 'utf-8');
-const PROMPT_VERIFICACION_MATCH     = readFileSync(join(__dirname, '../prompts/verificacion_emparejamiento.txt'), 'utf-8');
-const PROMPT_NORMALIZACION_DOMICILIO = readFileSync(join(__dirname, '../prompts/normalizacion_domicilio.txt'), 'utf-8');
+const PROMPT_EXTRACCION_HABILIDADES = leerPrompt('extraccion_habilidades');
+const PROMPT_VERIFICACION_MATCH     = leerPrompt('verificacion_emparejamiento');
+const PROMPT_NORMALIZACION_DOMICILIO = leerPrompt('normalizacion_domicilio');
 const OPENROUTER_MODEL              = 'z-ai/glm-5.3-flash';
 
 const DOMICILIO_TOOL = {
@@ -252,16 +250,7 @@ async function crearPostulaciones(supabase, candidatoId, vacantesVerificadas, da
 // ============================================================================
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    console.log(JSON.stringify({ etapa: 'request', estado: 'error', mensaje: `method not allowed: ${req.method}` }));
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const claveApi = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
-  if (process.env.POWERBELL_API_KEY && claveApi !== process.env.POWERBELL_API_KEY) {
-    console.log(JSON.stringify({ etapa: 'auth', estado: 'error', mensaje: 'unauthorized' }));
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  if (rechazarSolicitud(req, res)) return;
 
   const cuerpo            = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
   const nombre            = cuerpo?.nombre;

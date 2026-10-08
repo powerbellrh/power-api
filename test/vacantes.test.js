@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { crearEntorno } from './entorno.js';
+import { crearEntorno } from './entorno_mensajes.js';
 import {
   anuncioParaWhatsApp, bloqueoVigente, confirmacionValida, DURACION_BLOQUEO_CREACION_MS, guardarBorrador, huellaResumen, leerBorrador,
   pideConfirmacion, resumenCompleto,

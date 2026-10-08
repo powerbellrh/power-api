@@ -4,6 +4,7 @@ import { crearExtractores } from '../lib/chatbot/extractores.js';
 import { nombreDeFlujo } from '../lib/chatbot/flujos.js';
 import { procesarConversacion } from '../lib/chatbot/orquestador.js';
 import { leerSolicitud } from '../lib/chatbot/solicitud.js';
+import { rechazarSolicitud } from '../lib/http.js';
 
 // Endpoint de los flujos de ManyChat con espera de respuesta (ver lib/chatbot/flujos.js): cada flujo manda aquí el
 // texto del contacto (`respuesta`) o el aviso de que no contestó, junto con su `flujo`. La postulación se lleva con
@@ -11,16 +12,7 @@ import { leerSolicitud } from '../lib/chatbot/solicitud.js';
 // tabla `chatbot`): cada flujo de ManyChat llama a uno u otro.
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    console.log(JSON.stringify({ etapa: 'request', estado: 'error', mensaje: `method not allowed: ${req.method}` }));
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const claveApi = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
-  if (process.env.POWERBELL_API_KEY && claveApi !== process.env.POWERBELL_API_KEY) {
-    console.log(JSON.stringify({ etapa: 'auth', estado: 'error', mensaje: 'unauthorized' }));
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  if (rechazarSolicitud(req, res)) return;
 
   let cuerpo;
   try {

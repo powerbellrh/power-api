@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { ttObtener, mcCrear, mcObtener } from '../lib/clientes_api.js';
-import { limpiarTelefono, normalizarTelefonoMx } from '../lib/evaluacion_postulacion.js';
+import { limpiarTelefono, normalizarTelefonoMx } from '../lib/telefono.js';
 import { MANYCHAT_TAG_ID_BAJA, TEAMTAILOR_TAG_BAJA, AGENDA_MANYCHAT_FIELD_CANDIDATO_TEAMTAILOR_ID } from '../lib/config.js';
 
 const BUCKETS_CANDIDATO = ['powerID', 'felicitaciones'];

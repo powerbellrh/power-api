@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { waitUntil }    from '@vercel/functions';
 import { ttObtener, ttCrear, mcCrear, mcObtener } from '../lib/clientes_api.js';
-import { limpiarTelefono, normalizarTelefonoMx } from '../lib/evaluacion_postulacion.js';
+import { limpiarTelefono, normalizarTelefonoMx } from '../lib/telefono.js';
 import { registrarEnAgenda } from '../lib/backfill_agenda.js';
 import {
   AGENDA_MANYCHAT_FLOW_NS,

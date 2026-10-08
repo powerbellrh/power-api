@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { limpiarTelefono, pareceNumeroTelefono } from '../lib/evaluacion_postulacion.js';
+import { limpiarTelefono, pareceNumeroTelefono } from '../lib/telefono.js';
 
 // ============================================================================
 // HANDLER PRINCIPAL

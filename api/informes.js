@@ -1,20 +1,16 @@
-import { readFileSync }  from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
 import { createClient }  from '@supabase/supabase-js';
 import { ttObtener, ttActualizar, ttCrear, ttSubirArchivoTransitorio } from '../lib/clientes_api.js';
 import { orChatCompletion, orGenerarImagen } from '../lib/openrouter.js';
-import { analizarRespuestas, normalizarTelefonoMx } from '../lib/evaluacion_postulacion.js';
+import { analizarRespuestas } from '../lib/evaluacion_postulacion.js';
+import { normalizarTelefonoMx } from '../lib/telefono.js';
+import { rechazarSolicitud } from '../lib/http.js';
+import { leerPrompt } from '../lib/prompts.js';
+import { FOTO_PERFIL_DEFAULT, FOTO_PERFIL_HOMBRE, FOTO_PERFIL_MUJER } from '../lib/config.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-const PROMPT_ANALISIS_ESTRUCTURADO           = readFileSync(join(__dirname, '../prompts/analisis_estructurado.txt'), 'utf-8');
-const PROMPT_ANALISIS_ESTRUCTURADO_OPERATIVO = readFileSync(join(__dirname, '../prompts/analisis_estructurado_operativo.txt'), 'utf-8');
+const PROMPT_ANALISIS_ESTRUCTURADO           = leerPrompt('analisis_estructurado');
+const PROMPT_ANALISIS_ESTRUCTURADO_OPERATIVO = leerPrompt('analisis_estructurado_operativo');
 const OPENROUTER_MODEL             = 'anthropic/claude-opus-5';
 const OPENROUTER_MODEL_IMAGEN      = 'google/gemini-3.1-flash-lite-image';
-const FOTO_PERFIL_DEFAULT          = 'https://i.ibb.co/JwvVrDr0/fotodesconocido.png';
-const FOTO_PERFIL_HOMBRE           = 'https://i.ibb.co/4RGYgcC4/fotohombre.png';
-const FOTO_PERFIL_MUJER            = 'https://i.ibb.co/6CdjYbv/fotomujer.png';
 const PROMPT_RETOQUE_FOTO          = 'El propósito de este retoque es mostrar a la persona en una gran versión corporativa de sí misma, para presentarla ante un cliente. Aplica únicamente retoques ligeros a esta fotografía, en beneficio de la persona, que incrementen ligeramente su imagen corporativa y profesional, y aumenta la resolución/nitidez de la imagen. No alteres ningún rasgo facial de la persona, ni su maquillaje, ni ninguna expresión de su personalidad: la persona debe seguir viéndose como ella misma. Puedes ajustar el encuadre/enmarcado y simular ángulos más profesionales, pero el resultado debe lucir natural, sin verse alterado ni artificial. Asegúrate de que la persona esté vistiendo siempre ropa formal de oficina (por ejemplo, camisa, blusa o saco), ajustando la vestimenta de manera natural y coherente con la persona y el encuadre.';
 
 // IDs de reclutadores (usuarios de TeamTailor) que operan bajo el modo "operativo".
@@ -567,12 +563,7 @@ function mapearCamposSimples(analisis, extra) {
 // ── Handler ──────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST')
-    return res.status(405).json({ error: 'Método no permitido, usa POST' });
-
-  const claveApi = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
-  if (process.env.INFORMES_API_KEY && claveApi !== process.env.INFORMES_API_KEY)
-    return res.status(401).json({ error: 'Unauthorized' });
+  if (rechazarSolicitud(req, res, { clave: process.env.INFORMES_API_KEY })) return;
 
   const { postulacion: postulacionId, vacante: vacanteId, comentarios, respuesta_anterior: respuestaAnterior, imagen: mejorarFoto, cv: soloCurriculum } = req.body ?? {};
 

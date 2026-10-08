@@ -4,9 +4,12 @@ import { dirname, join }            from 'path';
 import { normalizarPrestaciones }   from '../lib/prestaciones.js';
 import { orChatCompletion }         from '../lib/openrouter.js';
 import { SALARIO_MINIMO_MENSUAL, SEMANAS_POR_MES } from '../lib/config.js';
+import { leerPrompt }               from '../lib/prompts.js';
+import { rechazarSolicitud } from '../lib/http.js';
+
 const __dirname                     = dirname(fileURLToPath(import.meta.url));
-const PROMPT_CONCLUSIONES           = readFileSync(join(__dirname, '../prompts/conclusiones_ia.txt'), 'utf-8');
-const PROMPT_CONCLUSIONES_GLASSDOOR = readFileSync(join(__dirname, '../prompts/conclusiones_ia_glassdoor.txt'), 'utf-8');
+const PROMPT_CONCLUSIONES           = leerPrompt('conclusiones_ia');
+const PROMPT_CONCLUSIONES_GLASSDOOR = leerPrompt('conclusiones_ia_glassdoor');
 const OPENROUTER_MODEL              = 'z-ai/glm-5.3';
 
 const costo      = (ti, to) => +((ti / 1_000_000) + (to / 1_000_000 * 5)).toFixed(6);
@@ -202,7 +205,7 @@ async function filtrarConIA(vacantes, busqueda) {
 
 // ── Recuperación de salario vía IA (cuando el regex no lo extrajo) ─────────
 
-const SYSTEM_PROMPT_SALARIO = readFileSync(join(__dirname, '../prompts/extraccion_salario.txt'), 'utf-8');
+const SYSTEM_PROMPT_SALARIO = leerPrompt('extraccion_salario');
 
 async function extraerSalarioDeVacante(vacante) {
   const descripcion = (vacante.descripcion_original ?? '').substring(0, 2000);
@@ -427,12 +430,7 @@ async function manejarGlassdoor(vacante, ubicacion, url, muestra, test, res) {
 // ── Handler principal ──────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST')
-    return res.status(405).json({ error: 'Método no permitido, usa POST' });
-
-  const claveApi = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
-  if (process.env.POWERBELL_API_KEY && claveApi !== process.env.POWERBELL_API_KEY)
-    return res.status(401).json({ error: 'Unauthorized' });
+  if (rechazarSolicitud(req, res)) return;
 
   const { vacante, ubicacion, fuente, muestra, url, test } = req.body;
   if (!vacante || !ubicacion || !fuente) {

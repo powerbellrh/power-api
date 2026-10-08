@@ -2,6 +2,7 @@ import { generarFelicitacion } from '../lib/canvas_felicitacion.js';
 import { subirYFirmar } from '../lib/storage_powerid.js';
 import { ttCrear } from '../lib/clientes_api.js';
 import { TEAMTAILOR_USER_ID } from '../lib/config.js';
+import { rechazarSolicitud } from '../lib/http.js';
 
 const BUCKET = 'felicitaciones';
 const NOTA_GOOGLE = 'Para nosotros es importante saber cómo te sentiste durante tu proceso, ¿podrías compartirnos tu experiencia sobre nuestro servicio en Google?: https://maps.app.goo.gl/P7Ss6t3jpwRqJWDS7';
@@ -32,16 +33,7 @@ async function crearNotasTeamtailor(candidato, imageUrl) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    console.log(JSON.stringify({ etapa: 'request', estado: 'error', mensaje: `method not allowed: ${req.method}` }));
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const claveApi = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
-  if (process.env.POWERBELL_API_KEY && claveApi !== process.env.POWERBELL_API_KEY) {
-    console.log(JSON.stringify({ etapa: 'auth', estado: 'error', mensaje: 'unauthorized' }));
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  if (rechazarSolicitud(req, res)) return;
 
   let cuerpo;
   try {

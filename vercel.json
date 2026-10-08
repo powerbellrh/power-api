@@ -32,6 +32,12 @@
     "api/conversaciones.js": {
       "maxDuration": 300
     },
+    "api/emparejamiento.js": {
+      "maxDuration": 300
+    },
+    "api/experiencia.js": {
+      "maxDuration": 300
+    },
     "api/catalogo.js": {
       "maxDuration": 30
     },

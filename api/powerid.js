@@ -2,6 +2,7 @@ import { generarCredencial } from '../lib/canvas_credencial.js';
 import { subirYFirmar } from '../lib/storage_powerid.js';
 import { ttCrear } from '../lib/clientes_api.js';
 import { TEAMTAILOR_USER_ID } from '../lib/config.js';
+import { rechazarSolicitud } from '../lib/http.js';
 
 const BUCKET = 'powerID';
 const REGEX_TELEFONO = /^[0-9+\-\s()]+$/;
@@ -33,16 +34,7 @@ async function crearNotaTeamtailor(candidato, imageUrl) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    console.log(JSON.stringify({ etapa: 'request', estado: 'error', mensaje: `method not allowed: ${req.method}` }));
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const claveApi = req.headers['x-api-key'] ?? req.headers['authorization']?.replace('Bearer ', '');
-  if (process.env.POWERBELL_API_KEY && claveApi !== process.env.POWERBELL_API_KEY) {
-    console.log(JSON.stringify({ etapa: 'auth', estado: 'error', mensaje: 'unauthorized' }));
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  if (rechazarSolicitud(req, res)) return;
 
   let cuerpo;
   try {
