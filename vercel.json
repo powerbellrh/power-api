@@ -2,7 +2,6 @@
   "rewrites": [
     { "source": "/estudios",        "destination": "/api/estudios"        },
     { "source": "/evaluaciones",    "destination": "/api/evaluaciones"    },
-    { "source": "/catalogo",        "destination": "/api/catalogo"        },
     { "source": "/cola",            "destination": "/api/cola"            },
     { "source": "/recepcion-postulaciones", "destination": "/api/recepcion-postulaciones" },
     { "source": "/historial",       "destination": "/api/historial"       },
@@ -31,9 +30,6 @@
     },
     "api/experiencia.js": {
       "maxDuration": 300
-    },
-    "api/catalogo.js": {
-      "maxDuration": 30
     },
     "api/cola.js": {
       "maxDuration": 60
