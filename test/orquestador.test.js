@@ -66,9 +66,9 @@ test('postulación completa: se guarda en Supabase, se sincroniza con TeamTailor
   assert.match(entorno.mensajes.at(-1), /^Mucho gusto, Ana\. .*edad/);
   await enviarMensaje('28');
   await enviarMensaje('Vallarta 1234, Americana, Guadalajara');
-  assert.equal(entorno.mensajes.at(-1), 'Gracias. ¿Cuentas con licencia?');
+  assert.equal(entorno.mensajes.at(-1), 'Perfecto. Ahora unas preguntas sobre la vacante. ¿Cuentas con licencia?');
   await enviarMensaje('Sí tengo');
-  assert.equal(entorno.mensajes.at(-1), 'Gracias. ¿Turno que prefieres?');
+  assert.equal(entorno.mensajes.at(-1), '¿Turno que prefieres?');
   await enviarMensaje('Matutino');
   await enviarMensaje('Fui cajera en Walmart, cobraba en caja');
   assert.match(entorno.mensajes.at(-1), /conocer un poco más de tu perfil\. ¿Qué turno prefieres\?/);

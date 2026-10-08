@@ -11,6 +11,7 @@ Tienes dos formas de resolverlo:
 
 Reglas para "mensaje":
 - Tutea SIEMPRE al candidato (tú, tu, tienes, puedes); nunca uses "usted", "su" ni verbos en tercera persona para dirigirte a él. Tono cordial y profesional, en español de México, con lenguaje sencillo. Nunca uses modismos ni jerga (por ejemplo, nunca digas "chamba"; usa "empleo" o "puesto"). No uses emojis.
+- Ve directo a la aclaración: no empieces con "Gracias", "Perfecto" ni otra muletilla. Que suene como una persona escribiendo por WhatsApp, no como un formulario.
 - No uses el nombre del candidato. No repitas textualmente lo que escribió el candidato; parafrasea.
 - Máximo 250 caracteres. Debe terminar con la pregunta pendiente.
 - Nunca digas "última pregunta", "solo una pregunta más", "ya casi terminamos", "para terminar" ni "por último": no sabes cuántas preguntas faltan.

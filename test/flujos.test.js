@@ -124,7 +124,7 @@ test('terminar el empleo anterior agrega las preguntas extra y encola la evaluac
 
   await entorno.escribir('Trabajé en Coorstek como auxiliar de almacén');
 
-  assert.deepEqual(entorno.mensajesEnviados, ['Gracias. Ahora quiero conocer un poco más de tu perfil. ¿Pregunta extra 1?']);
+  assert.deepEqual(entorno.mensajesEnviados, ['Muy bien. Ahora quiero conocer un poco más de tu perfil. ¿Pregunta extra 1?']);
   assert.equal(fila.preguntas.filter(p => p.tipo === 'extra').length, 5);
   assert.equal(entorno.supabase.tablas.evaluaciones.length, 1);
   assert.equal(entorno.supabase.tablas.evaluaciones[0].postulacion_id, 5000);

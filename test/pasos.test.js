@@ -39,15 +39,15 @@ test('flujo completo: vacante, nombre, edad, domicilio, preguntas, experiencia, 
   d = await escribir(conversacion, 'Vallarta 1234, Americana, Guadalajara', opciones);
   assert.equal(conversacion.paso, PASO.PREGUNTAS);
   assert.equal(conversacion.temporal.datos.domicilio, 'Vallarta 1234, Americana, Guadalajara');
-  assert.equal(d.mensajes[0], 'Gracias. ¿Cuánta experiencia tienes con montacargas?');
+  assert.equal(d.mensajes[0], 'Perfecto. Ahora unas preguntas sobre la vacante. ¿Cuánta experiencia tienes con montacargas?');
 
   d = await escribir(conversacion, 'Dos años en una bodega', opciones);
-  assert.equal(d.mensajes[0], 'Gracias. ¿Cuentas con licencia?');
+  assert.equal(d.mensajes[0], '¿Cuentas con licencia?');
 
   d = await escribir(conversacion, 'Sí tengo', opciones);          // lo resuelven las reglas, sin IA
   assert.equal(extractores.llamadas.booleano, 0);
   assert.equal(conversacion.temporal.datos.respuestas[2], 'Sí');
-  assert.equal(d.mensajes[0], 'Gracias. ¿Cuántos años de experiencia tienes?');
+  assert.equal(d.mensajes[0], '¿Cuántos años de experiencia tienes?');
 
   d = await escribir(conversacion, '3', opciones);
   assert.equal(conversacion.temporal.datos.respuestas[3], '3');
@@ -63,7 +63,7 @@ test('flujo completo: vacante, nombre, edad, domicilio, preguntas, experiencia, 
   for (let i = 0; i < 4; i++) {
     d = await escribir(conversacion, `respuesta extra ${i + 1}`, opciones);
     assert.equal(conversacion.paso, PASO.EXTRAS);
-    assert.equal(d.mensajes[0], `Gracias. ${extrasDePrueba[i + 1]}`);
+    assert.equal(d.mensajes[0], extrasDePrueba[i + 1]);
   }
 
   d = await escribir(conversacion, 'respuesta extra 5', opciones);
@@ -131,7 +131,7 @@ test('una respuesta inválida se repite y a la tercera se guarda lo que escribi�
   assert.equal(conversacion.paso, PASO.EDAD, 'a la tercera se avanza');
   assert.equal(conversacion.intentos, 0);
   assert.equal(conversacion.temporal.datos.nombre, 'sueldo', 'ningún dato queda vacío: se guarda lo que escribió');
-  assert.match(d.mensajes[0], /^Gracias\. .*edad/);
+  assert.match(d.mensajes[0], /^¿Cuál es tu edad\?/);
 });
 
 test('la edad inválida se repite sin explicar que debe ser un número', async () => {
