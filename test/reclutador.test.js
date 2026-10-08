@@ -343,6 +343,7 @@ test('flyer: se genera con los datos que dio, se manda la imagen antes del mensa
   assert.equal(imagenes.flyers.length, 1);
   assert.equal(imagenes.flyers[0].puesto, 'Materialista');
   assert.equal(imagenes.enviadas.length, 1);
+  assert.equal(imagenes.enviadas[0].texto, 'Flyer: Materialista', 'el texto del flujo de imagen no puede ir vacío');
   assert.deepEqual(entorno.mensajes, ['Aquí va el flyer. Revisa que el texto esté bien escrito.']);
   assert.equal(conversacion().temporal.reclutador.flyer.sueldo, '$2,600 libres por semana');
   assert.deepEqual(borrador(), {}, 'no toca el borrador de vacante');
