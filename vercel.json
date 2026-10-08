@@ -12,7 +12,6 @@
     { "source": "/powerid",         "destination": "/api/powerid"         },
     { "source": "/felicitacion",    "destination": "/api/felicitacion"    },
     { "source": "/emparejamiento",  "destination": "/api/emparejamiento"  },
-    { "source": "/mensajes",        "destination": "/api/mensajes"        },
     { "source": "/conversaciones",  "destination": "/api/conversaciones"  },
     { "source": "/privacidad",      "destination": "/api/privacidad"      }
   ],
@@ -24,9 +23,6 @@
       "maxDuration": 300
     },
     "api/evaluaciones.js": {
-      "maxDuration": 300
-    },
-    "api/mensajes.js": {
       "maxDuration": 300
     },
     "api/conversaciones.js": {

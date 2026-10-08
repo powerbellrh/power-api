@@ -128,49 +128,6 @@ const mostrar = (titulo, valor) => console.log(`\n=== ${titulo}\n${typeof valor 
   });
 }
 
-// 7. chatbot: calidad de llaves y estados (sin imprimir teléfonos)
-{
-  const r = await leerTodo('chatbot', 'select=id,telefono,manychat,vacante,candidato,postulacion,preguntas,reintentos,recordatorios,solicitud_eliminacion');
-  if (r.error) mostrar('chatbot', r.error);
-  else {
-    const f = r.filas;
-    const items = fila => (Array.isArray(fila.preguntas) ? fila.preguntas : []);
-    const duplicados = clave => Object.values(contar(f.filter(x => x[clave] != null), x => x[clave])).filter(n => n > 1).length;
-    const esBorrador = fila => items(fila).some(i => i.id === 'nombre_interno' || i.id === 'titulo');
-    mostrar('chatbot: resumen', {
-      total: f.length,
-      telefono_nulo: f.filter(x => !x.telefono).length,
-      manychat_nulo: f.filter(x => x.manychat == null).length,
-      telefonos_duplicados: duplicados('telefono'),
-      manychat_duplicados: duplicados('manychat'),
-      con_vacante: f.filter(x => x.vacante != null).length,
-      con_candidato_tt: f.filter(x => x.candidato != null).length,
-      con_postulacion_tt: f.filter(x => x.postulacion != null).length,
-      con_preguntas: f.filter(x => items(x).length > 0).length,
-      filas_de_borrador_de_vacante: f.filter(esBorrador).length,
-      completadas: f.filter(x => !esBorrador(x) && items(x).length && items(x).every(i => i.respuesta)).length,
-      en_curso_sin_agotar_limites: f.filter(x => !esBorrador(x) && items(x).some(i => !i.respuesta) && (x.reintentos ?? 0) < 3 && (x.recordatorios ?? 0) < 3).length,
-      solicitudes_de_eliminacion: f.filter(x => x.solicitud_eliminacion).length,
-      reintentos: contar(f, x => x.reintentos ?? 'null'),
-      recordatorios: contar(f, x => x.recordatorios ?? 'null'),
-    });
-    // ¿Las vacantes del chatbot existen en vacantes.id_team_tailor?
-    const v = await leerTodo('vacantes', 'select=id_team_tailor');
-    if (!v.error) {
-      const conocidas = new Set(v.filas.map(x => String(x.id_team_tailor)));
-      const usadas = [...new Set(f.filter(x => x.vacante != null).map(x => String(x.vacante)))];
-      mostrar('vacantes usadas por el chatbot que SÍ existen en vacantes', { usadas: usadas.length, existen: usadas.filter(x => conocidas.has(x)).length });
-    }
-    // ¿Los ids de pregunta de los items son de preguntas.id_teamtailor?
-    const q = await leerTodo('preguntas', 'select=id_teamtailor');
-    if (!q.error) {
-      const conocidas = new Set(q.filas.map(x => String(x.id_teamtailor)));
-      const ids = [...new Set(f.flatMap(items).map(i => String(i.id)).filter(id => /^\d+$/.test(id)))];
-      mostrar('ids de pregunta numéricos del chatbot que SÍ existen en preguntas.id_teamtailor', { distintos: ids.length, existen: ids.filter(x => conocidas.has(x)).length, faltan: ids.filter(x => !conocidas.has(x)).slice(0, 15) });
-    }
-  }
-}
-
 // 8. conversaciones_test: ¿qué intento previo hay?
 {
   const r = await leer('conversaciones_test', 'select=id&limit=1');

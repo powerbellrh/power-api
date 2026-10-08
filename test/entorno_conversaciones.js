@@ -15,7 +15,8 @@ const respuestaHttp = (cuerpo, estado = 200) => ({
 
 const ahora = () => new Date().toISOString();
 
-export function crearEntornoConversaciones({ tablas = {}, vacantesTeamTailor = {}, preguntasTeamTailor = {}, aplicacionesTeamTailor = [] } = {}) {
+// `respuestasTeamTailor` son respuestas fijas de un GET por su ruta, con o sin los parámetros (ej. '/jobs/1/stages').
+export function crearEntornoConversaciones({ tablas = {}, vacantesTeamTailor = {}, preguntasTeamTailor = {}, aplicacionesTeamTailor = [], respuestasTeamTailor = {} } = {}) {
   const supabase = crearSupabaseFalso({
     tablas,
     autoincrementales: ['candidatos', 'postulaciones', 'vacantes', 'preguntas', 'preguntas_seleccionadas', 'respuestas', 'conversaciones', 'usuarios', 'reclutadores_asignados'],
@@ -35,6 +36,7 @@ export function crearEntornoConversaciones({ tablas = {}, vacantesTeamTailor = {
 
   const colasModelo   = {};
   const peticionesModelo = [];
+  const peticionesModeloCrudas = [];  // el cuerpo completo de cada petición al agente con herramientas
   const envios        = [];           // lo que ManyChat mostró: { flow_ns, campos: { [field_id]: valor } }
   const etiquetas     = [];
   const llamadasTT    = [];           // { metodo, ruta, cuerpo }
@@ -50,6 +52,15 @@ export function crearEntornoConversaciones({ tablas = {}, vacantesTeamTailor = {
     const cuerpo = typeof opciones.body === 'string' ? JSON.parse(opciones.body) : null;
 
     if (url.startsWith('https://openrouter.ai/api/v1/chat/completions')) {
+      // Agente con varias herramientas (tool_choice "required"): cada respuesta simulada dice cuál llama, { herramienta, argumentos }.
+      if (typeof cuerpo.tool_choice === 'string') {
+        peticionesModeloCrudas.push(cuerpo);
+        peticionesModelo.push({ herramienta: 'agente', sistema: cuerpo.messages[0].content, usuario: cuerpo.messages[1].content, mensajes: cuerpo.messages });
+        const llamada = (colasModelo.agente ?? []).shift();
+        if (!llamada) return respuestaHttp({ error: 'sin respuesta simulada para el agente' }, 500);
+        return respuestaHttp({ choices: [{ message: { role: 'assistant', tool_calls: [{ id: `llamada_${peticionesModelo.length}`, type: 'function', function: { name: llamada.herramienta, arguments: JSON.stringify(llamada.argumentos) } }] } }] });
+      }
+
       const herramienta = cuerpo.tool_choice?.function?.name ?? 'texto';
       peticionesModelo.push({ herramienta, sistema: cuerpo.messages[0].content, usuario: cuerpo.messages[1].content });
       const cola = colasModelo[herramienta] ?? [];
@@ -79,6 +90,10 @@ export function crearEntornoConversaciones({ tablas = {}, vacantesTeamTailor = {
       const ruta = url.replace('https://api.na.teamtailor.com/v1', '');
       llamadasTT.push({ metodo, ruta, cuerpo });
       if (entorno.fallarTeamTailorSi?.(metodo, ruta, cuerpo)) return respuestaHttp('fallo simulado de TeamTailor', 500);
+
+      const fija = metodo === 'GET' && Object.entries(respuestasTeamTailor).find(([clave]) => ruta === clave || ruta.startsWith(`${clave}?`));
+      if (fija) return respuestaHttp(fija[1]);
+      if (metodo === 'POST' && ruta === '/jobs') return respuestaHttp({ data: { id: '777001', links: { 'careersite-job-url': 'https://careers.test/jobs/777001' } } });
 
       const trabajo = ruta.match(/^\/jobs\/(\d+)(?:\?.*)?$/);
       if (metodo === 'GET' && trabajo) {
@@ -114,6 +129,7 @@ export function crearEntornoConversaciones({ tablas = {}, vacantesTeamTailor = {
     envios,
     etiquetas,
     peticionesModelo,
+    peticionesModeloCrudas,
     llamadasTT,
     aplicaciones,
     fallarManyChatSi: null,     // (ruta, cuerpo) => boolean

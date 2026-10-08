@@ -58,7 +58,7 @@ async function eliminarArchivos(supabase, idTT) {
 }
 
 // Suscriptores de ManyChat que guardan el id de TeamTailor del candidato en su campo
-// personalizado. Cubre a quienes no tienen fila en `chatbot` (ej. llegaron por la agenda).
+// personalizado. Cubre a quienes no tienen conversación con el chatbot (ej. llegaron por la agenda).
 async function buscarSuscriptoresManyChat(idTT) {
   try {
     const respuesta = await mcObtener('/fb/subscriber/findByCustomField', {
@@ -73,7 +73,7 @@ async function buscarSuscriptoresManyChat(idTT) {
   }
 }
 
-// Mismo tag de baja que pone el chatbot; se hace antes de borrar `chatbot`, de donde sale el
+// Mismo tag de baja que pone el chatbot; se hace antes de borrar `conversaciones`, de donde sale el
 // id de suscriptor de ManyChat (junto con los que se buscan por el id de TeamTailor).
 async function etiquetarBajaManyChat(idsSuscriptor) {
   for (const idSuscriptor of idsSuscriptor) {
@@ -115,11 +115,6 @@ export async function eliminarDatosCandidato(supabase, idTT, candidatoTT) {
   if (errorCandidatos) throw errorCandidatos;
   (candidatosPorId ?? []).forEach(c => c.telefono && telefonos.add(c.telefono));
 
-  const { data: chatsPorId, error: errorChatsId } = await supabase
-    .from('chatbot').select('id, telefono, manychat, postulacion').eq('candidato', idNumerico);
-  if (errorChatsId) throw errorChatsId;
-  (chatsPorId ?? []).forEach(c => c.telefono && telefonos.add(c.telefono));
-
   // Se completa por teléfono: cubre filas creadas antes de guardar el id de TeamTailor.
   const listaTelefonos = [...telefonos];
   const { data: candidatosPorTelefono, error: errorCandidatosTel } = listaTelefonos.length
@@ -127,17 +122,10 @@ export async function eliminarDatosCandidato(supabase, idTT, candidatoTT) {
     : { data: [], error: null };
   if (errorCandidatosTel) throw errorCandidatosTel;
 
-  const { data: chatsPorTelefono, error: errorChatsTel } = listaTelefonos.length
-    ? await supabase.from('chatbot').select('id, manychat, postulacion').in('telefono', listaTelefonos)
-    : { data: [], error: null };
-  if (errorChatsTel) throw errorChatsTel;
-
-  const chats          = [...(chatsPorId ?? []), ...(chatsPorTelefono ?? [])];
-  const idsChat        = [...new Set(chats.map(c => c.id))];
   const idsCandidato   = [...new Set([...(candidatosPorId ?? []), ...(candidatosPorTelefono ?? [])].map(c => c.id))];
   const conversaciones = await buscarConversaciones(supabase, listaTelefonos, idsCandidato);
   const idsConversacion = [...new Set(conversaciones.map(c => c.id))];
-  const idsSuscriptor  = [...new Set([...chats.map(c => c.manychat), ...conversaciones.map(c => c.manychat), ...await buscarSuscriptoresManyChat(idTT)].filter(Boolean).map(Number))];
+  const idsSuscriptor  = [...new Set([...conversaciones.map(c => c.manychat), ...await buscarSuscriptoresManyChat(idTT)].filter(Boolean).map(Number))];
 
   const { data: notificaciones, error: errorNotificaciones } = await supabase
     .from('notificaciones').select('postulacion_id').eq('candidato_id', idNumerico);
@@ -151,7 +139,6 @@ export async function eliminarDatosCandidato(supabase, idTT, candidatoTT) {
   const idsPostulacion   = (postulaciones ?? []).map(p => p.id);
   const idsPostulacionTT = [...new Set([
     ...(postulaciones ?? []).map(p => p.id_team_tailor),
-    ...chats.map(c => c.postulacion),
     ...(notificaciones ?? []).map(n => n.postulacion_id),
     ...(candidatoTT ? await obtenerPostulacionesTT(idTT) : []),
   ].map(Number).filter(Number.isFinite))];
@@ -165,7 +152,6 @@ export async function eliminarDatosCandidato(supabase, idTT, candidatoTT) {
   eliminados.evaluaciones   += await eliminarFilas(supabase, 'evaluaciones',   'candidato_telefono', listaTelefonos);
   eliminados.notificaciones  = await eliminarFilas(supabase, 'notificaciones', 'candidato_id',       [idNumerico]);
   eliminados.postulaciones   = await eliminarFilas(supabase, 'postulaciones',  'id',                 idsPostulacion);
-  eliminados.chatbot         = await eliminarFilas(supabase, 'chatbot',        'id',                 idsChat);
   eliminados.conversaciones  = await eliminarFilas(supabase, 'conversaciones', 'id',                 idsConversacion);
   eliminados.candidatos      = await eliminarFilas(supabase, 'candidatos',     'id',                 idsCandidato);
   eliminados.archivos        = await eliminarArchivos(supabase, idTT);

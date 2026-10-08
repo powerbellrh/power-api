@@ -13,8 +13,8 @@ const ESPERA_MENSAJES_SEGUIDOS_MS = 0;
 
 // Endpoint de los flujos de ManyChat con espera de respuesta (ver lib/chatbot/flujos.js): cada flujo manda aquí el
 // texto del contacto (`respuesta`) o el aviso de que no contestó, junto con su `flujo`. La postulación se lleva con
-// la máquina de pasos (lib/chatbot/pasos.js) y la tabla `conversaciones`. Es independiente de /mensajes (lógica vieja,
-// tabla `chatbot`): cada flujo de ManyChat llama a uno u otro.
+// la máquina de pasos (lib/chatbot/pasos.js) y la tabla `conversaciones`; los mensajes de los reclutadores los atiende su
+// propio agente (lib/chatbot/reclutador/).
 
 export default async function handler(req, res) {
   if (rechazarSolicitud(req, res)) return;
@@ -39,7 +39,7 @@ export default async function handler(req, res) {
   }));
   log('conversaciones', { estado: 'recibido', irresponsivo: esIrresponsivo });
 
-  // Igual que /mensajes: se responde de inmediato a ManyChat (su External Request espera ~10 s) y el
+  // Se responde de inmediato a ManyChat (su External Request espera ~10 s) y el
   // procesamiento sigue en segundo plano.
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
   waitUntil(
