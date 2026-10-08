@@ -37,6 +37,8 @@ export function crearEntornoConversaciones({ tablas = {}, vacantesTeamTailor = {
   const colasModelo   = {};
   const peticionesModelo = [];
   const peticionesModeloCrudas = [];  // el cuerpo completo de cada petición al agente con herramientas
+  const colaDecisiones = [];
+  const peticionesDecision = [];
   const envios        = [];           // lo que ManyChat mostró: { flow_ns, campos: { [field_id]: valor } }
   const etiquetas     = [];
   const llamadasTT    = [];           // { metodo, ruta, cuerpo }
@@ -68,6 +70,16 @@ export function crearEntornoConversaciones({ tablas = {}, vacantesTeamTailor = {
 
       const siguiente = cola.shift();
       return respuestaHttp({ choices: [{ message: { tool_calls: [{ function: { name: herramienta, arguments: JSON.stringify(siguiente) } }] } }] });
+    }
+
+    // Clasificador de mensajes: cada respuesta simulada son las `answers` de una petición; se toma la primera que
+    // conteste las preguntas que se hicieron. Sin respuesta simulada falla, que es como se prueba que todo sigue
+    // funcionando con las reglas cuando el clasificador no contesta.
+    if (url.startsWith('https://openrouter.ai/api/alpha/decisions')) {
+      peticionesDecision.push(cuerpo);
+      const indice = colaDecisiones.findIndex(respuestas => Object.keys(cuerpo.questions).every(pregunta => pregunta in respuestas));
+      if (indice < 0) return respuestaHttp({ error: 'sin decisión simulada' }, 500);
+      return respuestaHttp({ answers: colaDecisiones.splice(indice, 1)[0] });
     }
 
     if (url.startsWith('https://api.manychat.com')) {
@@ -135,6 +147,8 @@ export function crearEntornoConversaciones({ tablas = {}, vacantesTeamTailor = {
     fallarManyChatSi: null,     // (ruta, cuerpo) => boolean
     fallarTeamTailorSi: null,   // (metodo, ruta, cuerpo) => boolean
     encolarModelo: (herramienta, ...respuestas) => { (colasModelo[herramienta] ??= []).push(...respuestas); },
+    peticionesDecision,
+    encolarDecision: (...respuestas) => { colaDecisiones.push(...respuestas); },
     restaurar: () => { globalThis.fetch = fetchOriginal; },
 
     // Mensajes que ManyChat le mostró al candidato, en orden.

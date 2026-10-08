@@ -270,6 +270,29 @@ test('BAJA: se registra, se etiqueta y se confirma; un falso positivo sigue el f
   assert.match(conversacion().historial, /usuario: BAJA/);
 });
 
+test('BAJA: cuando el clasificador está seguro no se consulta al modelo de lenguaje; si duda, sí', async () => {
+  entorno = crearEntornoConversaciones({ tablas: semilla() });
+  await recepcion('#555555');
+  const evaluaciones = () => entorno.peticionesModelo.filter(p => p.herramienta === 'evaluar_baja').length;
+
+  entorno.encolarDecision({ baja: { type: 'noul', noul: 0.02 } });
+  await enviarMensaje('Llevo 4 meses sin trabajar, hubo temporada baja y nos dieron de baja');
+  assert.equal(conversacion().solicitud_eliminacion, null);
+  assert.equal(evaluaciones(), 0);
+
+  entorno.encolarDecision({ baja: { type: 'noul', noul: 0.18 } });
+  entorno.encolarModelo('evaluar_baja', { es_solicitud_eliminacion: false });
+  await enviarMensaje('Duré 3 meses y fue baja automática');
+  assert.equal(conversacion().solicitud_eliminacion, null);
+  assert.equal(evaluaciones(), 1, 'entre los dos umbrales decide el modelo de lenguaje');
+
+  entorno.encolarDecision({ baja: { type: 'noul', noul: 0.48 } });
+  await enviarMensaje('Baja');
+  assert.ok(conversacion().solicitud_eliminacion);
+  assert.equal(entorno.mensajes.at(-1), MENSAJE_BAJA);
+  assert.equal(evaluaciones(), 1);
+});
+
 test('si la IA que clasifica la baja falla, se trata como solicitud real', async () => {
   entorno = crearEntornoConversaciones();
   await recepcion('baja');

@@ -177,6 +177,115 @@ test('descartar la vacante borra el borrador', async () => {
   assert.equal(entorno.mensajes.at(-1), 'Listo, la descarté.');
 });
 
+// ── Cambio de tarea con una vacante a medias (clasificador de intención) ─────
+
+const intencion = probabilidades => ({ intencion: { type: 'choice', probabilities: { continuar: 0, cancelar: 0, cancelar_y_otra_cosa: 0, otra_vacante: 0, consulta: 0, ...probabilidades } } });
+const pendiente = probabilidades => ({ decision: { type: 'choice', probabilities: { descartar: 0, conservar: 0, otra_cosa: 0, ...probabilidades } } });
+const llamadasAlAgente = () => entorno.peticionesModelo.filter(p => p.herramienta === 'agente').length;
+
+async function conVacanteAMedias() {
+  nuevoEntorno();
+  entorno.encolarModelo('agente', vacanteNueva());
+  await escribir('Península almacenista en Guadalajara');
+  assert.equal(borrador().titulo, 'Almacenista');
+}
+
+test('pedir cancelar la vacante a medias la descarta al instante, sin llamar al agente', async () => {
+  await conVacanteAMedias();
+  const antes = llamadasAlAgente();
+
+  entorno.encolarDecision(intencion({ cancelar: 1 }));
+  await escribir('mejor cancélala');
+  assert.deepEqual(borrador(), {});
+  assert.equal(entorno.mensajes.at(-1), 'Listo, descarté la vacante "Península - Almacenista". Cuando quieras crear otra o consultar alguna, dime.');
+  assert.equal(llamadasAlAgente(), antes);
+  assert.match(entorno.peticionesDecision.at(-1).state.ultimo_mensaje_del_asistente, /Confirmas que la suba/);
+
+  // Ya sin vacante a medias no se consulta al clasificador.
+  const decisiones = entorno.peticionesDecision.length;
+  entorno.encolarModelo('agente', responder('Hola.'));
+  await escribir('hola');
+  assert.equal(entorno.peticionesDecision.length, decisiones);
+});
+
+test('cancelar y pedir otra cosa en el mismo mensaje: se descarta y el agente atiende lo otro con el borrador vacío', async () => {
+  await conVacanteAMedias();
+
+  entorno.encolarDecision(intencion({ cancelar_y_otra_cosa: 0.99 }));
+  entorno.encolarModelo('agente', cierre('contar_bandeja', { id: 555555 }), responder('Descarté la vacante. La 555555 tiene 107 personas en la bandeja.'));
+  await escribir('cancela esta, cuántos hay en la bandeja de la 555555?');
+
+  assert.deepEqual(borrador(), {});
+  assert.equal(entorno.mensajes.at(-1), 'Descarté la vacante. La 555555 tiene 107 personas en la bandeja.');
+  const peticion = entorno.peticionesModelo.at(-1).usuario;
+  assert.match(peticion, /Borrador de vacante en curso:\n\(ninguno\)/);
+  assert.match(peticion, /sistema: Se descartó la vacante "Península - Almacenista" a petición de la reclutadora[\s\S]*reclutador: cancela esta, cuántos hay en la bandeja de la 555555\?$/);
+  assert.match(conversacion().historial, /reclutador: cancela esta[\s\S]*sistema: Se descartó[\s\S]*agente: Descarté la vacante/);
+});
+
+test('pedir otra vacante teniendo una a medias: se pregunta antes de descartar y, si acepta, se crea la nueva con lo que pidió', async () => {
+  await conVacanteAMedias();
+  const antes = llamadasAlAgente();
+
+  entorno.encolarDecision(intencion({ otra_vacante: 0.85, cancelar_y_otra_cosa: 0.15 }));
+  await escribir('ahora ayúdame con una vacante nueva de cajero para Oxxo en Zapopan');
+  assert.equal(entorno.mensajes.at(-1), 'Tienes pendiente la vacante "Península - Almacenista". ¿La descarto para empezar la nueva?');
+  assert.equal(borrador().titulo, 'Almacenista', 'no se borra nada hasta que conteste');
+  assert.equal(llamadasAlAgente(), antes);
+
+  entorno.encolarDecision(pendiente({ descartar: 0.89, conservar: 0.09, otra_cosa: 0.02 }));
+  entorno.encolarModelo('agente', vacanteNueva({ nombre_interno: 'Oxxo - Cajero', titulo: 'Cajero', ubicacion: 'Zapopan, Jalisco', descripcion: '', contexto: '', mensaje: 'Descarté la de almacenista. ¿Qué sueldo tiene la de cajero?' }));
+  await escribir('si');
+
+  assert.equal(borrador().nombre_interno, 'Oxxo - Cajero');
+  assert.equal(borrador().imagen_ruta, '', 'la imagen de la vacante descartada no se hereda');
+  assert.equal(conversacion().temporal.reclutador.vacante_pedida, undefined);
+  const peticion = entorno.peticionesModelo.at(-1).usuario;
+  assert.match(peticion, /Borrador de vacante en curso:\n\(ninguno\)/);
+  assert.match(peticion, /reclutador: si\n.*sistema: Se descartó la vacante "Península - Almacenista" porque la reclutadora lo confirmó[^\n]*\n.*reclutador: ahora ayúdame con una vacante nueva de cajero para Oxxo en Zapopan$/);
+});
+
+test('si prefiere terminar primero la que tenía, la petición de otra vacante queda sin efecto', async () => {
+  await conVacanteAMedias();
+  entorno.encolarDecision(intencion({ otra_vacante: 0.9 }));
+  await escribir('quiero crear otra vacante');
+
+  entorno.encolarDecision(pendiente({ conservar: 0.97 }));
+  entorno.encolarModelo('agente', responder('De acuerdo, seguimos con la de almacenista. ¿Confirmas que la suba a TeamTailor?'));
+  await escribir('no, primero terminemos esa');
+
+  assert.equal(borrador().titulo, 'Almacenista');
+  assert.equal(conversacion().temporal.reclutador.vacante_pedida, undefined);
+  assert.match(entorno.peticionesModelo.at(-1).usuario, /sistema: La reclutadora decidió terminar primero la vacante en curso[^\n]*\n.*reclutador: no, primero terminemos esa$/);
+
+  // El siguiente mensaje se vuelve a clasificar como cualquier otro.
+  entorno.encolarDecision(intencion({ cancelar: 0.95 }));
+  await escribir('cancela');
+  assert.deepEqual(borrador(), {});
+});
+
+test('seguir con la vacante o consultar algo no la toca; y sin clasificador decide el agente como antes', async () => {
+  await conVacanteAMedias();
+
+  entorno.encolarDecision(intencion({ consulta: 1 }));
+  entorno.encolarModelo('agente', cierre('contar_bandeja', { id: 555555 }), responder('Tiene 107. Tu vacante de almacenista sigue pendiente.'));
+  await escribir('cuántos hay en la bandeja de la 555555?');
+  assert.equal(borrador().titulo, 'Almacenista');
+
+  // Una intención que no llega al umbral tampoco actúa sola.
+  entorno.encolarDecision(intencion({ cancelar: 0.6, continuar: 0.4 }));
+  entorno.encolarModelo('agente', vacanteNueva({ mensaje: 'Quité la imagen.' }));
+  await escribir('quita eso');
+  assert.equal(borrador().titulo, 'Almacenista');
+
+  // Sin respuesta del clasificador (no hay decisión simulada): el agente descarta con su herramienta.
+  entorno.encolarModelo('agente', cierre('descartar_vacante', { mensaje: 'Listo, la descarté.' }));
+  await escribir('mejor cancélala');
+  assert.deepEqual(borrador(), {});
+  assert.equal(entorno.mensajes.at(-1), 'Listo, la descarté.');
+  assert.ok(entorno.registros.some(r => r.etapa === 'cambio_de_tarea' && r.estado === 'error'));
+});
+
 test('el aviso de "irresponsivo" de ManyChat no llega al agente', async () => {
   nuevoEntorno();
   const resultado = await escribir(MENSAJE_IRRESPONSIVO);

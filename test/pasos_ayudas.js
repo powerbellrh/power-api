@@ -17,8 +17,11 @@ export const conversacionNueva = () => ({ id: 1, id_vacante: null, id_postulacio
 
 // Extractores de mentira: cada uno saca la siguiente respuesta de su cola y falla si no queda ninguna
 // (así se prueba también el respaldo cuando la IA no responde).
+// El clasificador (`clasificar`, `clasificarPosterior`) solo existe si el test le da respuestas: sin él, la máquina
+// de pasos usa sus reglas.
 export function crearExtractores(colas = {}) {
   const llamadas = { nombre: 0, domicilio: 0, empleos: 0, booleano: 0, aclarar: 0, extras: 0 };
+  for (const nombre of ['clasificar', 'clasificarPosterior']) if (colas[nombre]) llamadas[nombre] = 0;
   const argumentos = { aclarar: [], extras: [] };
   const sacar = nombre => async (...args) => {
     llamadas[nombre]++;
