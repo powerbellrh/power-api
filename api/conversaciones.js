@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { waitUntil } from '@vercel/functions';
 import { crearExtractores } from '../lib/chatbot/extractores.js';
-import { nombreDeFlujo } from '../lib/chatbot/flujos.js';
+import { nombreDeFlujo } from '../lib/chatbot/manychat.js';
 import { procesarConversacion } from '../lib/chatbot/orquestador.js';
 import { leerSolicitud } from '../lib/chatbot/solicitud.js';
 import { rechazarSolicitud } from '../lib/http.js';
@@ -11,7 +11,7 @@ import { rechazarSolicitud } from '../lib/http.js';
 // mensajes. Subirlo retrasa todas las respuestas en esa misma cantidad.
 const ESPERA_MENSAJES_SEGUIDOS_MS = 0;
 
-// Endpoint de los flujos de ManyChat con espera de respuesta (ver lib/chatbot/flujos.js): cada flujo manda aquí el
+// Endpoint de los flujos de ManyChat con espera de respuesta (ver lib/chatbot/manychat.js): cada flujo manda aquí el
 // texto del contacto (`respuesta`) o el aviso de que no contestó, junto con su `flujo`. La postulación se lleva con
 // la máquina de pasos (lib/chatbot/pasos.js) y la tabla `conversaciones`; los mensajes de los reclutadores los atiende su
 // propio agente (lib/chatbot/reclutador/).

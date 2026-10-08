@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   agregarLineaHistorial, esRespuestaAtrasada, guardarConversacion, INTENTOS_BLOQUEO, obtenerOCrearConversacion, procesarConBloqueo,
 } from '../lib/chatbot/conversacion.js';
-import { FLUJOS } from '../lib/chatbot/flujos.js';
+import { FLUJOS } from '../lib/chatbot/manychat.js';
 
 // Supabase en memoria, solo con lo que usa conversacion.js: select/eq/maybeSingle, insert/select/single
 // (con restricción única en telefono y manychat, como la tabla real) y update con filtros encadenados.

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   anuncioParaWhatsApp, bloqueoVigente, confirmacionValida, DURACION_BLOQUEO_CREACION_MS, huellaResumen, pideConfirmacion, resumenCompleto,
-} from '../lib/chatbot/vacantes/borrador.js';
+} from '../lib/chatbot/reclutador/borrador.js';
 
 const DESCRIPCION = '<p>Empresa busca almacenista.</p><p><strong>Ofrecemos:</strong></p><ul><li>Sueldo competitivo</li><li>Vales de despensa</li><li>Fondo de ahorro</li><li>Capacitación</li></ul><p>¡Postúlate por este medio!</p>';
 // Funciones puras del borrador de vacante. El flujo completo se prueba en reclutador.test.js.

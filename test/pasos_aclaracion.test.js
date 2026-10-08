@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PASO } from '../lib/chatbot/pasos.js';
-import { MENSAJE_DESISTIMIENTO } from '../lib/chatbot/textos.js';
+import { MENSAJE_DESISTIMIENTO } from '../lib/chatbot/constantes.js';
 import { conversacionNueva, crearExtractores, escribir, llegaVacante, otraVacante, turno, vacante } from './pasos_ayudas.js';
 
 // Edad obligatoria, agente de aclaración y datos que nunca quedan vacíos.

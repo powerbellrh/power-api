@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { MENSAJE_IRRESPONSIVO } from '../lib/chatbot/constantes.js';
-import { enviarFlujo, FLUJOS, nombreDeFlujo } from '../lib/chatbot/flujos.js';
+import { enviarFlujo, FLUJOS, nombreDeFlujo } from '../lib/chatbot/manychat.js';
 import { leerIdContacto, leerSolicitud } from '../lib/chatbot/solicitud.js';
 
 const cuerpoBase = { telefono: '5213300000000', contacto: 1234567, respuesta: 'Hola', flujo: FLUJOS.IMAGEN_Y_MENSAJE.flow_ns };

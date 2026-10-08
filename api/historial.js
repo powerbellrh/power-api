@@ -3,6 +3,7 @@ import { waitUntil }    from '@vercel/functions';
 import { ttObtener, ttCrear, mcCrear, mcObtener } from '../lib/clientes_api.js';
 import { limpiarTelefono, normalizarTelefonoMx } from '../lib/telefono.js';
 import { registrarEnAgenda } from '../lib/backfill_agenda.js';
+import { crearPowerId, crearFelicitacion } from '../lib/imagenes/candidato.js';
 import {
   AGENDA_MANYCHAT_FLOW_NS,
   AGENDA_MANYCHAT_FIELD_RECLUTADORA_NOMBRE,
@@ -15,9 +16,6 @@ import {
   MANYCHAT_FIELD_PHONE_ID,
   TEAMTAILOR_USER_ID,
 } from '../lib/config.js';
-
-const URL_GENERATE     = 'https://power-api-alpha.vercel.app/api/powerid';
-const URL_FELICITACION = 'https://power-api-alpha.vercel.app/api/felicitacion';
 
 // Tiempo que se espera antes de disparar el flujo de WhatsApp de "Enviar agenda"
 // (se guarda en `notificaciones` y la envía después un cron, no este handler).
@@ -109,24 +107,17 @@ async function manejarEnviadoACliente(data, candidato) {
 
   const nombreCandidato = [candidato.first_name, candidato.last_name].filter(Boolean).join(' ') || candidato.phone || 'Unknown';
 
-  // PASO 2: Generar PowerID vía API externa (best effort)
+  // PASO 2: Generar PowerID (best effort)
   let powerIDUrl = null;
   try {
-    const resp = await fetch(URL_GENERATE, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.POWERBELL_API_KEY },
-      body: JSON.stringify({
-        candidato:  parseInt(candidato.id) || candidato.id,
-        nombre:     nombreCandidato,
-        vacante:    nombreInternoVacante,
-        fotografia,
-        telefono:   candidato.phone || '',
-        citado:     construirCitado(fecha, hora),
-      }),
+    powerIDUrl = await crearPowerId({
+      candidato:  parseInt(candidato.id) || candidato.id,
+      nombre:     nombreCandidato,
+      vacante:    nombreInternoVacante,
+      fotografia,
+      telefono:   candidato.phone || '',
+      citado:     construirCitado(fecha, hora),
     });
-    const json = await resp.json();
-    if (!resp.ok) throw new Error(`${resp.status}: ${JSON.stringify(json)}`);
-    powerIDUrl = json?.url || null;
     console.log(JSON.stringify({ etapa: 'powerid_generado', estado: 'ok', candidato_id: candidato.id, url: powerIDUrl }));
   } catch (e) {
     console.log(JSON.stringify({ etapa: 'powerid_generado', estado: 'error', candidato_id: candidato.id, mensaje: e.message }));
@@ -140,22 +131,16 @@ async function manejarEnviadoACliente(data, candidato) {
 }
 
 // ****************************************************************************
-// STAGE "HIRED" → genera certificado de felicitación vía API externa
+// STAGE "HIRED" → genera certificado de felicitación
 // ****************************************************************************
 
 async function manejarHired(candidato) {
   try {
-    const resp = await fetch(URL_FELICITACION, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.POWERBELL_API_KEY },
-      body: JSON.stringify({
-        candidato: parseInt(candidato.id) || candidato.id,
-        nombre:    candidato.first_name || '',
-      }),
+    const url = await crearFelicitacion({
+      candidato: parseInt(candidato.id) || candidato.id,
+      nombre:    candidato.first_name || '',
     });
-    const json = await resp.json();
-    if (!resp.ok) throw new Error(`${resp.status}: ${JSON.stringify(json)}`);
-    console.log(JSON.stringify({ etapa: 'certificado_generado', estado: 'ok', candidato_id: candidato.id, respuesta: json }));
+    console.log(JSON.stringify({ etapa: 'certificado_generado', estado: 'ok', candidato_id: candidato.id, url }));
   } catch (e) {
     console.log(JSON.stringify({ etapa: 'certificado_generado', estado: 'error', candidato_id: candidato.id, mensaje: e.message }));
   }

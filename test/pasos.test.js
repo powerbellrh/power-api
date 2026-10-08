@@ -5,7 +5,7 @@ import {
   ENLACE_VACANTES, MENSAJE_AVISO_DATOS_REUTILIZADOS, MENSAJE_DESPEDIDA_COMPLETADO, MENSAJE_DESPEDIDA_INACTIVIDAD,
   MENSAJE_LIMITE_PREGUNTAS_GENERALES, MENSAJE_PEDIR_NOMBRE, MENSAJE_RECORDATORIO_COMPLETADO, MENSAJE_SALUDO_SIN_VACANTE,
   MENSAJE_VACANTES_SIN_VACANTE,
-} from '../lib/chatbot/textos.js';
+} from '../lib/chatbot/constantes.js';
 
 import { conversacionNueva, crearExtractores, escribir, llegaVacante, otraVacante, turno, vacante } from './pasos_ayudas.js';
 

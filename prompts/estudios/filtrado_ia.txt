@@ -27,15 +27,6 @@ Descartar si:
 
 ---
 
-Búsqueda original: {{busqueda}}
-
-Vacante a evaluar:
-Empresa: {{empresa}}
-Título: {{titulo}}
-Descripción: {{descripcion}}
-
----
-
 Responde ÚNICAMENTE con un objeto JSON válido, sin texto adicional antes ni después.
 
 Si la vacante debe incluirse:

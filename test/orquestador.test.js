@@ -1,13 +1,13 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { crearExtractores } from '../lib/chatbot/extractores.js';
-import { FLUJOS } from '../lib/chatbot/flujos.js';
+import { FLUJOS } from '../lib/chatbot/manychat.js';
 import { procesarConversacion } from '../lib/chatbot/orquestador.js';
 import { MENSAJE_IRRESPONSIVO } from '../lib/chatbot/constantes.js';
 import {
   ENLACE_VACANTES, MENSAJE_BAJA, MENSAJE_DESPEDIDA_COMPLETADO, MENSAJE_FALLBACK_ERROR, MENSAJE_LIMITE_PREGUNTAS_GENERALES,
   MENSAJE_PEDIR_NOMBRE, MENSAJE_SALUDO_SIN_VACANTE,
-} from '../lib/chatbot/textos.js';
+} from '../lib/chatbot/constantes.js';
 import { crearEntornoConversaciones, preguntaTeamTailor, vacanteTeamTailor } from './entorno_conversaciones.js';
 
 const TELEFONO   = '5213312345678';

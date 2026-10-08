@@ -2,9 +2,9 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { MENSAJE_IRRESPONSIVO } from '../lib/chatbot/constantes.js';
 import { crearExtractores } from '../lib/chatbot/extractores.js';
-import { FLUJOS } from '../lib/chatbot/flujos.js';
+import { FLUJOS } from '../lib/chatbot/manychat.js';
 import { procesarConversacion } from '../lib/chatbot/orquestador.js';
-import { buscarReclutador } from '../lib/chatbot/reclutador/identidad.js';
+import { buscarReclutador } from '../lib/chatbot/reclutador/flujo.js';
 import { crearEntornoConversaciones } from './entorno_conversaciones.js';
 
 const TELEFONO = '5213312345678'; // así lo manda ManyChat; en `usuarios` está sin lada de país

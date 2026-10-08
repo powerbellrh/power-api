@@ -7,8 +7,8 @@ import { rechazarSolicitud } from '../lib/http.js';
 import { leerPrompt } from '../lib/prompts.js';
 import { FOTO_PERFIL_DEFAULT, FOTO_PERFIL_HOMBRE, FOTO_PERFIL_MUJER } from '../lib/config.js';
 
-const PROMPT_ANALISIS_ESTRUCTURADO           = leerPrompt('analisis_estructurado');
-const PROMPT_ANALISIS_ESTRUCTURADO_OPERATIVO = leerPrompt('analisis_estructurado_operativo');
+const PROMPT_ANALISIS_ESTRUCTURADO           = leerPrompt('informes/analisis_estructurado');
+const PROMPT_ANALISIS_ESTRUCTURADO_OPERATIVO = leerPrompt('informes/analisis_estructurado_operativo');
 const OPENROUTER_MODEL             = 'anthropic/claude-opus-5';
 const OPENROUTER_MODEL_IMAGEN      = 'google/gemini-3.1-flash-lite-image';
 const PROMPT_RETOQUE_FOTO          = 'El propósito de este retoque es mostrar a la persona en una gran versión corporativa de sí misma, para presentarla ante un cliente. Aplica únicamente retoques ligeros a esta fotografía, en beneficio de la persona, que incrementen ligeramente su imagen corporativa y profesional, y aumenta la resolución/nitidez de la imagen. No alteres ningún rasgo facial de la persona, ni su maquillaje, ni ninguna expresión de su personalidad: la persona debe seguir viéndose como ella misma. Puedes ajustar el encuadre/enmarcado y simular ángulos más profesionales, pero el resultado debe lucir natural, sin verse alterado ni artificial. Asegúrate de que la persona esté vistiendo siempre ropa formal de oficina (por ejemplo, camisa, blusa o saco), ajustando la vestimenta de manera natural y coherente con la persona y el encuadre.';

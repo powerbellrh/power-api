@@ -1,15 +1,11 @@
-import { readFileSync }             from 'fs';
-import { fileURLToPath }            from 'url';
-import { dirname, join }            from 'path';
 import { normalizarPrestaciones }   from '../lib/prestaciones.js';
 import { orChatCompletion }         from '../lib/openrouter.js';
 import { SALARIO_MINIMO_MENSUAL, SEMANAS_POR_MES } from '../lib/config.js';
 import { leerPrompt }               from '../lib/prompts.js';
 import { rechazarSolicitud } from '../lib/http.js';
 
-const __dirname                     = dirname(fileURLToPath(import.meta.url));
-const PROMPT_CONCLUSIONES           = leerPrompt('conclusiones_ia');
-const PROMPT_CONCLUSIONES_GLASSDOOR = leerPrompt('conclusiones_ia_glassdoor');
+const PROMPT_CONCLUSIONES           = leerPrompt('estudios/conclusiones_ia');
+const PROMPT_CONCLUSIONES_GLASSDOOR = leerPrompt('estudios/conclusiones_ia_glassdoor');
 const OPENROUTER_MODEL              = 'z-ai/glm-5.3';
 
 const costo      = (ti, to) => +((ti / 1_000_000) + (to / 1_000_000 * 5)).toFixed(6);
@@ -111,44 +107,7 @@ function deduplicar(vacantes) {
 
 // ── Filtrado IA (descarta staffing / puesto distinto) ───────────────────────
 
-const SYSTEM_PROMPT_FILTRADO = `\
-Eres un filtro de calidad para un estudio de mercado de sueldos en México. Debes evaluar si una vacante debe incluirse o descartarse del análisis.
-
-Evalúa los siguientes DOS criterios:
-
---- CRITERIO 1: STAFFING / OUTSOURCING ---
-Descarta la vacante si la empresa que la publica NO es el empleador directo, sino una agencia intermediaria (reclutadora, consultora de RH, outsourcing, headhunter).
-
-Señales de agencia intermediaria:
-- Nombre de empresa con palabras como: Consultoría, Consultores, Capital Humano, Talento, RH, Recursos Humanos, Staffing, Outsourcing, Personnel, Search, Hunters, Placement, Soluciones de Personal
-- La descripción habla de "nuestro cliente", "importante empresa del sector", "reconocida empresa" sin revelar el nombre real del empleador
-- La empresa declara explícitamente ser reclutadora, consultora o agencia de empleo
-
-NO descartes por este criterio si:
-- La empresa es claramente una empresa productiva, fabricante, distribuidora o de servicios reales
-- La descripción menciona directamente quién es el empleador final
-
---- CRITERIO 2: PUESTO DIFERENTE ---
-Descarta la vacante si el título corresponde a un rol FUNDAMENTALMENTE diferente al buscado.
-
-Variaciones aceptables (NO descartar):
-- Diferente nivel del mismo rol: Auxiliar, Asistente, Operador, Técnico en la misma área de trabajo
-- Sinónimos o nombres alternativos del mismo puesto (ej. "Operador de Línea" ≈ "Operador de Producción")
-- Especializaciones del mismo rol (ej. "Operador de Soplado" o "Operador CNC" cuando se busca "Operador de Producción")
-
-Descartar si:
-- El rol requiere un perfil y conocimientos completamente distintos (ej. búsqueda "Operador de Producción" pero vacante es "Gerente de Planta", "Ingeniero de Calidad", "Ejecutivo de Ventas", "Chofer")
-
----
-
-Responde ÚNICAMENTE con un objeto JSON válido, sin texto adicional antes ni después.
-
-Si la vacante debe incluirse:
-{"aprobar": true, "motivo_rechazo": null}
-
-Si la vacante debe descartarse:
-{"aprobar": false, "motivo_rechazo": "descripción breve del motivo"}
-`;
+const SYSTEM_PROMPT_FILTRADO = leerPrompt('estudios/filtrado_ia');
 
 async function evaluarVacante(vacante, busqueda) {
   const descripcion = (vacante.descripcion_original ?? '(sin descripción)').substring(0, 1200);
@@ -205,7 +164,7 @@ async function filtrarConIA(vacantes, busqueda) {
 
 // ── Recuperación de salario vía IA (cuando el regex no lo extrajo) ─────────
 
-const SYSTEM_PROMPT_SALARIO = leerPrompt('extraccion_salario');
+const SYSTEM_PROMPT_SALARIO = leerPrompt('estudios/extraccion_salario');
 
 async function extraerSalarioDeVacante(vacante) {
   const descripcion = (vacante.descripcion_original ?? '').substring(0, 2000);
@@ -285,10 +244,8 @@ async function extraerSalariosConIA(vacantes) {
 
 // ── Handler Glassdoor ──────────────────────────────────────────────────────
 
-async function manejarGlassdoor(vacante, ubicacion, url, muestra, test, res) {
-  const datosCrudos = test
-    ? JSON.parse(readFileSync(join(__dirname, '../muestras/vacantes_glassdoor.json'), 'utf-8'))
-    : await (await fetch(
+async function manejarGlassdoor(vacante, ubicacion, url, muestra, res) {
+  const datosCrudos = await (await fetch(
         `https://api.apify.com/v2/actors/memo23~glassdoor-scraper-ppr/run-sync-get-dataset-items?token=${process.env.APIFY_TOKEN}`,
         {
           method:  'POST',
@@ -402,7 +359,7 @@ async function manejarGlassdoor(vacante, ubicacion, url, muestra, test, res) {
     m_fil.tokens_input + m_fil.cache_creados + m_fil.cache_leidos + ti_c,
     m_fil.tokens_output + to_c,
   );
-  const costo_apify = test ? 0 : +((resultados.length / 1000) * 5).toFixed(6);
+  const costo_apify = +((resultados.length / 1000) * 5).toFixed(6);
   const costo_total = +(costo_ia + costo_apify).toFixed(6);
 
   console.log(JSON.stringify({ etapa: 'conclusiones_ia', costo_usd: costo(ti_c, to_c) }));
@@ -432,7 +389,7 @@ async function manejarGlassdoor(vacante, ubicacion, url, muestra, test, res) {
 export default async function handler(req, res) {
   if (rechazarSolicitud(req, res)) return;
 
-  const { vacante, ubicacion, fuente, muestra, url, test } = req.body;
+  const { vacante, ubicacion, fuente, muestra, url } = req.body;
   if (!vacante || !ubicacion || !fuente) {
     console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing vacante, ubicacion or fuente' }));
     return res.status(400).json({ error: "Los campos 'vacante', 'ubicacion' y 'fuente' son requeridos" });
@@ -441,18 +398,16 @@ export default async function handler(req, res) {
     console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: `fuente inválida: ${fuente}` }));
     return res.status(400).json({ error: "El campo 'fuente' debe ser 'indeed' o 'glassdoor'" });
   }
-  if (fuente === 'glassdoor' && !url && !test) {
+  if (fuente === 'glassdoor' && !url) {
     console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing url for fuente glassdoor' }));
     return res.status(400).json({ error: "El campo 'url' es requerido cuando 'fuente' es 'glassdoor'" });
   }
 
-  if (fuente === 'glassdoor') return manejarGlassdoor(vacante, ubicacion, url, muestra, test, res);
+  if (fuente === 'glassdoor') return manejarGlassdoor(vacante, ubicacion, url, muestra, res);
 
   // ── Indeed ────────────────────────────────────────────────────────────────
 
-  const vacantes = test
-    ? JSON.parse(readFileSync(join(__dirname, '../muestras/vacantes_indeed.json'), 'utf-8'))
-    : await (await fetch(
+  const vacantes = await (await fetch(
         `https://api.apify.com/v2/actors/borderline~indeed-scraper/run-sync-get-dataset-items?token=${process.env.APIFY_TOKEN}`,
         {
           method:  'POST',
@@ -557,7 +512,7 @@ export default async function handler(req, res) {
     m_fil.tokens_input + m_fil.cache_creados + m_fil.cache_leidos + ti_c,
     m_sal.tokens_output + m_fil.tokens_output + to_c
   );
-  const costo_apify = test ? 0 : +((vacantes.length / 1000) * 5).toFixed(6);
+  const costo_apify = +((vacantes.length / 1000) * 5).toFixed(6);
   const costo_total = +(costo_ia + costo_apify).toFixed(6);
   const costo_por_vacante = vacantes.length > 0 ? +(costo_total / vacantes.length).toFixed(6) : 0;
 

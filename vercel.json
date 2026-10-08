@@ -9,8 +9,6 @@
     { "source": "/notificaciones",  "destination": "/api/notificaciones"  },
     { "source": "/experiencia",     "destination": "/api/experiencia"     },
     { "source": "/informes",        "destination": "/api/informes"        },
-    { "source": "/powerid",         "destination": "/api/powerid"         },
-    { "source": "/felicitacion",    "destination": "/api/felicitacion"    },
     { "source": "/emparejamiento",  "destination": "/api/emparejamiento"  },
     { "source": "/conversaciones",  "destination": "/api/conversaciones"  },
     { "source": "/privacidad",      "destination": "/api/privacidad"      }
@@ -48,12 +46,6 @@
     },
     "api/historial.js": {
       "maxDuration": 30
-    },
-    "api/powerid.js": {
-      "maxDuration": 60
-    },
-    "api/felicitacion.js": {
-      "maxDuration": 60
     },
     "api/privacidad.js": {
       "maxDuration": 60

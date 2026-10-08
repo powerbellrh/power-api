@@ -3,9 +3,9 @@ import { orChatCompletion }  from '../lib/openrouter.js';
 import { leerPrompt }        from '../lib/prompts.js';
 import { rechazarSolicitud } from '../lib/http.js';
 
-const PROMPT_EXTRACCION_HABILIDADES = leerPrompt('extraccion_habilidades');
-const PROMPT_VERIFICACION_MATCH     = leerPrompt('verificacion_emparejamiento');
-const PROMPT_NORMALIZACION_DOMICILIO = leerPrompt('normalizacion_domicilio');
+const PROMPT_EXTRACCION_HABILIDADES = leerPrompt('emparejamiento/extraccion_habilidades');
+const PROMPT_VERIFICACION_MATCH     = leerPrompt('emparejamiento/verificacion_emparejamiento');
+const PROMPT_NORMALIZACION_DOMICILIO = leerPrompt('emparejamiento/normalizacion_domicilio');
 const OPENROUTER_MODEL              = 'z-ai/glm-5.3-flash';
 
 const DOMICILIO_TOOL = {

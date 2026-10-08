@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { EVALUACIONES_URL, EVALUACION_MAX_INTENTOS } from '../lib/config.js';
-import { dormir } from '../lib/utilidades.js';
+import { dormir } from '../lib/clientes_api.js';
 
 const TAMANO_LOTE   = 5;
 const RETRASO_MS      = 5000;

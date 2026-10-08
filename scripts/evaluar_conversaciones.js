@@ -11,7 +11,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { LIMITE_RECORDATORIOS } from '../lib/chatbot/constantes.js';
 import { PASO } from '../lib/chatbot/pasos.js';
-import { MENSAJE_FALLBACK_ERROR } from '../lib/chatbot/textos.js';
+import { MENSAJE_FALLBACK_ERROR } from '../lib/chatbot/constantes.js';
 
 const banderas = process.argv.slice(2);
 const valorDe  = nombre => banderas.find(b => b.startsWith(`--${nombre}=`))?.slice(nombre.length + 3);

@@ -36,10 +36,10 @@ import { rechazarSolicitud } from '../lib/http.js';
 
 
 export const PROMPTS = {
-  AD:        leerPrompt('evaluacion_administrativa'),
-  OP:        leerPrompt('evaluacion_operativa'),
-  REEVAL_AD: leerPrompt('reevaluacion_administrativa'),
-  REEVAL_OP: leerPrompt('reevaluacion_operativa'),
+  AD:        leerPrompt('evaluaciones/evaluacion_administrativa'),
+  OP:        leerPrompt('evaluaciones/evaluacion_operativa'),
+  REEVAL_AD: leerPrompt('evaluaciones/reevaluacion_administrativa'),
+  REEVAL_OP: leerPrompt('evaluaciones/reevaluacion_operativa'),
 };
 
 const OPENROUTER_MODEL_AD        = 'z-ai/glm-5.3-flash';
