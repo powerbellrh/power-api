@@ -5,7 +5,6 @@ import { crearExtractores } from '../lib/chatbot/extractores.js';
 import { FLUJOS } from '../lib/chatbot/manychat.js';
 import { procesarConversacion } from '../lib/chatbot/orquestador.js';
 import { buscarReclutador } from '../lib/chatbot/reclutador/flujo.js';
-import { promptFlyer } from '../lib/chatbot/reclutador/flyer.js';
 import { crearEntornoConversaciones } from './entorno_conversaciones.js';
 
 const TELEFONO = '5213312345678'; // así lo manda ManyChat; en `usuarios` está sin lada de país
@@ -49,7 +48,7 @@ afterEach(() => entorno?.restaurar());
 
 function nuevoEntorno() {
   entorno = crearEntornoConversaciones({ tablas: semilla(), respuestasTeamTailor: RESPUESTAS_TT });
-  imagenes = { generadas: [], enviadas: [], flyers: [], correcciones: [], fallaFlyer: false };
+  imagenes = { generadas: [], enviadas: [] };
 }
 
 function escribir(texto, { telefono = TELEFONO } = {}) {
@@ -60,10 +59,6 @@ function escribir(texto, { telefono = TELEFONO } = {}) {
     extractores: crearExtractores(entorno.supabase),
     pausaMs: 0,
     reclutadores: { imagenes: {
-      generarFlyer: async flyer => { if (imagenes.fallaFlyer) throw new Error('sin cuota'); imagenes.flyers.push(flyer); return Buffer.from('png'); },
-      ponerLogo:    async base => base,
-      descargar:    async (_, ruta) => Buffer.from(`imagen de ${ruta}`),
-      corregirFlyer: async (anterior, cambio) => { imagenes.correcciones.push({ anterior: anterior.toString(), cambio }); return Buffer.from('png2'); },
       generar:    async escena => { imagenes.generadas.push(escena); return Buffer.from('png'); },
       subir:      async () => `banners/vacante-${imagenes.generadas.length}.png`,
       urlFirmada: async (_, ruta) => `https://firmada.test/${ruta}`,
@@ -326,75 +321,4 @@ test('quien no está en usuarios, o está con rol de reclutador, es un candidato
   assert.equal(resultado.reclutador, undefined);
   assert.equal((await escribir('hola', { telefono: '5213387654321' })).reclutador, undefined);
   assert.equal(entorno.peticionesModelo.filter(p => p.herramienta === 'agente').length, 0);
-});
-
-const flyerDe = (extra = {}) => cierre('crear_flyer', {
-  mensaje: 'Aquí va el flyer. Revisa que el texto esté bien escrito.', empresa: 'Empresa de plásticos busca:', puesto: 'Materialista',
-  sueldo: '$2,600 libres por semana', beneficios: ['Pago semanal', 'Vales de despensa'], horario: '', ubicacion: 'Zapopan', escena: 'A warehouse worker', estilo: '',
-  ...extra,
-});
-
-test('flyer: se genera con los datos que dio, se manda la imagen antes del mensaje y queda guardado para cambiarlo', async () => {
-  nuevoEntorno();
-  entorno.encolarModelo('agente', flyerDe());
-
-  await escribir('hazme un flyer de materialista en Zapopan, pagan $2,600 libres por semana, pago semanal y vales de despensa');
-
-  assert.equal(imagenes.flyers.length, 1);
-  assert.equal(imagenes.flyers[0].puesto, 'Materialista');
-  assert.equal(imagenes.enviadas.length, 1);
-  assert.equal(imagenes.enviadas[0].texto, 'Flyer: Materialista', 'el texto del flujo de imagen no puede ir vacío');
-  assert.deepEqual(entorno.mensajes, ['Aquí va el flyer. Revisa que el texto esté bien escrito.']);
-  assert.equal(conversacion().temporal.reclutador.flyer.sueldo, '$2,600 libres por semana');
-  assert.deepEqual(borrador(), {}, 'no toca el borrador de vacante');
-
-  // Un cambio: el agente recibe los datos del flyer anterior.
-  entorno.encolarModelo('agente', cierre('crear_flyer', { ...flyerDe().argumentos, estilo: 'dark green and yellow', cambio: 'use dark green and yellow colors' }));
-  await escribir('ponlo en verde');
-  assert.match(entorno.peticionesModelo.at(-1).usuario, /Último flyer generado[\s\S]*Materialista/);
-  assert.equal(imagenes.flyers.length, 1, 'no genera otro: corrige el anterior');
-  assert.deepEqual(imagenes.correcciones, [{ anterior: 'imagen de banners/vacante-0.png', cambio: 'use dark green and yellow colors' }]);
-  assert.equal(imagenes.enviadas.length, 2);
-});
-
-test('flyer: un sueldo que ella no dio se le devuelve al agente para que lo quite', async () => {
-  nuevoEntorno();
-  entorno.encolarModelo('agente', flyerDe({ sueldo: '$9,999 al mes' }), flyerDe({ sueldo: '' }));
-
-  await escribir('hazme un flyer de materialista en Zapopan, pago semanal y vales de despensa');
-
-  assert.match(entorno.peticionesModelo.at(-1).usuario, /CORRIGE: El flyer menciona montos/);
-  assert.equal(imagenes.flyers.length, 1);
-  assert.equal(imagenes.flyers[0].sueldo, '');
-});
-
-test('flyer: si el agente insiste en un dato inventado no se genera y se le dice qué aclarar', async () => {
-  nuevoEntorno();
-  entorno.encolarModelo('agente', flyerDe({ sueldo: '$9,999 al mes' }), flyerDe({ sueldo: '$9,999 al mes' }));
-
-  await escribir('hazme un flyer de materialista');
-
-  assert.equal(imagenes.flyers.length, 0);
-  assert.match(entorno.mensajes[0], /^Antes de hacer el flyer necesito aclarar esto:\n- El flyer menciona montos/);
-});
-
-test('flyer: si la imagen no se puede generar se avisa en vez de mandar nada', async () => {
-  nuevoEntorno();
-  imagenes.fallaFlyer = true;
-  entorno.encolarModelo('agente', flyerDe());
-
-  await escribir('hazme un flyer de materialista, pagan $2,600 libres por semana');
-
-  assert.equal(imagenes.enviadas.length, 0);
-  assert.deepEqual(entorno.mensajes, ['No pude generar el flyer en este momento. ¿Me lo pides otra vez en un rato?']);
-});
-
-test('flyer: el prompt de la imagen lleva el texto literal y omite lo que no se dio', () => {
-  const prompt = promptFlyer({ empresa: 'Empresa de plásticos busca:', puesto: 'Materialista', sueldo: '', beneficios: ['Pago semanal'], horario: '', ubicacion: 'Zapopan', escena: '', estilo: '' });
-  assert.match(prompt, /"MATERIALISTA"/);
-  assert.match(prompt, /"Pago semanal"/);
-  assert.match(prompt, /"Zapopan"/);
-  assert.match(prompt, /1:1/);
-  assert.doesNotMatch(prompt, /money icon/);
-  assert.doesNotMatch(prompt, /clock icon/);
 });

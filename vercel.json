@@ -23,8 +23,7 @@
       "maxDuration": 300
     },
     "api/conversaciones.js": {
-      "maxDuration": 300,
-      "includeFiles": "assets/{flyers,logos,fonts}/**"
+      "maxDuration": 300
     },
     "api/emparejamiento.js": {
       "maxDuration": 300
