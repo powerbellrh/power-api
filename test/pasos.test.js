@@ -159,10 +159,10 @@ test('el domicilio se completa por partes y solo se pide lo que falta', async ()
   assert.equal(conversacion.paso, PASO.DOMICILIO);
 
   let d = await escribir(conversacion, 'Vallarta 1234', opciones);
-  assert.equal(d.mensajes[0], 'Me falta tu colonia y municipio. ¿Me lo compartes?');
+  assert.equal(d.mensajes[0], 'Me faltan tu colonia y municipio. ¿Cuáles son?');
 
   d = await escribir(conversacion, 'colonia Americana', opciones);
-  assert.equal(d.mensajes[0], 'Me falta tu municipio. ¿Me lo compartes?');
+  assert.equal(d.mensajes[0], 'Me falta tu municipio. ¿Cuál es?');
   assert.equal(conversacion.intentos, 2);
 
   d = await escribir(conversacion, 'Guadalajara', opciones);
@@ -209,10 +209,10 @@ test('la experiencia se completa por turnos; sin IA se guarda el texto tal cual 
   assert.equal(conversacion.paso, PASO.EXPERIENCIA);
 
   let d = await escribir(conversacion, 'trabajé en Walmart', opciones);
-  assert.equal(d.mensajes[0], 'Me falta el puesto y las actividades que realizabas de ese empleo. ¿Me lo compartes?');
+  assert.equal(d.mensajes[0], 'Me faltan el puesto y las actividades que realizabas de ese empleo. ¿Cuáles eran?');
 
   d = await escribir(conversacion, 'de cajera', opciones);
-  assert.equal(d.mensajes[0], 'Me falta las actividades que realizabas de ese empleo. ¿Me lo compartes?');
+  assert.equal(d.mensajes[0], 'Me faltan las actividades que realizabas de ese empleo. ¿Cuáles eran?');
 
   // La IA ya no responde: a la tercera se guarda lo escrito.
   d = await escribir(conversacion, 'cobraba en caja', opciones);

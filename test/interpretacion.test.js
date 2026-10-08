@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  apareceEnTexto, faltantesDomicilio, faltantesEmpleo, fusionarDomicilio, fusionarEmpleos, empleosCompletos, interpretarBooleano,
-  interpretarEdad, interpretarNumero, limpiarNombre, listaEnEspanol, respaldoDomicilio, respaldoNombre, serializarEmpleos, unirDomicilio,
+  apareceEnTexto, esDesistimiento, faltantesDomicilio, faltantesEmpleo, fusionarDomicilio, fusionarEmpleos, empleosCompletos, interpretarBooleano,
+  interpretarEdad, interpretarNumero, limpiarNombre, listaEnEspanol, pedirFaltantesDomicilio, pedirFaltantesEmpleo, respaldoDomicilio, respaldoNombre,
+  serializarEmpleos, unirDomicilio,
 } from '../lib/chatbot/interpretacion.js';
 
 test('la edad sale del primer número y debe ser plausible', () => {
@@ -48,10 +49,46 @@ test('el respaldo de nombre acepta nombres plausibles y rechaza lo demás', () =
 });
 
 test('un dato aparece en el texto si todas sus palabras relevantes están', () => {
-  assert.equal(apareceEnTexto('Av. Vallarta 1234', 'vivo en la Avenida Vallarta 1234'), false);
+  assert.equal(apareceEnTexto('Av. Vallarta 1234', 'vivo en la Avenida Vallarta 1234'), true);
   assert.equal(apareceEnTexto('Vallarta 1234', 'vivo en av vallarta 1234, colonia americana'), true);
   assert.equal(apareceEnTexto('Walmart', 'trabajé en Costco'), false);
   assert.equal(apareceEnTexto('5', 'calle 5'), true);
+});
+
+test('un dato sigue siendo del candidato aunque el modelo le corrija la ortografía o complete una abreviatura', () => {
+  assert.equal(apareceEnTexto('Montacarguista', 'era montarguista y tuger'), true);
+  assert.equal(apareceEnTexto('Despachador', 'En una gasolinera, facturación y despachor'), true);
+  assert.equal(apareceEnTexto('Zapopan, Jalisco', 'Calle plomo colonia san jose del bajio municipio zapopan jal.'), true);
+  assert.equal(apareceEnTexto('Guadalajara', 'Juan José Ríos 3600, Lomas de Polanco GDL'), true);
+  assert.equal(apareceEnTexto('Producción', 'alepzzi, producion en el area de chocolate'), true);
+
+  assert.equal(apareceEnTexto('Gerente', 'era montarguista y tuger'), false, 'una palabra que no se parece a ninguna no se acepta');
+  assert.equal(apareceEnTexto('Tonalá', 'vivo en zapopan'), false);
+  assert.equal(apareceEnTexto('Ana', 'me llamo Eva'), false, 'las palabras cortas deben coincidir exactas');
+});
+
+test('con un empleo completo basta aunque el candidato haya mencionado otro a medias', () => {
+  const empleos = [{ empresa: 'Ayuntamiento', puesto: 'Director de deportes', actividades: 'Organizaba eventos' }, { empresa: 'Cooperativa', puesto: '', actividades: '' }];
+  assert.equal(empleosCompletos(empleos), true);
+  assert.equal(empleosCompletos([{ empresa: 'Cooperativa', puesto: '', actividades: '' }]), false);
+  assert.equal(empleosCompletos([]), false);
+});
+
+test('lo que falta se pide con la concordancia correcta', () => {
+  assert.equal(pedirFaltantesDomicilio(['municipio']), 'Me falta tu municipio. ¿Cuál es?');
+  assert.equal(pedirFaltantesDomicilio(['calle', 'municipio']), 'Me faltan tu calle y municipio. ¿Cuáles son?');
+  assert.equal(pedirFaltantesEmpleo([{ empresa: 'Oxxo', puesto: '', actividades: 'Cobrar' }]), 'Me falta el puesto de ese empleo. ¿Cuál era?');
+  assert.equal(pedirFaltantesEmpleo([{ empresa: 'Oxxo', puesto: 'Cajera', actividades: '' }]), 'Me faltan las actividades que realizabas de ese empleo. ¿Cuáles eran?');
+});
+
+test('solo una frase inequívoca cuenta como que el candidato ya no quiere seguir', () => {
+  assert.equal(esDesistimiento('Por el momento no puedo, será en otra ocasión muchas gracias'), true);
+  assert.equal(esDesistimiento('ya no me interesa, gracias'), true);
+  assert.equal(esDesistimiento('Ya conseguí trabajo'), true);
+
+  assert.equal(esDesistimiento('no'), false);
+  assert.equal(esDesistimiento('no, gracias'), false, 'puede ser la respuesta a una pregunta de sí o no');
+  assert.equal(esDesistimiento('me salí porque ya no me interesaba el horario'), false);
 });
 
 test('el domicilio se arma poco a poco y un dato inventado se descarta', () => {

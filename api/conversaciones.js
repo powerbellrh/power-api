@@ -6,6 +6,11 @@ import { procesarConversacion } from '../lib/chatbot/orquestador.js';
 import { leerSolicitud } from '../lib/chatbot/solicitud.js';
 import { rechazarSolicitud } from '../lib/http.js';
 
+// Cuánto se espera por más mensajes del candidato antes de contestar (ver juntarMensajesSeguidos en el orquestador).
+// En 0 no se espera: se prefiere contestar en ~3 segundos a juntar las respuestas que el candidato parte en varios
+// mensajes. Subirlo retrasa todas las respuestas en esa misma cantidad.
+const ESPERA_MENSAJES_SEGUIDOS_MS = 0;
+
 // Endpoint de los flujos de ManyChat con espera de respuesta (ver lib/chatbot/flujos.js): cada flujo manda aquí el
 // texto del contacto (`respuesta`) o el aviso de que no contestó, junto con su `flujo`. La postulación se lleva con
 // la máquina de pasos (lib/chatbot/pasos.js) y la tabla `conversaciones`. Es independiente de /mensajes (lógica vieja,
@@ -38,7 +43,7 @@ export default async function handler(req, res) {
   // procesamiento sigue en segundo plano.
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
   waitUntil(
-    procesarConversacion({ supabase, solicitud: lectura.solicitud, log, extractores: crearExtractores(supabase) })
+    procesarConversacion({ supabase, solicitud: lectura.solicitud, log, extractores: crearExtractores(supabase), esperaMs: ESPERA_MENSAJES_SEGUIDOS_MS })
       .catch(error => log('conversaciones', { estado: 'error', error: error.message })),
   );
 

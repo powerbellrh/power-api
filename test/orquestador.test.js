@@ -27,7 +27,7 @@ const semilla = () => ({
 });
 
 // Simula un mensaje que ManyChat manda a /conversaciones.
-function enviarMensaje(texto, { flujo = FLUJOS.MENSAJE.flow_ns, telefono = TELEFONO } = {}) {
+function enviarMensaje(texto, { flujo = FLUJOS.MENSAJE.flow_ns, telefono = TELEFONO, esperaMs = 0 } = {}) {
   const esIrresponsivo = texto === MENSAJE_IRRESPONSIVO;
   return procesarConversacion({
     supabase: entorno.supabase,
@@ -35,6 +35,7 @@ function enviarMensaje(texto, { flujo = FLUJOS.MENSAJE.flow_ns, telefono = TELEF
     log: entorno.log,
     extractores: crearExtractores(entorno.supabase),
     pausaMs: 0,
+    esperaMs,
   });
 }
 const recepcion = texto => enviarMensaje(texto, { flujo: FLUJOS.RECEPCION.flow_ns });
@@ -296,4 +297,29 @@ test('cambiar de vacante abre otra postulación del mismo candidato sin repetir 
   assert.equal(tipos('POST', /^\/job-applications$/).length, 2);
   assert.equal(tipos('POST', /^\/answers$/).length, respuestasAntes, 'nombre, edad y domicilio no se vuelven a mandar');
   assert.match(entorno.mensajes.at(-1), /Voy a usar los datos que ya nos habías compartido/);
+});
+
+test('una respuesta partida en varios mensajes seguidos se procesa como una sola', async () => {
+  entorno = crearEntornoConversaciones({ tablas: semilla() });
+  entorno.encolarModelo('extraer_nombre',    { nombre: 'Ana López', genero: 'Mujer' });
+  entorno.encolarModelo('extraer_domicilio', { calle: 'Vallarta 1234', colonia: 'Americana', municipio: 'Guadalajara' });
+
+  await recepcion('Hola, me interesa la vacante #555555');
+  await enviarMensaje('Me llamo Ana López');
+  await enviarMensaje('28');
+  const antes = entorno.mensajes.length;
+
+  // El segundo mensaje llega mientras el primero todavía espera: el primero cede y el segundo procesa los dos.
+  const primero = enviarMensaje('Vallarta 1234', { esperaMs: 60 });
+  await new Promise(resolver => setTimeout(resolver, 20));
+  const segundo = enviarMensaje('Americana, Guadalajara', { flujo: FLUJOS.RECEPCION.flow_ns, esperaMs: 60 });
+  const [resultadoPrimero] = await Promise.all([primero, segundo]);
+
+  assert.deepEqual(resultadoPrimero, { agrupado: true });
+  assert.equal(entorno.mensajes.length, antes + 1, 'una sola respuesta para los dos mensajes');
+  assert.equal(conversacion().temporal.datos.domicilio, 'Vallarta 1234, Americana, Guadalajara');
+  assert.equal(conversacion().paso, 'preguntas');
+  assert.equal(conversacion().temporal.entrada, undefined, 'no queda nada pendiente de juntar');
+  assert.match(conversacion().historial, /usuario: Vallarta 1234\nAmericana, Guadalajara/);
+  assert.equal(entorno.peticionesModelo.filter(p => p.herramienta === 'extraer_domicilio').length, 1, 'una sola llamada al modelo');
 });

@@ -97,11 +97,12 @@ titulo('Fricción (todas las recientes)');
 const vecesQue = patron => recientes.reduce((total, c) => total + lineas(c).filter(linea => /\] agente: /.test(linea) && patron.test(linea)).length, 0);
 mostrar({
   conversaciones_con_intentos_fallidos_ahora_mismo: enOrden(contarPor(enCurso.filter(c => (c.intentos ?? 0) > 0), c => c.paso)),
-  veces_que_pidio_un_dato_faltante: vecesQue(/Me falta /),
+  veces_que_pidio_un_dato_faltante: vecesQue(/Me faltan? /),
   veces_que_pidio_responder_si_o_no: vecesQue(/Respóndeme con sí o no/),
   veces_que_mando_a_la_reclutadora_por_una_duda: vecesQue(/una reclutadora podrá ayudarte con más detalle/),
   errores_al_procesar_un_mensaje: vecesQue(new RegExp(MENSAJE_FALLBACK_ERROR.slice(0, 40))),
   mensajes_que_no_se_pudieron_entregar: vecesQue(/No se pudieron entregar/),
+  candidatos_que_dijeron_que_ya_no_quieren_seguir: vecesQue(/Entendido, gracias por avisarnos/),
 });
 
 titulo('Sincronización con Supabase y TeamTailor');
