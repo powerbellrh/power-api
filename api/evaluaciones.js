@@ -15,6 +15,7 @@ import {
   extraerUrlImagenDeRespuestas,
   extraerEstadoEvaluacion,
   estadoEvaluacionACalificacion,
+  CALIFICACION_MINIMA_PREGUNTAS,
   obtenerCalificacionEstadoEvaluacion,
   construirNotaTeamtailor,
 } from '../lib/evaluacion_postulacion.js';
@@ -590,9 +591,9 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     etapaActual         = 'whatsapp';
     let whatsappEnviado = false;
     let whatsappError   = null;
-    // La categoría más baja: "No compatible" en las administrativas (menos de 9/20) y "NO APTO" en las operativas.
-    const calificacionBaja = calificacionGlobal !== null && obtenerNombreCategoriaPuntuacion(calificacionGlobal) === 'No compatible';
-    const categoriaBaja    = esAdministrativa ? 'No compatible' : 'NO APTO';
+    // Con menos de CALIFICACION_MINIMA_PREGUNTAS (de 20) no se le mandan las preguntas; en las operativas NO APTO vale 0.
+    const calificacionBaja = calificacionGlobal !== null && calificacionGlobal < CALIFICACION_MINIMA_PREGUNTAS;
+    const categoriaBaja    = esAdministrativa ? `${calificacionGlobal}/20` : 'NO APTO';
 
     if (origen === 'chatbot') {
       // El candidato ya está en conversación de WhatsApp con el chatbot de
