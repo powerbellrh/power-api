@@ -232,7 +232,7 @@ function construirToolClasificacion(catalogoIntenciones) {
 // ── Registro (tabla `informes_log`) ──────────────────────────────────────
 // Cada informe o corrección deja una fila: quién lo pidió (postulación y vacante), los comentarios del reclutador tal
 // cual llegaron, lo que se devolvió, y en `llamadas` cada llamada de IA con su actividad, modelo, costo y duración.
-// `modelo` y `costo_usd` resumen esa lista (el modelo que redactó o corrigió, y la suma de todas las llamadas).
+// `modelo` y `costo_usd` resumen esa lista (qué modelo hizo cada actividad, y la suma de todas las llamadas).
 
 function anotarLlamada(llamadas, actividad, modelo, inicio, datos, error) {
   llamadas?.push({
@@ -272,7 +272,8 @@ function compararInformes(anterior, nuevo) {
 // Nunca tumba el informe: si no se puede guardar, solo queda el aviso en la consola.
 async function guardarLog({ postulacionId, vacanteId, tipo, comentarios, llamadas, inicio, error, informe, cambios }) {
   try {
-    const principal = llamadas.findLast(l => l.actividad === 'correccion' || l.actividad === 'analisis');
+    // Ejemplo: "clasificacion: glm-5.3-flash, analisis: claude-opus-5.5". Sin el proveedor, para que se lea de un vistazo.
+    const modelos   = [...new Set(llamadas.map(l => `${l.actividad}: ${String(l.modelo).split('/').pop()}`))].join(', ');
     const costos    = llamadas.map(l => l.costo_usd).filter(costo => costo != null);
     const supabase  = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
     const { error: errorGuardado } = await supabase.from(TABLA_LOG).insert({
@@ -280,7 +281,7 @@ async function guardarLog({ postulacionId, vacanteId, tipo, comentarios, llamada
       vacante_id:     Number(vacanteId) || null,
       tipo:           tipo ?? null,
       comentarios:    comentarios ? String(comentarios) : null,
-      modelo:         principal?.modelo ?? null,
+      modelo:         modelos || null,
       costo_usd:      costos.length ? Number(costos.reduce((suma, costo) => suma + costo, 0).toFixed(6)) : null,
       segundos:       Number(((Date.now() - inicio) / 1000).toFixed(1)),
       error:          error ?? null,
