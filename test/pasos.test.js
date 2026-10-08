@@ -2,9 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decidirPaso, MAXIMO_INTENTOS, PASO } from '../lib/chatbot/pasos.js';
 import {
-  ENLACE_VACANTES, MENSAJE_AVISO_DATOS_REUTILIZADOS, MENSAJE_DESPEDIDA_COMPLETADO, MENSAJE_DESPEDIDA_INACTIVIDAD,
-  MENSAJE_LIMITE_PREGUNTAS_GENERALES, MENSAJE_PEDIR_NOMBRE, MENSAJE_RECORDATORIO_COMPLETADO, MENSAJE_SALUDO_SIN_VACANTE,
-  MENSAJE_VACANTES_SIN_VACANTE,
+  MENSAJE_AVISO_DATOS_REUTILIZADOS, MENSAJE_DESPEDIDA_COMPLETADO, MENSAJE_DESPEDIDA_INACTIVIDAD, MENSAJE_LIMITE_PREGUNTAS_GENERALES,
+  MENSAJE_PEDIR_NOMBRE, MENSAJE_RECORDATORIO_COMPLETADO, MENSAJE_REDIRIGIR_A_VACANTES, MENSAJE_SALUDO_SIN_VACANTE, MENSAJE_VACANTES_SIN_VACANTE,
 } from '../lib/chatbot/constantes.js';
 
 import { conversacionNueva, crearExtractores, escribir, llegaVacante, otraVacante, turno, vacante } from './pasos_ayudas.js';
@@ -200,7 +199,7 @@ test('la experiencia se completa por turnos; sin IA se guarda el texto tal cual 
   const extractores = crearExtractores({
     empleos: [
       [{ empresa: 'Walmart', puesto: '', actividades: '' }],
-      [{ empresa: 'Walmart', puesto: 'Cajera', actividades: '' }],
+      [{ empresa: 'Walmart', puesto: '', actividades: '' }],
     ],
     extras: [[]],
   });
@@ -211,12 +210,12 @@ test('la experiencia se completa por turnos; sin IA se guarda el texto tal cual 
   let d = await escribir(conversacion, 'trabajé en Walmart', opciones);
   assert.equal(d.mensajes[0], 'Me faltan el puesto y las actividades que realizabas de ese empleo. ¿Cuáles eran?');
 
-  d = await escribir(conversacion, 'de cajera', opciones);
-  assert.equal(d.mensajes[0], 'Me faltan las actividades que realizabas de ese empleo. ¿Cuáles eran?');
+  d = await escribir(conversacion, 'no me acuerdo', opciones);
+  assert.equal(d.mensajes[0], 'Me faltan el puesto y las actividades que realizabas de ese empleo. ¿Cuáles eran?');
 
   // La IA ya no responde: a la tercera se guarda lo escrito.
   d = await escribir(conversacion, 'cobraba en caja', opciones);
-  assert.equal(conversacion.temporal.datos.experiencia, 'trabajé en Walmart / de cajera / cobraba en caja');
+  assert.equal(conversacion.temporal.datos.experiencia, 'trabajé en Walmart / no me acuerdo / cobraba en caja');
   assert.equal(conversacion.paso, PASO.COMPLETADA, 'sin preguntas extra la postulación termina');
   assert.deepEqual(d.mensajes, [MENSAJE_DESPEDIDA_COMPLETADO]);
 });
@@ -336,7 +335,7 @@ test('sin vacante solo hay textos fijos: pedir vacantes, saludar o cualquier otr
   const conversacion = conversacionNueva();
   assert.deepEqual((await escribir(conversacion, 'hola buenas tardes')).mensajes, [MENSAJE_SALUDO_SIN_VACANTE]);
   assert.deepEqual((await escribir(conversacion, 'busco trabajo')).mensajes, [MENSAJE_VACANTES_SIN_VACANTE]);
-  assert.deepEqual((await escribir(conversacion, 'cuánto cuesta el servicio')).mensajes, [`${MENSAJE_LIMITE_PREGUNTAS_GENERALES}\n\n${ENLACE_VACANTES}`]);
+  assert.deepEqual((await escribir(conversacion, 'cuánto cuesta el servicio')).mensajes, [MENSAJE_REDIRIGIR_A_VACANTES]);
   assert.equal(conversacion.paso, PASO.SIN_VACANTE);
 });
 

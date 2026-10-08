@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  copiaTextoDelCandidato, detectarIntencion, finalizarMensajeAgente, INTENCION, quitarNombre, validarMensajeAgente,
+  copiaTextoDelCandidato, detectarIntencion, finalizarMensajeAgente, INTENCION, quitarNombre, tratoDeUsted, tutear, validarMensajeAgente,
 } from '../lib/chatbot/guardrails.js';
 import { nombrePila, recortarEnOracion } from '../lib/chatbot/utilidades.js';
 
@@ -121,4 +121,37 @@ test('recortarEnOracion no deja frases a medias', () => {
   const recortado = recortarEnOracion(`${'Una frase corta. '.repeat(30)}`);
   assert.ok(recortado.length <= 250);
   assert.ok(recortado.endsWith('.'));
+});
+
+test('recortarEnOracion conserva la última oración completa aunque sea corta y nunca corta con "..."', () => {
+  // Caso real #1655: una oración corta y otra larga sin punto. Antes quedaba "...desde zonas convenidas, pero tu...".
+  const largo = `Entiendo, anotado que vives en León, Guanajuato. ${'La vacante es en Periférico Norte y Belenes, Guadalajara, y la empresa ofrece transporte gratuito desde zonas convenidas, '.repeat(2)}pero tu reclutadora lo confirma`;
+  assert.equal(recortarEnOracion(largo, 175), 'Entiendo, anotado que vives en León, Guanajuato.');
+  assert.ok(!recortarEnOracion(largo, 175).includes('...'));
+
+  // Sin ninguna oración completa que quepa no se manda un pedazo: se devuelve vacío para que quien llama use su texto fijo.
+  assert.equal(recortarEnOracion('palabra '.repeat(60), 100), '');
+  assert.equal(recortarEnOracion('Cabe completo.'), 'Cabe completo.');
+});
+
+test('el bot no asegura nada a favor del candidato: ni "sin problema" ni "cumples con los requisitos"', () => {
+  assert.ok(validar('Con tus documentos en regla no hay problema; tu reclutadora podrá confirmarte los detalles.').menores.includes('frase_prohibida'));
+  assert.ok(validar('Entendido, sin problema. Para continuar, cuéntame de tu último empleo.').menores.includes('frase_prohibida'));
+  assert.ok(validar('Cumples con los requisitos. ¿Cuál es tu edad?').menores.includes('frase_prohibida'));
+  assert.ok(validar('Seguro te llaman pronto. ¿Cuál es tu edad?').menores.includes('frase_prohibida'));
+  assert.deepEqual(todas(validar('No te preocupes, tu respuesta queda registrada. ¿Cuentas con RFC?')), []);
+});
+
+test('tutear pasa al tuteo el verbo de apertura y los posesivos; lo que sigue sonando a usted se detecta', () => {
+  assert.equal(tutear('¿Ha trabajado antes en seguridad?'), '¿Has trabajado antes en seguridad?');
+  assert.equal(tutear('¿Tiene fácil acceso al desarrollo?'), '¿Tienes fácil acceso al desarrollo?');
+  assert.equal(tutear('¿Ha cuidado materiales en su empleo de reparto?'), '¿Has cuidado materiales en tu empleo de reparto?');
+  assert.equal(tutear('¿Podría llegar al parque con el transporte?'), '¿Podrías llegar al parque con el transporte?');
+  assert.equal(tutear('¿Has manejado montacargas?'), '¿Has manejado montacargas?');
+
+  assert.equal(tratoDeUsted('¿Ha trabajado antes en seguridad?'), true);
+  assert.equal(tratoDeUsted(tutear('¿Ha trabajado antes en seguridad?')), false);
+  assert.equal(tratoDeUsted(tutear('¿Cuenta con licencia o sabe manejar moto?')), true, 'a media frase no se corrige: se descarta');
+  assert.equal(tratoDeUsted(tutear('¿Puede quedarse las 24 horas?')), true, 'el infinitivo con "se" delata a usted');
+  assert.equal(tratoDeUsted('¿Podrías quedarte la guardia de sábado?'), false);
 });

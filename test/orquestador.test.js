@@ -5,10 +5,11 @@ import { FLUJOS } from '../lib/chatbot/manychat.js';
 import { procesarConversacion } from '../lib/chatbot/orquestador.js';
 import { MENSAJE_IRRESPONSIVO } from '../lib/chatbot/constantes.js';
 import {
-  ENLACE_VACANTES, MENSAJE_BAJA, MENSAJE_DESPEDIDA_COMPLETADO, MENSAJE_FALLBACK_ERROR, MENSAJE_LIMITE_PREGUNTAS_GENERALES,
-  MENSAJE_PEDIR_NOMBRE, MENSAJE_SALUDO_SIN_VACANTE,
+  MENSAJE_BAJA, MENSAJE_DESPEDIDA_COMPLETADO, MENSAJE_FALLBACK_ERROR, MENSAJE_PEDIR_NOMBRE, MENSAJE_REDIRIGIR_A_VACANTES,
+  MENSAJE_SALUDO_SIN_VACANTE,
 } from '../lib/chatbot/constantes.js';
 import { crearEntornoConversaciones, preguntaTeamTailor, vacanteTeamTailor } from './entorno_conversaciones.js';
+import { MADRUGADA, MEDIODIA } from './pasos_ayudas.js';
 
 const TELEFONO   = '5213312345678';
 const CONTACTO   = 4242;
@@ -27,7 +28,7 @@ const semilla = () => ({
 });
 
 // Simula un mensaje que ManyChat manda a /conversaciones.
-function enviarMensaje(texto, { flujo = FLUJOS.MENSAJE.flow_ns, telefono = TELEFONO, esperaMs = 0 } = {}) {
+function enviarMensaje(texto, { flujo = FLUJOS.MENSAJE.flow_ns, telefono = TELEFONO, esperaMs = 0, ahora = MEDIODIA } = {}) {
   const esIrresponsivo = texto === MENSAJE_IRRESPONSIVO;
   return procesarConversacion({
     supabase: entorno.supabase,
@@ -36,13 +37,14 @@ function enviarMensaje(texto, { flujo = FLUJOS.MENSAJE.flow_ns, telefono = TELEF
     extractores: crearExtractores(entorno.supabase),
     pausaMs: 0,
     esperaMs,
+    ahora: () => ahora,
   });
 }
 const recepcion = texto => enviarMensaje(texto, { flujo: FLUJOS.RECEPCION.flow_ns });
 const conversacion = () => entorno.supabase.tablas.conversaciones.find(c => c.telefono === TELEFONO);
 const tipos = (metodo, patron) => entorno.llamadasTT_(metodo, patron);
 
-const extrasDePrueba = ['¿Qué turno prefieres?', '¿Tienes transporte propio?', '¿Cuándo podrías empezar?', '¿Por qué dejaste tu último empleo?', '¿Qué esperas del puesto?'];
+const extrasDePrueba = ['¿Has manejado montacargas?', '¿Tienes transporte propio?', '¿Cuándo podrías empezar?', '¿Por qué dejaste tu último empleo?', '¿Qué esperas del puesto?'];
 
 test('postulación completa: se guarda en Supabase, se sincroniza con TeamTailor y se encola la evaluación', async () => {
   entorno = crearEntornoConversaciones({ tablas: semilla() });
@@ -72,7 +74,7 @@ test('postulación completa: se guarda en Supabase, se sincroniza con TeamTailor
   assert.equal(entorno.mensajes.at(-1), '¿Turno que prefieres?');
   await enviarMensaje('Matutino');
   await enviarMensaje('Fui cajera en Walmart, cobraba en caja');
-  assert.match(entorno.mensajes.at(-1), /conocer un poco más de tu perfil\. ¿Qué turno prefieres\?/);
+  assert.match(entorno.mensajes.at(-1), /conocer un poco más de tu perfil\. ¿Has manejado montacargas\?/);
 
   for (let i = 0; i < 4; i++) await enviarMensaje(`respuesta ${i + 1}`);
   await enviarMensaje('respuesta 5');
@@ -147,7 +149,7 @@ test('un "#123456" que no es una vacante se trata como un mensaje normal', async
   await recepcion('Vivo en la calle Hidalgo #123456 colonia Centro');
 
   assert.equal(entorno.supabase.tablas.vacantes.length, 0);
-  assert.equal(entorno.mensajes.at(-1), `${MENSAJE_LIMITE_PREGUNTAS_GENERALES}\n\n${ENLACE_VACANTES}`);
+  assert.equal(entorno.mensajes.at(-1), MENSAJE_REDIRIGIR_A_VACANTES);
   assert.ok(entorno.registros.some(r => r.etapa === 'deteccion_vacante' && r.estado === 'falso_positivo'));
 });
 
@@ -183,6 +185,31 @@ test('"irresponsivo" manda un recordatorio, pero no si viene de un flujo que ya 
   assert.equal(entorno.envios.length, antes + 1);
   assert.match(entorno.mensajes.at(-1), /^Hola, ¿quisieras continuar con tu postulación\?/);
   assert.equal(conversacion().recordatorios, 1);
+});
+
+test('de noche "irresponsivo" no manda el flujo ni cuenta como recordatorio; de día sí', async () => {
+  entorno = crearEntornoConversaciones({ tablas: semilla() });
+  await recepcion('#555555');
+  const antes = entorno.envios.length;
+
+  const respuesta = await enviarMensaje(MENSAJE_IRRESPONSIVO, { ahora: MADRUGADA });
+  assert.deepEqual(respuesta, { ignorado: true });
+  assert.equal(entorno.envios.length, antes, 'de madrugada no se manda nada');
+  assert.equal(conversacion().recordatorios, 0, 'y no gasta uno de los recordatorios');
+  assert.ok(entorno.registros.some(r => r.etapa === 'inactividad' && r.razon === 'horario_nocturno'));
+
+  await enviarMensaje(MENSAJE_IRRESPONSIVO, { ahora: MEDIODIA });
+  assert.equal(entorno.envios.length, antes + 1);
+  assert.equal(conversacion().recordatorios, 1);
+});
+
+test('el mensaje del candidato queda con la hora en que llegó, para medir cuánto tardó el bot', async () => {
+  entorno = crearEntornoConversaciones({ tablas: semilla() });
+  const inicio = Date.now();
+  await recepcion('#555555');
+  const [, usuario] = conversacion().historial.match(/^\[([^\]]+)\] usuario: /m);
+  const [, agente]  = conversacion().historial.match(/^\[([^\]]+)\] agente: Aquí tienes/m);
+  assert.ok(Date.parse(usuario) >= inicio - 1000 && Date.parse(usuario) <= Date.parse(agente), 'el mensaje del candidato no es posterior a la respuesta');
 });
 
 test('si TeamTailor falla las respuestas no se pierden: la conversación sigue y la siguiente vuelta las manda', async () => {

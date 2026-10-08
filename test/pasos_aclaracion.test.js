@@ -30,17 +30,28 @@ test('la edad es obligatoria: no se avanza sin una edad válida por más intento
   assert.equal(conversacion.intentos, 0);
 });
 
-test('el agente de aclaración determina la edad cuando está escrita con palabras', async () => {
+test('la edad escrita con palabras se entiende sin consultar al agente', async () => {
   const conversacion = conversacionNueva();
-  const extractores = crearExtractores({ aclarar: [{ valor: '25', mensaje: '' }] });
+  const extractores = crearExtractores({ aclarar: [] });
   const opciones = { extractores };
   await llegaVacante(conversacion, vacante, { ...opciones, conocidos: conocidosSinEdad });
 
   await escribir(conversacion, 'veinticinco años', opciones);
   assert.equal(conversacion.temporal.datos.edad, '25');
+  assert.equal(extractores.llamadas.aclarar, 0);
+});
+
+test('el agente de aclaración determina la edad cuando las reglas no la entienden', async () => {
+  const conversacion = conversacionNueva();
+  const extractores = crearExtractores({ aclarar: [{ valor: '45', mensaje: '' }] });
+  const opciones = { extractores };
+  await llegaVacante(conversacion, vacante, { ...opciones, conocidos: conocidosSinEdad });
+
+  await escribir(conversacion, 'cuarentaicinco años', opciones);
+  assert.equal(conversacion.temporal.datos.edad, '45');
   assert.equal(extractores.llamadas.aclarar, 1);
   assert.equal(extractores.argumentos.aclarar[0].paso, 'edad');
-  assert.equal(extractores.argumentos.aclarar[0].texto, 'veinticinco años');
+  assert.equal(extractores.argumentos.aclarar[0].texto, 'cuarentaicinco años');
 });
 
 test('un valor del agente que no pasa las verificaciones se ignora', async () => {

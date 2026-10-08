@@ -33,9 +33,14 @@ export function crearExtractores(colas = {}) {
   return { llamadas, argumentos, ...Object.fromEntries(Object.keys(llamadas).map(nombre => [nombre, sacar(nombre)])) };
 }
 
+// Momentos fijos (hora de Ciudad de México, UTC-6) para que las pruebas no dependan de la hora en que se corren:
+// de noche no se mandan recordatorios.
+export const MEDIODIA = Date.UTC(2026, 9, 8, 18, 0); // 12:00
+export const MADRUGADA = Date.UTC(2026, 9, 8, 8, 0); // 02:00
+
 // Aplica un evento a la conversación como lo haría el guardado con versión: mezcla `cambios` en la fila.
 export async function turno(conversacion, evento, opciones = {}) {
-  const decision = await decidirPaso({ conversacion, evento, ...opciones });
+  const decision = await decidirPaso({ conversacion, evento, ahora: MEDIODIA, ...opciones });
   Object.assign(conversacion, decision.cambios);
   return decision;
 }

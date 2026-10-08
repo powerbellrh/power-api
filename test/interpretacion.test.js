@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  apareceEnTexto, esDesistimiento, faltantesDomicilio, faltantesEmpleo, fusionarDomicilio, fusionarEmpleos, empleosCompletos, interpretarBooleano,
-  interpretarEdad, interpretarNumero, limpiarNombre, listaEnEspanol, pedirFaltantesDomicilio, pedirFaltantesEmpleo, respaldoDomicilio, respaldoNombre,
-  serializarEmpleos, unirDomicilio,
+  apareceEnTexto, aplazaElDato, domicilioPlausible, domicilioSuficiente, edadMencionada, edadVerificada, esCierre, esDesistimiento, esRelleno,
+  experienciaPlausible, extraerEdad, faltantesDomicilio, faltantesEmpleo, fusionarDomicilio, fusionarEmpleos, empleosCompletos, interpretarBooleano,
+  interpretarEdad, interpretarNumero, limpiarNombre, listaEnEspanol, pedirFaltantesDomicilio, pedirFaltantesEmpleo, pidePersona, respaldoDomicilio,
+  respaldoNombre, serializarEmpleos, textoDeExperiencia, unirDomicilio,
 } from '../lib/chatbot/interpretacion.js';
 
 test('la edad sale del primer número y debe ser plausible', () => {
@@ -13,6 +14,110 @@ test('la edad sale del primer número y debe ser plausible', () => {
   assert.equal(interpretarEdad('mayor de edad'), null);
   assert.equal(interpretarEdad('12'), null);
   assert.equal(interpretarEdad('120'), null);
+  assert.equal(interpretarEdad('doscientos cincuenta'), null, '"cincuenta" no es 50 si antes dice doscientos');
+});
+
+test('la edad entiende "voy a cumplir", números con letra, pegados a "años" y no confunde los años de experiencia', () => {
+  assert.equal(interpretarEdad('Voy a cumplir 21'), '20');
+  assert.equal(interpretarEdad('cuarenta y cinco años'), '45');
+  assert.equal(interpretarEdad('tengo veinte'), '20');
+  assert.equal(interpretarEdad('44años'), '44');
+  assert.equal(interpretarEdad('Es 70'), '70');
+  assert.equal(interpretarEdad('Tengo 18 años de experiencia'), null);
+  assert.equal(interpretarEdad('18 años de experiencia, tengo 53 años'), '53');
+});
+
+test('la edad se extrae de un mensaje con más cosas solo si hay una señal clara', () => {
+  assert.equal(extraerEdad('Lucina tengo 44 años'), '44');
+  assert.equal(extraerEdad('Antonio Romero. 63 años. Prepa terminada. Vivo zona centro de Guadalajara'), '63');
+  assert.equal(extraerEdad('Carlos larios. Valadez. 56. Años. Vivo. En. Tonala'), '56');
+  assert.equal(extraerEdad('Quiero información de la vacante #583119 de Vigilante y Control de Accesos tengo 63 años.'), '63');
+  assert.equal(extraerEdad('Karol, voy a cumplir 21 años'), '20');
+  assert.equal(extraerEdad('Hola soy Juan, edad: 30'), '30');
+
+  assert.equal(extraerEdad('MI NOMBRE: DAVID CUEVAS FAJARDO TENGO 18 AÑOS DE EXPERIENCIA EN EL RAMO'), null);
+  assert.equal(extraerEdad('tengo 18 años trabajando en seguridad'), null);
+  assert.equal(extraerEdad('mi hijo tiene 20 años'), null);
+  assert.equal(extraerEdad('Vivo en Calle 25 número 1234'), null);
+  assert.equal(extraerEdad('Ana López'), null);
+});
+
+test('la edad que dijo antes se busca desde el mensaje con el id de la vacante; la del modelo solo vale si está en el texto', () => {
+  const historial = [
+    '[2026-09-01T10:00:00.000-06:00] usuario: tengo 30 años',                                       // postulación anterior
+    '[2026-10-08T08:18:01.000-06:00] usuario: Quiero información de la vacante #583119, tengo 63 años.',
+    '[2026-10-08T08:18:02.000-06:00] agente: Para comenzar, ¿cómo te llamas?',
+  ].join('\n');
+  assert.equal(edadMencionada(historial), '63');
+  assert.equal(edadMencionada('[2026-10-08T08:18:01.000-06:00] usuario: Quiero información de la vacante #583119'), null);
+  assert.equal(edadMencionada(''), null);
+
+  assert.equal(edadVerificada('45', 'tengo cuarenta y cinco'), '45');
+  assert.equal(edadVerificada('44', 'Pedro 44'), '44');
+  assert.equal(edadVerificada('45', 'me llamo Ana'), null);
+  assert.equal(edadVerificada('', 'tengo 30 años'), null);
+});
+
+test('el relleno y los agradecimientos se reconocen, pero una respuesta con contenido no', () => {
+  for (const texto of ['Si, si quiero', 'Interesante, continuamos', 'Sii', 'Que si', 'ok', 'Le voy a mandar información', '👍🏻']) assert.equal(esRelleno(texto), true, texto);
+  for (const texto of ['Empresa AlanoEscort. Puesto, Supervisor operativo', 'Trabajaba en una zapatería, se llama 6 estrellas', 'No', 'Era chofer almacenista']) assert.equal(esRelleno(texto), false, texto);
+
+  for (const texto of ['Gracias', 'ok gracias buen día', 'Muchas gracias igualmente']) assert.equal(esCierre(texto), true, texto);
+  for (const texto of ['Si, si quiero', 'Hola', 'Gracias pero tengo una duda sobre el sueldo']) assert.equal(esCierre(texto), false, texto);
+});
+
+test('pedir hablar con una persona y dejar un dato para después se reconocen', () => {
+  for (const texto of ['Sabes, prefiero conversar con un humano', 'Pero no con un bot', 'odio los bots', 'quiero hablar con una persona', 'no quiero hablar con un robot']) {
+    assert.equal(pidePersona(texto), true, texto);
+  }
+  for (const texto of ['ya no me interesa', 'hola', 'soy humano', 'hablo con mi familia']) assert.equal(pidePersona(texto), false, texto);
+
+  assert.equal(aplazaElDato('Ese te lo doy cuando ya te lleve papeles'), true);
+  assert.equal(aplazaElDato('luego te lo mando'), true);
+  assert.equal(aplazaElDato('ya no me interesa'), false);
+});
+
+test('"no me interesa el turno, pero sí me interesa el otro" no es desistir', () => {
+  assert.equal(esDesistimiento('No me interesa el turno de noche, pero sí me interesa el de tarde'), false);
+  assert.equal(esDesistimiento('ya no me interesa, gracias'), true);
+});
+
+test('un domicilio o una experiencia guardados solo se reutilizan si sirven', () => {
+  assert.equal(domicilioPlausible('Col. Medrano'), false);
+  assert.equal(domicilioPlausible(''), false);
+  assert.equal(domicilioPlausible('Hacienda Escalón 1551, colonia Oblatos, Guadalajara'), true);
+  assert.equal(domicilioPlausible('Calle Hidalgo 123 colonia Centro'), true);
+
+  assert.equal(experienciaPlausible('Walmart - Cajera - Cobraba y acomodaba'), true);
+  assert.equal(experienciaPlausible('https://manybot-files.s3.eu-central-1.amazonaws.com/532606009941964/wa/2026/03/09/original_x.jpeg'), false);
+  assert.equal(experienciaPlausible('Si'), false);
+});
+
+test('el domicilio es suficiente con municipio y calle o colonia', () => {
+  assert.equal(domicilioSuficiente({ calle: '', colonia: 'Jalisco', municipio: 'Tonalá' }), true);
+  assert.equal(domicilioSuficiente({ calle: 'Luis Lara', colonia: '', municipio: 'Guadalajara' }), true);
+  assert.equal(domicilioSuficiente({ calle: 'Luis Lara', colonia: 'Centro', municipio: '' }), false);
+  assert.equal(domicilioSuficiente({ calle: '', colonia: '', municipio: 'Zapopan' }), false);
+});
+
+test('de la experiencia se guarda lo estructurado si trae dos datos y, si no, lo que escribió el candidato', () => {
+  const completo = [{ empresa: 'Oxxo', puesto: 'Cajera', actividades: '' }];
+  const casiNada = [{ empresa: 'Walmart', puesto: '', actividades: '' }];
+  assert.equal(textoDeExperiencia(completo, ['era cajera en Oxxo y cobraba']), 'Oxxo - Cajera');
+  assert.equal(textoDeExperiencia(casiNada, ['trabajé en Walmart', 'cobraba en caja']), 'trabajé en Walmart / cobraba en caja');
+  assert.equal(textoDeExperiencia(casiNada, []), 'Walmart');
+
+  assert.equal(empleosCompletos(casiNada, { pedidos: 1 }), false);
+  assert.equal(empleosCompletos(casiNada, { pedidos: 2 }), true);
+  assert.equal(empleosCompletos([{ empresa: '', puesto: 'Ayudante', actividades: 'Vendía' }], { pedidos: 1 }), true);
+});
+
+test('quien dice que donde trabajó no tenía nombre queda con una empresa sin que el nombre aparezca en su mensaje', () => {
+  const dicho = fusionarEmpleos([], [{ empresa: 'Negocio familiar', puesto: '', actividades: 'Vendía tamales' }], 'vendía tamales, no tenían nombre');
+  assert.equal(dicho[0].empresa, 'Negocio familiar');
+
+  const inventado = fusionarEmpleos([], [{ empresa: 'Costco', puesto: '', actividades: 'Vendía tamales' }], 'vendía tamales');
+  assert.equal(inventado[0].empresa, '', 'sin esa frase, una empresa que no escribió se descarta');
 });
 
 test('un número acepta decimales con coma o punto', () => {
