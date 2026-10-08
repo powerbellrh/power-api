@@ -45,10 +45,14 @@
     },
     "api/privacidad.js": {
       "maxDuration": 60
+    },
+    "api/sincronizar-vacantes.js": {
+      "maxDuration": 300
     }
   },
   "crons": [
     { "path": "/api/cola",           "schedule": "* * * * *" },
-    { "path": "/api/notificaciones", "schedule": "* * * * *" }
+    { "path": "/api/notificaciones", "schedule": "* * * * *" },
+    { "path": "/api/sincronizar-vacantes", "schedule": "0 * * * *" }
   ]
 }
