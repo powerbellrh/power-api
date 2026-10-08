@@ -590,11 +590,18 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
     etapaActual         = 'whatsapp';
     let whatsappEnviado = false;
     let whatsappError   = null;
+    // La categoría más baja: "No compatible" en las administrativas (menos de 9/20) y "NO APTO" en las operativas.
+    const calificacionBaja = calificacionGlobal !== null && obtenerNombreCategoriaPuntuacion(calificacionGlobal) === 'No compatible';
+    const categoriaBaja    = esAdministrativa ? 'No compatible' : 'NO APTO';
 
     if (origen === 'chatbot') {
       // El candidato ya está en conversación de WhatsApp con el chatbot de
       // mensajes.js; no se le manda un segundo flow de ManyChat desde aquí.
       console.log(JSON.stringify({ etapa: 'whatsapp_integracion', estado: 'omitido', razon: 'origen_chatbot' }));
+    } else if (calificacionBaja) {
+      // A los candidatos de la categoría más baja no se les mandan las preguntas por WhatsApp.
+      whatsappError = `calificación baja (${categoriaBaja})`;
+      console.log(JSON.stringify({ etapa: 'whatsapp_integracion', estado: 'omitido', razon: 'calificacion_baja', calificacion: calificacionGlobal }));
     } else if (preguntasExtraidasExitosamente) {
       const resultado = await enviarWhatsApp({ candidatoNombrePila: candidatoNombrePila, candidatoTelefono: candidatoTelefonoTt, candidatoId: candidateId, postulacionId, tituloVacante, preguntas: preguntasExtraidas, vacanteTipo });
       whatsappEnviado = resultado.enviado;
@@ -606,7 +613,9 @@ async function procesarEvaluacion(postulacionId, postulacion, supabase) {
 
     // PASO 16: Nota en TeamTailor si WhatsApp falló
     if (!whatsappEnviado && whatsappError) {
-      const notaWa = preguntasExtraidasExitosamente
+      const notaWa = calificacionBaja
+        ? `No se le envió mensaje de WhatsApp debido a una calificación baja (${categoriaBaja}).`
+        : preguntasExtraidasExitosamente
         ? `❌ Fallo el envío de mensaje de WhatsApp (error ManyChat): ${whatsappError}`
         : `❌ No se envió mensaje de WhatsApp: Claude no generó preguntas válidas. Detalle: ${whatsappError}`;
       try {

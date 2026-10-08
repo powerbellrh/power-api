@@ -12,8 +12,9 @@ const CONTACTO = 4242;
 const DESCRIPCION = '<p>Empresa busca almacenista.</p><p><strong>Ofrecemos:</strong></p><ul><li>Sueldo competitivo</li><li>Vales de despensa</li></ul><p>¡Postúlate por este medio!</p>';
 
 const ETAPAS = { data: [
-  { id: '51', attributes: { name: 'Filtrado', 'legacy-stage-type-name': 'In process', 'active-job-applications-count': 14 } },
-  { id: '50', attributes: { name: 'Inbox',    'legacy-stage-type-name': 'Inbox',      'active-job-applications-count': 107 } },
+  { id: '51', attributes: { name: 'Filtrado', 'legacy-stage-type-name': 'In process', 'row-order': 100000, 'active-job-applications-count': 14 } },
+  { id: '52', attributes: { name: 'Hired',    'legacy-stage-type-name': 'Hired',      'row-order': 200000, 'active-job-applications-count': 3 } },
+  { id: '50', attributes: { name: 'Inbox',    'legacy-stage-type-name': 'Inbox',      'row-order': 0,      'active-job-applications-count': 107 } },
 ] };
 const RECIENTES = { meta: { 'page-count': 1 }, data: [
   { id: '1', attributes: { 'rejected-at': null } },
@@ -90,11 +91,14 @@ test('un reclutador se reconoce por su teléfono en usuarios, con o sin lada de 
 
 test('el reclutador pregunta por la bandeja: el agente consulta TeamTailor y contesta con los dos números', async () => {
   nuevoEntorno();
-  entorno.encolarModelo('agente', cierre('contar_bandeja', { id: 555555 }), responder('Tiene 107 personas en la bandeja; 2 llegaron en las últimas 24 horas.'));
+  entorno.encolarModelo('agente', cierre('contar_candidatos', { id: 555555 }), responder('Tiene 107 personas en la bandeja; 2 llegaron en las últimas 24 horas.'));
 
   const resultado = await escribir('cuántos hay en la bandeja de la 555555?');
   assert.equal(resultado.reclutador, true);
-  assert.deepEqual(resultadosDeHerramientas(), [{ en_bandeja_de_entrada: 107, llegaron_en_las_ultimas_24_horas: 2 }]); // la rechazada no cuenta
+  assert.deepEqual(resultadosDeHerramientas(), [{
+    en_bandeja_de_entrada: 107, llegaron_en_las_ultimas_24_horas: 2, // la rechazada no cuenta
+    por_etapa: [{ etapa: 'Bandeja de entrada', personas: 107 }, { etapa: 'Filtrado', personas: 14 }, { etapa: 'Contratados', personas: 3 }], // en el orden del proceso
+  }]);
   assert.deepEqual(entorno.mensajes, ['Tiene 107 personas en la bandeja; 2 llegaron en las últimas 24 horas.']);
   assert.match(entorno.peticionesModelo[0].usuario, /Reclutadora: Laura/);
   assert.match(conversacion().historial, /reclutador: cuántos hay en la bandeja[\s\S]*agente: Tiene 107/);
@@ -114,7 +118,7 @@ test('ver una vacante: se le manda tal como la ve el candidato, sin pasar por la
 
 test('una vacante que no existe o una consulta que falla se le informa al modelo como error', async () => {
   nuevoEntorno();
-  entorno.encolarModelo('agente', cierre('contar_bandeja', { id: 123 }), responder('No pude consultarla.'));
+  entorno.encolarModelo('agente', cierre('contar_candidatos', { id: 123 }), responder('No pude consultarla.'));
   entorno.fallarTeamTailorSi = (metodo, ruta) => ruta.startsWith('/jobs/123/stages');
 
   await escribir('bandeja de la 123');
@@ -212,7 +216,7 @@ test('cancelar y pedir otra cosa en el mismo mensaje: se descarta y el agente at
   await conVacanteAMedias();
 
   entorno.encolarDecision(intencion({ cancelar_y_otra_cosa: 0.99 }));
-  entorno.encolarModelo('agente', cierre('contar_bandeja', { id: 555555 }), responder('Descarté la vacante. La 555555 tiene 107 personas en la bandeja.'));
+  entorno.encolarModelo('agente', cierre('contar_candidatos', { id: 555555 }), responder('Descarté la vacante. La 555555 tiene 107 personas en la bandeja.'));
   await escribir('cancela esta, cuántos hay en la bandeja de la 555555?');
 
   assert.deepEqual(borrador(), {});
@@ -268,7 +272,7 @@ test('seguir con la vacante o consultar algo no la toca; y sin clasificador deci
   await conVacanteAMedias();
 
   entorno.encolarDecision(intencion({ consulta: 1 }));
-  entorno.encolarModelo('agente', cierre('contar_bandeja', { id: 555555 }), responder('Tiene 107. Tu vacante de almacenista sigue pendiente.'));
+  entorno.encolarModelo('agente', cierre('contar_candidatos', { id: 555555 }), responder('Tiene 107. Tu vacante de almacenista sigue pendiente.'));
   await escribir('cuántos hay en la bandeja de la 555555?');
   assert.equal(borrador().titulo, 'Almacenista');
 

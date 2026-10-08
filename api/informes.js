@@ -9,7 +9,17 @@ import { FOTO_PERFIL_DEFAULT, FOTO_PERFIL_HOMBRE, FOTO_PERFIL_MUJER } from '../l
 
 const PROMPT_ANALISIS_ESTRUCTURADO           = leerPrompt('informes/analisis_estructurado');
 const PROMPT_ANALISIS_ESTRUCTURADO_OPERATIVO = leerPrompt('informes/analisis_estructurado_operativo');
-const OPENROUTER_MODEL             = 'anthropic/claude-opus-5';
+// Los modelos 5.5 de Anthropic no aceptan que se les obligue a usar la herramienta (tool_choice forzado): el informe
+// se pide con la herramienta en automático y se reintenta si el modelo contesta sin usarla.
+const OPENROUTER_MODEL             = 'anthropic/claude-opus-5.5';
+const INTENTOS_ANALISIS            = 3;
+// Clasificar las preguntas, inferir el género a partir del nombre y aplicar una corrección sobre el informe que ya
+// redactó el modelo principal no necesitan ese modelo.
+const OPENROUTER_MODEL_AUXILIAR    = 'z-ai/glm-5.3-flash';
+const RAZONAMIENTO_AUXILIAR        = { effort: 'low' }; // apagarlo es más lento con este modelo
+// En las correcciones razona al máximo: así cambia solo lo que pide el reclutador (con menos, a veces retocaba de más).
+const RAZONAMIENTO_CORRECCION      = { effort: 'xhigh' };
+const TABLA_LOG                    = 'informes_log';
 const OPENROUTER_MODEL_IMAGEN      = 'google/gemini-3.1-flash-lite-image';
 const PROMPT_RETOQUE_FOTO          = 'El propósito de este retoque es mostrar a la persona en una gran versión corporativa de sí misma, para presentarla ante un cliente. Aplica únicamente retoques ligeros a esta fotografía, en beneficio de la persona, que incrementen ligeramente su imagen corporativa y profesional, y aumenta la resolución/nitidez de la imagen. No alteres ningún rasgo facial de la persona, ni su maquillaje, ni ninguna expresión de su personalidad: la persona debe seguir viéndose como ella misma. Puedes ajustar el encuadre/enmarcado y simular ángulos más profesionales, pero el resultado debe lucir natural, sin verse alterado ni artificial. Asegúrate de que la persona esté vistiendo siempre ropa formal de oficina (por ejemplo, camisa, blusa o saco), ajustando la vestimenta de manera natural y coherente con la persona y el encuadre.';
 
@@ -219,12 +229,77 @@ function construirToolClasificacion(catalogoIntenciones) {
   };
 }
 
+// ── Registro (tabla `informes_log`) ──────────────────────────────────────
+// Cada informe o corrección deja una fila: quién lo pidió (postulación y vacante), los comentarios del reclutador tal
+// cual llegaron, lo que se devolvió, y en `llamadas` cada llamada de IA con su actividad, modelo, costo y duración.
+// `modelo` y `costo_usd` resumen esa lista (el modelo que redactó o corrigió, y la suma de todas las llamadas).
+
+function anotarLlamada(llamadas, actividad, modelo, inicio, datos, error) {
+  llamadas?.push({
+    actividad, modelo,
+    segundos:       Number(((Date.now() - inicio) / 1000).toFixed(1)),
+    costo_usd:      datos?.usage?.cost ?? null,
+    tokens_entrada: datos?.usage?.prompt_tokens ?? null,
+    tokens_salida:  datos?.usage?.completion_tokens ?? null,
+    ...(error && { error: error.message }),
+  });
+}
+
+// Llamada de chat a OpenRouter que queda anotada en `llamadas`, también cuando falla.
+async function llamarModelo(llamadas, actividad, peticion) {
+  const inicio = Date.now();
+  try {
+    const datos = await orChatCompletion({ ...peticion, usage: { include: true } }, process.env.OPENROUTER_API_KEY_INFORMES);
+    anotarLlamada(llamadas, actividad, peticion.model, inicio, datos);
+    return datos;
+  } catch (error) {
+    anotarLlamada(llamadas, actividad, peticion.model, inicio, null, error);
+    throw error;
+  }
+}
+
+const aplanar = (objeto, prefijo = '') => Object.entries(objeto ?? {}).flatMap(([clave, valor]) =>
+  valor && typeof valor === 'object' ? aplanar(valor, `${prefijo}${clave}.`) : [[`${prefijo}${clave}`, valor ?? null]]);
+
+// Qué campos cambió una corrección respecto al informe anterior: [{ campo, antes, despues }].
+function compararInformes(anterior, nuevo) {
+  const antes = Object.fromEntries(aplanar(anterior)), despues = Object.fromEntries(aplanar(nuevo));
+  return [...new Set([...Object.keys(antes), ...Object.keys(despues)])]
+    .filter(campo => (antes[campo] ?? null) !== (despues[campo] ?? null))
+    .map(campo => ({ campo, antes: antes[campo] ?? null, despues: despues[campo] ?? null }));
+}
+
+// Nunca tumba el informe: si no se puede guardar, solo queda el aviso en la consola.
+async function guardarLog({ postulacionId, vacanteId, tipo, comentarios, llamadas, inicio, error, informe, cambios }) {
+  try {
+    const principal = llamadas.findLast(l => l.actividad === 'correccion' || l.actividad === 'analisis');
+    const costos    = llamadas.map(l => l.costo_usd).filter(costo => costo != null);
+    const supabase  = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+    const { error: errorGuardado } = await supabase.from(TABLA_LOG).insert({
+      postulacion_id: Number(postulacionId),
+      vacante_id:     Number(vacanteId) || null,
+      tipo:           tipo ?? null,
+      comentarios:    comentarios ? String(comentarios) : null,
+      modelo:         principal?.modelo ?? null,
+      costo_usd:      costos.length ? Number(costos.reduce((suma, costo) => suma + costo, 0).toFixed(6)) : null,
+      segundos:       Number(((Date.now() - inicio) / 1000).toFixed(1)),
+      error:          error ?? null,
+      informe:        informe ?? null,
+      llamadas,
+      cambios:        cambios ?? null,
+    });
+    if (errorGuardado) throw errorGuardado;
+  } catch (e) {
+    console.log(JSON.stringify({ etapa: 'guardar_log', estado: 'error', mensaje: e.message, postulacion_id: postulacionId }));
+  }
+}
+
 // Clasifica, con IA, cada pregunta contestada (venga de donde venga: formulario de
 // TeamTailor, formulario de evaluación o preguntas personalizadas de WhatsApp) según
 // la intención del catálogo que mejor le corresponda. Esto reemplaza el mapeo fijo de
 // IDs de pregunta -> etiqueta, así el informe funciona sin importar el formato exacto
 // de la entrevista o de la vacante.
-async function clasificarPreguntasPorIntencion(paresPreguntaRespuesta, catalogoIntenciones) {
+async function clasificarPreguntasPorIntencion(paresPreguntaRespuesta, catalogoIntenciones, llamadas) {
   if (!paresPreguntaRespuesta.length) return {};
 
   const listaPreguntas = paresPreguntaRespuesta.map((par, indice) => `${indice}: ${par.pregunta}`).join('\n');
@@ -232,15 +307,16 @@ async function clasificarPreguntasPorIntencion(paresPreguntaRespuesta, catalogoI
   const tool           = construirToolClasificacion(catalogoIntenciones);
 
   try {
-    const datos = await orChatCompletion({
-      model:    OPENROUTER_MODEL,
+    const datos = await llamarModelo(llamadas, 'clasificacion', {
+      model:     OPENROUTER_MODEL_AUXILIAR,
+      reasoning: RAZONAMIENTO_AUXILIAR,
       messages: [
         { role: 'system', content: 'Clasifica cada pregunta de una entrevista de candidato según la intención del catálogo que mejor le corresponda. Usa "NINGUNA" si la pregunta no corresponde a ninguna intención del catálogo.' },
         { role: 'user',   content: `Catálogo de intenciones:\n${catalogoTexto}\n\nPreguntas a clasificar:\n${listaPreguntas}` },
       ],
       tools:       [tool],
       tool_choice: { type: 'function', function: { name: 'clasificar_preguntas' } },
-    }, process.env.OPENROUTER_API_KEY_INFORMES);
+    });
 
     const llamada = datos?.choices?.[0]?.message?.tool_calls?.find(c => c.function?.name === 'clasificar_preguntas');
     if (!llamada) return {};
@@ -280,13 +356,14 @@ function construirBloqueRespuestasPorIntencion(paresPreguntaRespuesta, clasifica
   return lineas.length ? lineas.join('\n\n') : '(Sin respuestas disponibles)';
 }
 
-async function inferirGenero(nombreCompleto) {
-  const datos = await orChatCompletion({
-    model:       OPENROUTER_MODEL,
+async function inferirGenero(nombreCompleto, llamadas) {
+  const datos = await llamarModelo(llamadas, 'genero', {
+    model:       OPENROUTER_MODEL_AUXILIAR,
+    reasoning:   RAZONAMIENTO_AUXILIAR,
     messages:    [{ role: 'user', content: `Nombre del candidato: ${nombreCompleto}` }],
     tools:       [GENERO_TOOL],
     tool_choice: { type: 'function', function: { name: 'genero_candidato' } },
-  }, process.env.OPENROUTER_API_KEY_INFORMES);
+  });
 
   const llamada = datos?.choices?.[0]?.message?.tool_calls?.find(c => c.function?.name === 'genero_candidato');
   if (!llamada) return 'ninguno';
@@ -298,10 +375,10 @@ async function inferirGenero(nombreCompleto) {
 // Cuando el candidato no tiene foto de perfil en TeamTailor, le asignamos una
 // foto genérica según su género (inferido por IA a partir del nombre) para que
 // el informe siempre pueda generarse.
-async function asignarFotoGenerica(nombreCompleto, candidatoId) {
+async function asignarFotoGenerica(nombreCompleto, candidatoId, llamadas) {
   let genero = 'ninguno';
   try {
-    genero = await inferirGenero(nombreCompleto);
+    genero = await inferirGenero(nombreCompleto, llamadas);
   } catch (error) {
     console.log(JSON.stringify({ etapa: 'foto_generica', estado: 'error', mensaje: error.message, candidato_id: candidatoId }));
   }
@@ -413,18 +490,39 @@ function reconstruirAnalisisPrevio(respuestaAnterior) {
   };
 }
 
+// En una corrección, lo que el modelo haya dejado fuera se toma del informe anterior: una sección o un dato personal
+// que no viene en su respuesta no se pidió quitar (para quitarlo lo devolvería vacío, no lo omitiría).
+function completarConInformeAnterior(analisis, respuestaAnterior) {
+  const previo    = reconstruirAnalisisPrevio(respuestaAnterior);
+  const falta     = valor => valor === undefined || valor === null;
+  const completo  = { ...analisis, datos_personales: { ...(analisis.datos_personales ?? {}) } };
+  const repuestos = [];
+
+  for (const [seccion, valor] of Object.entries(previo)) {
+    if (seccion === 'datos_personales') continue;
+    if (falta(completo[seccion]) && !falta(valor)) { completo[seccion] = valor; repuestos.push(seccion); }
+  }
+  for (const [dato, valor] of Object.entries(previo.datos_personales)) {
+    if (falta(completo.datos_personales[dato]) && !falta(valor)) { completo.datos_personales[dato] = valor; repuestos.push(`datos_personales.${dato}`); }
+  }
+
+  if (repuestos.length) console.log(JSON.stringify({ etapa: 'correccion_incompleta', estado: 'completada', repuestos }));
+  return completo;
+}
+
 async function obtenerAnalisisEstructurado(bloqueCrudo, nombreCandidato, vacante, comentarios, respuestaAnterior, urlCurriculum, opciones = {}) {
   const {
     prompt     = PROMPT_ANALISIS_ESTRUCTURADO,
     tool       = INFORME_TOOL,
     nombreTool = 'informe_estructurado',
     reasoning  = { effort: 'medium' },
+    llamadas,
   } = opciones;
 
   let mensajeUsuario = `Candidato: ${nombreCandidato}\nVacante: ${vacante}\n\n${bloqueCrudo}`;
 
   if (comentarios) {
-    mensajeUsuario += `\n\n### COMENTARIOS_DE_CORRECCION_DEL_RECLUTADOR\nEste informe ya fue generado previamente y el reclutador solicitó una corrección. A continuación tienes el informe anterior (JSON) y los comentarios del reclutador sobre él. Compáralos: corrige ÚNICAMENTE lo que los comentarios indican, exactamente como se indica, y conserva sin cambios todo lo demás del informe anterior.`;
+    mensajeUsuario += `\n\n### COMENTARIOS_DE_CORRECCION_DEL_RECLUTADOR\nEste informe ya fue generado previamente y el reclutador solicitó una corrección. A continuación tienes el informe anterior (JSON) y los comentarios del reclutador sobre él. Tu respuesta es ESE MISMO informe con la corrección aplicada, no un informe nuevo:\n- Parte del informe anterior y copia cada campo tal cual está, palabra por palabra, salvo los que los comentarios piden cambiar.\n- Cambia ÚNICAMENTE lo que los comentarios indican, exactamente como se indica. No uses las respuestas del candidato para volver a redactar, completar ni "mejorar" ningún otro campo (nombre, cliente, vacante, domicilio, etc.), aunque te parezca que quedaría mejor.\n- En los textos largos (como "comentarios") no agregues, quites ni reformules frases. Solo toca la frase que el reclutador pide cambiar, o la que quedaría contradiciendo un dato corregido (por ejemplo, dice "soltero" y el reclutador corrigió a casado). Un dato corregido no se agrega al texto si antes no se mencionaba.\n- Si piden quitar un elemento de una lista, elimínalo y deja los demás idénticos y en el mismo orden.\n- "nombre", "cliente" y "vacante" se copian idénticos del informe anterior, salvo que los comentarios los mencionen expresamente.\n- Tu respuesta debe traer TODAS las secciones del informe anterior (ninguna se omite aunque no cambie).`;
 
     if (respuestaAnterior && typeof respuestaAnterior === 'object') {
       const informeAnteriorTexto = JSON.stringify(reconstruirAnalisisPrevio(respuestaAnterior));
@@ -437,12 +535,22 @@ async function obtenerAnalisisEstructurado(bloqueCrudo, nombreCandidato, vacante
   }
 
   async function llamarAnalisis(conCurriculum) {
+    for (let intento = 1; ; intento++) {
+      try {
+        return await pedirAnalisis(conCurriculum);
+      } catch (error) {
+        if (!error.sinHerramienta || intento >= INTENTOS_ANALISIS) throw error;
+      }
+    }
+  }
+
+  async function pedirAnalisis(conCurriculum) {
     const adjuntoCurriculum = conCurriculum && urlCurriculum?.trim()
       ? [{ type: 'file', file: { filename: 'curriculum.pdf', file_data: urlCurriculum } }]
       : [];
 
-    const datos = await orChatCompletion({
-      model:      OPENROUTER_MODEL,
+    const datos = await llamarModelo(llamadas, comentarios ? 'correccion' : 'analisis', {
+      model:      comentarios ? OPENROUTER_MODEL_AUXILIAR : OPENROUTER_MODEL,
       ...(adjuntoCurriculum.length > 0 && { plugins: [{ id: 'file-parser', pdf: { engine: 'mistral-ocr' } }] }),
       messages: [
         { role: 'system', content: prompt },
@@ -455,10 +563,10 @@ async function obtenerAnalisisEstructurado(bloqueCrudo, nombreCandidato, vacante
         },
       ],
       tools:       [tool],
-      tool_choice: { type: 'function', function: { name: nombreTool } },
-      reasoning,
+      tool_choice: 'auto',
+      reasoning:   comentarios ? RAZONAMIENTO_CORRECCION : reasoning,
       max_tokens:  100000,
-    }, process.env.OPENROUTER_API_KEY_INFORMES);
+    });
 
     const opcion = datos?.choices?.[0];
     const llamada = opcion?.message?.tool_calls?.find(c => c.function?.name === nombreTool);
@@ -470,7 +578,7 @@ async function obtenerAnalisisEstructurado(bloqueCrudo, nombreCandidato, vacante
 
     if (!llamada) {
       console.log(JSON.stringify({ etapa: 'analisis_estructurado_sin_tool_call', respuesta: datos }));
-      throw new Error('OpenRouter no devolvió una respuesta estructurada válida');
+      throw Object.assign(new Error('OpenRouter no devolvió una respuesta estructurada válida'), { sinHerramienta: true });
     }
 
     const argumentos = llamada.function.arguments;
@@ -491,7 +599,7 @@ async function obtenerAnalisisEstructurado(bloqueCrudo, nombreCandidato, vacante
   }
 }
 
-async function retocarFoto(urlFoto, candidatoId) {
+async function retocarFoto(urlFoto, candidatoId, llamadas) {
   // TeamTailor sirve estas fotos desde un bucket S3/CloudFront que bloquea peticiones
   // HEAD (403), y el validador de URLs de OpenRouter/Gemini rechaza la URL cruda por eso
   // ("Unsupported URL, public internet addresses only") aunque un GET normal sí funciona.
@@ -502,6 +610,7 @@ async function retocarFoto(urlFoto, candidatoId) {
   const bufferFotoOriginal = Buffer.from(await respuestaFoto.arrayBuffer());
   const dataUrlFoto = `data:${tipoFoto};base64,${bufferFotoOriginal.toString('base64')}`;
 
+  const inicio = Date.now();
   const datos = await orGenerarImagen({
     model:          OPENROUTER_MODEL_IMAGEN,
     prompt:         PROMPT_RETOQUE_FOTO,
@@ -512,6 +621,7 @@ async function retocarFoto(urlFoto, candidatoId) {
       { type: 'image_url', image_url: { url: dataUrlFoto } },
     ],
   }, process.env.OPENROUTER_API_KEY_INFORMES);
+  anotarLlamada(llamadas, 'retoque_foto', OPENROUTER_MODEL_IMAGEN, inicio, datos);
 
   const imagen = datos?.data?.[0];
   if (!imagen?.b64_json) throw new Error('OpenRouter no devolvió una imagen válida');
@@ -592,6 +702,10 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Los campos 'postulacion' y 'vacante' son requeridos" });
   }
 
+  const inicio   = Date.now();
+  const llamadas = [];
+  let tipoInforme = null;
+
   try {
     const candidatoCrudo = await ttObtener(`/job-applications/${postulacionId}/candidate`, true);
     const datosCandidato = candidatoCrudo.data;
@@ -610,7 +724,7 @@ export default async function handler(req, res) {
 
     if (!urlFoto) {
       console.log(JSON.stringify({ etapa: 'validacion', estado: 'sin_foto', mensaje: 'candidato sin foto de perfil, asignando foto genérica', postulacion_id: postulacionId }));
-      urlFoto = await asignarFotoGenerica(nombreCompleto, candidatoId);
+      urlFoto = await asignarFotoGenerica(nombreCompleto, candidatoId, llamadas);
     }
 
     const datosVacante   = await ttObtener(`/jobs/${vacanteId}`, true);
@@ -627,6 +741,7 @@ export default async function handler(req, res) {
     const nombreReclutador = extraerNombreReclutador(datosReclutador);
     const idReclutador   = extraerIdReclutador(datosReclutador);
     const esOperativo    = idReclutador != null && RECLUTADORES_OPERATIVA.has(idReclutador);
+    tipoInforme = esOperativo ? 'operativo' : 'administrativo';
 
     // Candidatos en "Inbox" no pasan por entrevista presencial: el informe se arma solo con
     // sus respuestas de evaluación/postulación, y se marca con este flag para que el consumidor
@@ -651,7 +766,7 @@ export default async function handler(req, res) {
       .filter(([, respuesta]) => respuesta != null && String(respuesta).trim() !== '')
       .map(([pregunta, respuesta]) => ({ pregunta, respuesta: String(respuesta) }));
 
-    const clasificacionPorIndice = await clasificarPreguntasPorIntencion(paresPreguntaRespuesta, catalogoIntenciones);
+    const clasificacionPorIndice = await clasificarPreguntasPorIntencion(paresPreguntaRespuesta, catalogoIntenciones, llamadas);
     const bloqueCrudo = construirBloqueRespuestasPorIntencion(paresPreguntaRespuesta, clasificacionPorIndice, catalogoIntenciones);
 
     console.log(JSON.stringify({
@@ -693,18 +808,21 @@ export default async function handler(req, res) {
     }
 
     console.log(JSON.stringify({ etapa: 'analisis_ia', candidato: nombreCompleto, vacante: nombreInterno, tipo: esOperativo ? 'operativo' : 'estandar', con_cv: !!urlCurriculumAnalisis }));
-    const analisis = await obtenerAnalisisEstructurado(bloqueCrudo, nombreCompleto, nombreInterno, comentarios, respuestaAnterior, urlCurriculumAnalisis, esOperativo ? {
+    const analisisDelModelo = await obtenerAnalisisEstructurado(bloqueCrudo, nombreCompleto, nombreInterno, comentarios, respuestaAnterior, urlCurriculumAnalisis, esOperativo ? {
       prompt:     PROMPT_ANALISIS_ESTRUCTURADO_OPERATIVO,
       tool:       INFORME_TOOL_OPERATIVO,
       nombreTool: 'informe_operativo_estructurado',
-      reasoning:  { effort: 'high' },
-    } : {});
+      llamadas,
+    } : { llamadas });
+    const analisis = comentarios && respuestaAnterior && typeof respuestaAnterior === 'object'
+      ? completarConInformeAnterior(analisisDelModelo, respuestaAnterior)
+      : analisisDelModelo;
 
     let fotoFinal = urlFoto;
     if (mejorarFoto) {
       console.log(JSON.stringify({ etapa: 'retoque_foto', candidato: nombreCompleto, postulacion_id: postulacionId }));
       try {
-        fotoFinal = await retocarFoto(urlFoto, candidatoId);
+        fotoFinal = await retocarFoto(urlFoto, candidatoId, llamadas);
       } catch (error) {
         console.log(JSON.stringify({ etapa: 'retoque_foto', estado: 'error', mensaje: error.message, postulacion_id: postulacionId }));
         fotoFinal = urlFoto;
@@ -727,22 +845,32 @@ export default async function handler(req, res) {
 
     console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', candidato: nombreCompleto, postulacion_id: postulacionId, en_etapa_inbox: enEtapaInbox }));
 
-    return res.status(200).json({
-      tipo:        esOperativo ? 'operativo' : 'administrativo',
+    const informe = {
+      tipo:        tipoInforme,
       simple:      camposSimples,
       trayectoria: analisis.trayectoria ?? [],
       ...(esOperativo ? {} : {
         apego_vacante: analisis.apego_vacante ?? [],
         competencias:  analisis.competencias ?? [],
       }),
-      ...(urlCurriculumFinal ? { curriculum: urlCurriculumFinal } : {}),
       ...(nombreReclutador ? { reclutador: nombreReclutador } : {}),
       ...(esOperativo && telefonoLocal ? { telefono: telefonoLocal } : {}),
       ...(enEtapaInbox ? { inbox: true } : {}),
+    };
+
+    // Se guarda antes de responder (después, Vercel puede congelar la función). El enlace del CV no se guarda: caduca.
+    await guardarLog({
+      postulacionId, vacanteId, tipo: tipoInforme, comentarios, llamadas, inicio, informe,
+      cambios: comentarios && respuestaAnterior && typeof respuestaAnterior === 'object'
+        ? compararInformes(reconstruirAnalisisPrevio(respuestaAnterior), reconstruirAnalisisPrevio(informe))
+        : null,
     });
+
+    return res.status(200).json({ ...informe, ...(urlCurriculumFinal ? { curriculum: urlCurriculumFinal } : {}) });
 
   } catch (error) {
     console.log(JSON.stringify({ etapa: 'error', estado: 'error', postulacion_id: postulacionId, mensaje: error.message }));
+    await guardarLog({ postulacionId, vacanteId, tipo: tipoInforme, comentarios, llamadas, inicio, error: error.message });
     return res.status(500).json({ error: error.message });
   }
 }
