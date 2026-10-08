@@ -140,7 +140,8 @@ test('crear una vacante: resumen con imagen y anuncio, y se publica una sola vez
   assert.equal(imagenes.enviadas.length, 1);
   assert.match(imagenes.enviadas[0].url, /^https:\/\/firmada\.test\//);
   assert.match(imagenes.enviadas[0].texto, /^Empresa busca almacenista\.[\s\S]*\*Ofrecemos:\*/);
-  assert.equal(entorno.mensajes.at(-1), 'Este es el resumen.\n\n¿Confirmas que la suba a TeamTailor?');
+  // Ya existe "Península - Almacenista" (555555): se le avisa antes del resumen, sin impedirle confirmar.
+  assert.equal(entorno.mensajes.at(-1), 'Ojo: ya hay una vacante publicada igual: Península - Almacenista (ID 555555). Si es otra distinta, confirma y la subo; si no, dime y la descartamos.\n\nEste es el resumen.\n\n¿Confirmas que la suba a TeamTailor?');
   assert.match(entorno.peticionesModelo.at(-1).usuario, /Borrador de vacante en curso:\n\(ninguno\)/);
   assert.equal(creaciones(), 0);
 

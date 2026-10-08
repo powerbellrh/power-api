@@ -24,6 +24,12 @@ class Consulta {
   neq(columna, valor)      { this.filtros.push(f => f[columna] !== valor); return this; }
   in(columna, valores)     { this.filtros.push(f => valores.includes(f[columna])); return this; }
   is(columna, valor)       { this.filtros.push(f => (f[columna] ?? null) === valor); return this; }
+  like(columna, patron) {
+    const literal = parte => parte.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex   = new RegExp(`^${patron.split('%').map(literal).join('.*')}$`);
+    this.filtros.push(f => regex.test(String(f[columna] ?? '')));
+    return this;
+  }
   order(columna, { ascending = true } = {}) { this.orden = { columna, ascending }; return this; }
   limit(cantidad)          { this.limite = cantidad; return this; }
   single()                 { this.modo = 'una'; return this; }
