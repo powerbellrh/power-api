@@ -235,3 +235,67 @@ test('con una vacante a medias o una acción por confirmar no se le pregunta a j
   assert.equal(libre.cambio, true);
   assert.deepEqual(libre.contexto.lineas, []);
 });
+
+// ── Vacantes operativas y administrativas ────────────────────────────────────
+
+const conTipos = () => {
+  nuevoEntorno();
+  const [peninsula, cajero, gerente] = entorno.supabase.tablas.vacantes;
+  Object.assign(peninsula, { tipo: 'Operativa' });
+  Object.assign(cajero, { tipo: 'Operativa' });
+  Object.assign(gerente, { tipo: 'Administrativa', estatus: 'Publicada' });
+};
+
+test('tipo de vacante: las estadísticas y los listados se pueden pedir solo de operativas o de administrativas', async () => {
+  conTipos();
+  const vacias = async ruta => (/stages$/.test(ruta) ? RESPUESTAS_TT['/jobs/555555/stages'] : { meta: { 'page-count': 1 }, data: [postulacion('1', '2026-10-06T18:00:00Z')] });
+
+  // Publicadas: Península - Almacenista (operativa) y Oxxo - Gerente (administrativa). Tres etapas, una postulación en cada una.
+  const operativas = await estadisticasPostulaciones(entorno.supabase, { vacante_id: 0, tipo: 'operativa' }, { consultar: vacias, pausaMs: 0 });
+  assert.deepEqual({ solo: operativas.solo_vacantes, vacantes: operativas.vacantes_consultadas, total: operativas.total }, { solo: 'Operativas', vacantes: 1, total: 3 });
+
+  const porTipo = await estadisticasPostulaciones(entorno.supabase, { vacante_id: 0, agrupar_por: 'tipo' }, { consultar: vacias, pausaMs: 0 });
+  assert.deepEqual(porTipo.grupos.sort((a, b) => a.grupo.localeCompare(b.grupo)), [{ grupo: 'Administrativas', cantidad: 3 }, { grupo: 'Operativas', cantidad: 3 }]);
+  assert.equal((await estadisticasPostulaciones(entorno.supabase, { vacante_id: 555555 }, { consultar: vacias, pausaMs: 0 })).tipo_de_vacante, 'Operativas');
+  assert.match((await estadisticasPostulaciones(entorno.supabase, { tipo: 'mixta' }, { pausaMs: 0 })).error, /tipo debe ser uno de/);
+
+  entorno.encolarModelo('agente',
+    cierre('consultar_estadisticas', { recurso: 'vacantes', vacante_id: 0, desde: '', hasta: '', agrupar_por: 'tipo', tipo: 'todas' }),
+    cierre('consultar_estadisticas', { recurso: 'vacantes', vacante_id: 0, desde: '', hasta: '', agrupar_por: 'ninguna', tipo: 'administrativa' }),
+    cierre('listar_vacantes', { texto: '', filtro: 'todas', tipo: 'administrativa' }),
+    cierre('buscar_vacantes', { texto: 'oxxo' }), responder('Listo.'));
+  await escribir('cuántas vacantes operativas y administrativas tenemos?');
+  const [vacantesPorTipo, administrativas, listadas, encontradas] = resultados();
+  assert.deepEqual(vacantesPorTipo.grupos, [{ grupo: 'Operativas', cantidad: 2 }, { grupo: 'Administrativas', cantidad: 1 }]);
+  assert.deepEqual({ solo: administrativas.solo_vacantes, total: administrativas.total }, { solo: 'Administrativas', total: 1 });
+  assert.deepEqual(listadas.vacantes.map(vacante => [vacante.nombre_interno, vacante.tipo]), [['Oxxo - Gerente', 'Administrativas']]);
+  assert.deepEqual(encontradas.vacantes.map(vacante => vacante.tipo).sort(), ['Administrativas', 'Operativas']);
+});
+
+test('una vacante sin tipo guardado se cuenta como "Sin tipo" y no entra en operativas ni administrativas', async () => {
+  nuevoEntorno(); // la semilla no trae tipo
+  const todas = await (await import('../lib/chatbot/reclutador/estadisticas.js')).estadisticasVacantes(entorno.supabase, { agrupar_por: 'tipo' });
+  assert.deepEqual(todas.grupos, [{ grupo: 'Sin tipo', cantidad: 3 }]);
+  assert.equal((await (await import('../lib/chatbot/reclutador/estadisticas.js')).estadisticasVacantes(entorno.supabase, { tipo: 'operativa' })).total, 0);
+});
+
+// ── Lo que queda en la tabla eventos ─────────────────────────────────────────
+
+test('el reinicio y la compactación del contexto se mandan a guardar en eventos, con el texto de la conversación', async () => {
+  const eventos = [];
+  const log = (etapa, datos) => eventos.push({ etapa, ...datos });
+  const historial = Array.from({ length: 20 }, (_, i) => `[2026-10-09 10:${String(i).padStart(2, '0')}:00] ${i % 2 ? 'agente' : 'reclutador'}: mensaje secreto ${i}`).join('\n');
+
+  await prepararMemoria({ historial, mensaje: 'hola', hayEstado: false, resumir: async () => 'resumen corto', log });
+  await prepararMemoria({ historial, mensaje: 'otra cosa', hayEstado: false, continuidad: async () => ({ nueva: 0.97, continua: 0.03 }), log });
+
+  assert.deepEqual(eventos.map(evento => [evento.etapa, evento.estado, evento.guardar]), [['contexto_compactado', 'ok', true], ['contexto_reiniciado', 'ok', true]]);
+  assert.deepEqual({ resumidas: eventos[0].lineas_resumidas, conservadas: eventos[0].lineas_conservadas, resumen: eventos[0].caracteres_del_resumen }, { resumidas: 14, conservadas: 6, resumen: 13 });
+  assert.deepEqual({ descartadas: eventos[1].lineas_descartadas, probabilidad: eventos[1].probabilidad_operacion_nueva }, { descartadas: 20, probabilidad: 0.97 });
+  // El texto va completo, para poder revisar después qué se resumió o se descartó.
+  assert.equal(eventos[0].conversacion.mensajes_resumidos.length, 14);
+  assert.match(eventos[0].conversacion.mensajes_resumidos[0], /reclutador: mensaje secreto 0$/);
+  assert.equal(eventos[0].conversacion.resumen_nuevo, 'resumen corto');
+  assert.equal(eventos[1].conversacion.mensaje_nuevo, 'otra cosa');
+  assert.equal(eventos[1].conversacion.mensajes_descartados.length, 20);
+});

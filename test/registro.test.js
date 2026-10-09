@@ -112,3 +112,17 @@ test('un mensaje del modelo que rechazan los guardrails queda registrado con la 
   const rechazo = registro.pendientes.find(evento => evento.etapa === 'guardrail');
   assert.deepEqual({ estado: rechazo.estado, reglas: rechazo.detalle.reglas, paso: rechazo.detalle.paso }, { estado: 'rechazado', reglas: ['frase_prohibida'], paso: 'nombre' });
 });
+
+test('un evento con `guardar: true` se junta aunque no sea un fallo, y la marca no se imprime ni se guarda', async () => {
+  const { registro, lineas } = registroDePrueba();
+  registro.log('contexto_compactado', { estado: 'ok', guardar: true, lineas_resumidas: 12 });
+  registro.log('agente_reclutador', { estado: 'ok' });
+
+  assert.equal('guardar' in lineas[0], false);
+  assert.deepEqual(registro.pendientes, [{ origen: 'conversaciones', etapa: 'contexto_compactado', estado: 'ok', referencia: '4242', detalle: { lineas_resumidas: 12 } }]);
+
+  const insertados = [];
+  await registro.guardar({ from: tabla => ({ insert: async filas => { insertados.push({ tabla, filas }); return { error: null }; } }) });
+  assert.equal(insertados[0].tabla, 'eventos');
+  assert.equal(insertados[0].filas[0].etapa, 'contexto_compactado');
+});

@@ -111,7 +111,7 @@ test('ver una vacante: se le manda tal como la ve el candidato, sin pasar por la
 
   await escribir('enséñame la de almacenista de península');
   const [busqueda, vista] = resultadosDeHerramientas();
-  assert.deepEqual(busqueda.vacantes, [{ id: 555555, nombre_interno: 'Península - Almacenista', titulo: 'Almacenista', estatus: 'Publicada' }]);
+  assert.deepEqual(busqueda.vacantes, [{ id: 555555, nombre_interno: 'Península - Almacenista', titulo: 'Almacenista', estatus: 'Publicada', tipo: 'Sin tipo' }]);
   assert.deepEqual(vista.preguntas_al_candidato, ['¿Cuentas con licencia?']);
   assert.deepEqual(entorno.mensajes, ['Así la ve el candidato:\n\nAquí tienes la información de la vacante 👇:\n\n*Vacante:* Almacenista']);
 });
