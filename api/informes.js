@@ -270,7 +270,7 @@ function compararInformes(anterior, nuevo) {
 }
 
 // Nunca tumba el informe: si no se puede guardar, solo queda el aviso en la consola.
-async function guardarLog({ postulacionId, vacanteId, tipo, comentarios, llamadas, inicio, error, informe, cambios }) {
+async function guardarLog({ postulacionId, vacanteId, reclutador, tipo, comentarios, llamadas, inicio, error, informe, cambios }) {
   try {
     // Ejemplo: "clasificacion: glm-5.3-flash, analisis: claude-opus-5.5". Sin el proveedor, para que se lea de un vistazo.
     const modelos   = [...new Set(llamadas.map(l => `${l.actividad}: ${String(l.modelo).split('/').pop()}`))].join(', ');
@@ -279,6 +279,8 @@ async function guardarLog({ postulacionId, vacanteId, tipo, comentarios, llamada
     const { error: errorGuardado } = await supabase.from(TABLA_LOG).insert({
       postulacion_id: Number(postulacionId),
       vacante_id:     Number(vacanteId) || null,
+      reclutador_id:  reclutador?.id ?? null,
+      reclutador:     reclutador?.nombre ?? null,
       tipo:           tipo ?? null,
       comentarios:    comentarios ? String(comentarios) : null,
       modelo:         modelos || null,
@@ -706,6 +708,7 @@ export default async function handler(req, res) {
   const inicio   = Date.now();
   const llamadas = [];
   let tipoInforme = null;
+  let reclutadorVacante = null; // { id, nombre } del reclutador asignado a la vacante, para el registro
 
   try {
     const candidatoCrudo = await ttObtener(`/job-applications/${postulacionId}/candidate`, true);
@@ -741,6 +744,7 @@ export default async function handler(req, res) {
     }
     const nombreReclutador = extraerNombreReclutador(datosReclutador);
     const idReclutador   = extraerIdReclutador(datosReclutador);
+    reclutadorVacante    = { id: idReclutador, nombre: nombreReclutador };
     const esOperativo    = idReclutador != null && RECLUTADORES_OPERATIVA.has(idReclutador);
     tipoInforme = esOperativo ? 'operativo' : 'administrativo';
 
@@ -861,7 +865,7 @@ export default async function handler(req, res) {
 
     // Se guarda antes de responder (después, Vercel puede congelar la función). El enlace del CV no se guarda: caduca.
     await guardarLog({
-      postulacionId, vacanteId, tipo: tipoInforme, comentarios, llamadas, inicio, informe,
+      postulacionId, vacanteId, reclutador: reclutadorVacante, tipo: tipoInforme, comentarios, llamadas, inicio, informe,
       cambios: comentarios && respuestaAnterior && typeof respuestaAnterior === 'object'
         ? compararInformes(reconstruirAnalisisPrevio(respuestaAnterior), reconstruirAnalisisPrevio(informe))
         : null,
@@ -871,7 +875,7 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.log(JSON.stringify({ etapa: 'error', estado: 'error', postulacion_id: postulacionId, mensaje: error.message }));
-    await guardarLog({ postulacionId, vacanteId, tipo: tipoInforme, comentarios, llamadas, inicio, error: error.message });
+    await guardarLog({ postulacionId, vacanteId, reclutador: reclutadorVacante, tipo: tipoInforme, comentarios, llamadas, inicio, error: error.message });
     return res.status(500).json({ error: error.message });
   }
 }
