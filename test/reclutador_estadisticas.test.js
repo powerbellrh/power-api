@@ -5,7 +5,7 @@ import { FLUJOS } from '../lib/chatbot/manychat.js';
 import { procesarConversacion } from '../lib/chatbot/orquestador.js';
 import { estadisticasPostulaciones } from '../lib/chatbot/reclutador/estadisticas.js';
 import { crearEjecutor } from '../lib/chatbot/reclutador/herramientas.js';
-import { LINEAS_CONSERVADAS, prepararMemoria } from '../lib/chatbot/reclutador/memoria.js';
+import { LIMITE_LINEAS, LINEAS_CONSERVADAS, prepararMemoria } from '../lib/chatbot/reclutador/memoria.js';
 import { crearEntornoConversaciones } from './entorno_conversaciones.js';
 
 const TELEFONO = '5213312345678';
@@ -202,18 +202,20 @@ test('si jev dice que es continuación (o no contesta), el contexto se conserva'
   assert.equal(estado().memoria, undefined);
 });
 
+const MUCHAS = LIMITE_LINEAS + 10; // líneas de un historial que ya pasa el límite
+
 test('compactación automática: lo viejo se resume y solo quedan los últimos mensajes', async () => {
-  const lineas = Array.from({ length: 20 }, (_, i) => `[2026-10-09 10:${String(i).padStart(2, '0')}:00] ${i % 2 ? 'agente' : 'reclutador'}: mensaje ${i}`);
+  const lineas = Array.from({ length: MUCHAS }, (_, i) => `[2026-10-09 10:00:00] ${i % 2 ? 'agente' : 'reclutador'}: mensaje ${i}`);
   const historial = lineas.join('\n');
   const resumidas = [];
   const resumir = async ({ resumenPrevio, lineas: porResumir }) => { resumidas.push(...porResumir); return `${resumenPrevio} resumen`.trim(); };
 
   const primera = await prepararMemoria({ historial, mensaje: 'hola', hayEstado: false, resumir, log: () => {} });
   assert.equal(primera.cambio, true);
-  assert.equal(resumidas.length, 20 - LINEAS_CONSERVADAS);
+  assert.equal(resumidas.length, MUCHAS - LINEAS_CONSERVADAS);
   assert.equal(primera.contexto.resumen, 'resumen');
   assert.equal(primera.contexto.lineas.length, LINEAS_CONSERVADAS);
-  assert.match(primera.contexto.lineas[0], /mensaje 14/);
+  assert.ok(primera.contexto.lineas[0].endsWith(`mensaje ${MUCHAS - LINEAS_CONSERVADAS}`));
 
   // Sin pasar el límite no vuelve a resumir; si el resumen falla, el contexto queda como estaba.
   const igual = await prepararMemoria({ historial, memoria: primera.memoria, mensaje: 'hola', hayEstado: false, resumir, log: () => {} });
@@ -284,18 +286,18 @@ test('una vacante sin tipo guardado se cuenta como "Sin tipo" y no entra en oper
 test('el reinicio y la compactación del contexto se mandan a guardar en eventos, con el texto de la conversación', async () => {
   const eventos = [];
   const log = (etapa, datos) => eventos.push({ etapa, ...datos });
-  const historial = Array.from({ length: 20 }, (_, i) => `[2026-10-09 10:${String(i).padStart(2, '0')}:00] ${i % 2 ? 'agente' : 'reclutador'}: mensaje secreto ${i}`).join('\n');
+  const historial = Array.from({ length: MUCHAS }, (_, i) => `[2026-10-09 10:00:00] ${i % 2 ? 'agente' : 'reclutador'}: mensaje secreto ${i}`).join('\n');
 
   await prepararMemoria({ historial, mensaje: 'hola', hayEstado: false, resumir: async () => 'resumen corto', log });
   await prepararMemoria({ historial, mensaje: 'otra cosa', hayEstado: false, continuidad: async () => ({ nueva: 0.97, continua: 0.03 }), log });
 
   assert.deepEqual(eventos.map(evento => [evento.etapa, evento.estado, evento.guardar]), [['contexto_compactado', 'ok', true], ['contexto_reiniciado', 'ok', true]]);
-  assert.deepEqual({ resumidas: eventos[0].lineas_resumidas, conservadas: eventos[0].lineas_conservadas, resumen: eventos[0].caracteres_del_resumen }, { resumidas: 14, conservadas: 6, resumen: 13 });
-  assert.deepEqual({ descartadas: eventos[1].lineas_descartadas, probabilidad: eventos[1].probabilidad_operacion_nueva }, { descartadas: 20, probabilidad: 0.97 });
+  assert.deepEqual({ resumidas: eventos[0].lineas_resumidas, conservadas: eventos[0].lineas_conservadas, resumen: eventos[0].caracteres_del_resumen }, { resumidas: MUCHAS - LINEAS_CONSERVADAS, conservadas: LINEAS_CONSERVADAS, resumen: 13 });
+  assert.deepEqual({ descartadas: eventos[1].lineas_descartadas, probabilidad: eventos[1].probabilidad_operacion_nueva }, { descartadas: MUCHAS, probabilidad: 0.97 });
   // El texto va completo, para poder revisar después qué se resumió o se descartó.
-  assert.equal(eventos[0].conversacion.mensajes_resumidos.length, 14);
+  assert.equal(eventos[0].conversacion.mensajes_resumidos.length, MUCHAS - LINEAS_CONSERVADAS);
   assert.match(eventos[0].conversacion.mensajes_resumidos[0], /reclutador: mensaje secreto 0$/);
   assert.equal(eventos[0].conversacion.resumen_nuevo, 'resumen corto');
   assert.equal(eventos[1].conversacion.mensaje_nuevo, 'otra cosa');
-  assert.equal(eventos[1].conversacion.mensajes_descartados.length, 20);
+  assert.equal(eventos[1].conversacion.mensajes_descartados.length, MUCHAS);
 });

@@ -101,7 +101,8 @@ test('criterios discriminatorios: no se guardan, se le avisa y no se publican en
   assert.match(entorno.peticionesModelo.at(-1).usuario, /sistema: CORRIGE: No registres criterios por sexo, edad/);
   assert.equal(borrador().contexto, 'Busca perfil con experiencia.');
   assert.doesNotMatch(borrador().descripcion, /Mujer joven/);
-  assert.match(todo(), /^Ojo: no puedo registrar criterios por sexo, edad/);
+  // Antes de generar la imagen se le avisa que va a tardar.
+  assert.match(todo(), /^Un momento, estoy trabajando en ello\.\n\nOjo: no puedo registrar criterios por sexo, edad/);
 });
 
 test('el nombre del cliente en el anuncio se corrige con un reintento, y si el modelo insiste se quita en código', async () => {
@@ -259,6 +260,23 @@ test('fichas de clientes: viven en la tabla empresas; se completan sin borrar y 
   await escribir('Oxxo es una cadena de tiendas de conveniencia');
   assert.equal(entorno.supabase.tablas.empresas.find(empresa => empresa.nombre === 'Oxxo').giro, 'tiendas de conveniencia');
 
+  // Las notas se suman (sin repetir la misma); con reemplazar_notas quedan solo las nuevas.
+  const guardarNota = (notas, extra = {}) => cierre('guardar_ficha_cliente', { cliente: 'Península', giro: '', notas, reemplazar_notas: false, ...extra });
+  entorno.encolarModelo('agente', guardarNota('Oficinas cerca de La Gran Plaza'), guardarNota('PIDE BUENA PRESENTACIÓN.'), responder('Listo.'));
+  await escribir('anota que las oficinas están cerca de La Gran Plaza');
+  assert.equal(entorno.supabase.tablas.empresas[0].notas, 'pide buena presentación\nOficinas cerca de La Gran Plaza');
+  entorno.encolarModelo('agente', guardarNota('Oficinas en Providencia', { reemplazar_notas: true }), guardarNota('x'.repeat(4100)), responder('Listo.'));
+  await escribir('corrige: las oficinas están en Providencia y ya no piden lo de la presentación');
+  assert.equal(entorno.supabase.tablas.empresas[0].notas, 'Oficinas en Providencia');
+  assert.match(resultadosDeHerramientas().at(-1).error, /ya no tiene espacio/);
+
+  // Un nombre incompleto encuentra al cliente si solo uno lo contiene; si son varios, pide aclarar.
+  entorno.supabase.tablas.empresas.push({ id: 7, nombre: 'Convert Solutions', giro: 'manufactura automotriz', notas: '' }, { id: 8, nombre: 'Grupo San Carlos', giro: '', notas: '' }, { id: 9, nombre: 'Grupo Supplier', giro: '', notas: '' });
+  entorno.encolarModelo('agente', cierre('ver_ficha_cliente', { cliente: 'convert' }), cierre('ver_ficha_cliente', { cliente: 'Grupo' }), responder('Listo.'));
+  await escribir('qué sabes de convert?');
+  assert.equal(resultadosDeHerramientas().at(-2).ficha.giro, 'manufactura automotriz');
+  assert.match(resultadosDeHerramientas().at(-1).nota, /Grupo San Carlos, Grupo Supplier/);
+
   // Sin las columnas (todavía no se corre el SQL) el agente sigue: la consulta avisa y no truena.
   entorno.supabase.fallar = (operacion, tabla) => tabla === 'empresas';
   entorno.encolarModelo('agente', cierre('ver_ficha_cliente', { cliente: 'Oxxo' }), responder('Sin ficha.'));
@@ -358,7 +376,7 @@ test('editar el anuncio: se muestra el anuncio nuevo, y se revisan las mismas re
   await escribir('sí');
   assert.equal(parches(/^\/jobs\/555555$/)[0].cuerpo.data.attributes.body, nuevo);
   assert.equal(entorno.supabase.tablas.vacantes.find(v => v.id_team_tailor === 555555).descripcion, nuevo);
-  assert.equal(entorno.mensajes.at(-1), 'Listo, actualicé la vacante 555555 en TeamTailor.');
+  assert.equal(entorno.mensajes.at(-1), 'Listo, actualicé la vacante 555555 en TeamTailor: anuncio.');
 
   // Un sueldo que ella no dijo, o el nombre del cliente, no se dejan pasar: el agente recibe el error.
   nuevoEntorno();
