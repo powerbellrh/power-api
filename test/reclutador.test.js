@@ -206,11 +206,12 @@ test('pedir cancelar la vacante a medias la descarta al instante, sin llamar al 
   assert.equal(llamadasAlAgente(), antes);
   assert.match(entorno.peticionesDecision.at(-1).state.ultimo_mensaje_del_asistente, /Confirmas que la suba/);
 
-  // Ya sin vacante a medias no se consulta al clasificador.
-  const decisiones = entorno.peticionesDecision.length;
+  // Ya sin vacante a medias no se consulta el clasificador de la vacante (sí el de continuidad, que decide si se reinicia el contexto).
+  const deIntencion = () => entorno.peticionesDecision.filter(peticion => 'intencion' in peticion.questions).length;
+  const decisiones = deIntencion();
   entorno.encolarModelo('agente', responder('Hola.'));
   await escribir('hola');
-  assert.equal(entorno.peticionesDecision.length, decisiones);
+  assert.equal(deIntencion(), decisiones);
 });
 
 test('cancelar y pedir otra cosa en el mismo mensaje: se descarta y el agente atiende lo otro con el borrador vacío', async () => {
