@@ -128,6 +128,35 @@ test('postulación completa: se guarda en Supabase, se sincroniza con TeamTailor
   assert.equal(conversacion().temporal.sync.candado, undefined, 'el candado se liberó');
 });
 
+test('si el candidato completa su empleo cuando ya va en las preguntas extra, la experiencia se vuelve a copiar a Supabase y a TeamTailor', async () => {
+  entorno = crearEntornoConversaciones({ tablas: { ...semilla(), preguntas_seleccionadas: [] } });
+  const actividades = 'Limpieza de áreas comunes';
+  entorno.encolarModelo('extraer_nombre',    { nombre: 'Ana López', genero: 'Mujer' });
+  entorno.encolarModelo('extraer_domicilio', { calle: 'Vallarta 1234', colonia: 'Americana', municipio: 'Guadalajara' });
+  entorno.encolarModelo('extraer_empleos',
+    { empleos: [{ empresa: '', puesto: '', actividades }] },
+    { empleos: [{ empresa: 'Recal', puesto: '', actividades }] },
+    { empleos: [{ empresa: 'Recal', puesto: 'Auxiliar de limpieza', actividades }] });
+  entorno.encolarModelo('generar_preguntas', { preguntas: extrasDePrueba });
+
+  await recepcion('Hola, me interesa la vacante #555555');
+  for (const texto of ['Me llamo Ana López', '28', 'Vallarta 1234, Americana, Guadalajara', 'Actividades de limpieza de areas comunes', 'Recal']) await enviarMensaje(texto);
+  assert.equal(conversacion().paso, 'extras');
+
+  entorno.encolarDecision({ tipo: { probabilities: { responde: 0.05, duda: 0, desiste: 0, otra_cosa: 0.95 } } });
+  await enviarMensaje('Aux de limpieza');
+  assert.equal(entorno.mensajes.at(-1), `Gracias, ya lo agregué a tu experiencia. ${extrasDePrueba[0]}`);
+
+  const completa = `Recal - Auxiliar de limpieza - ${actividades}`;
+  assert.equal(entorno.supabase.tablas.postulaciones[0].experiencia_laboral, completa);
+  const enviadas = tipos('POST', /^\/answers$/).filter(l => l.cuerpo.data.relationships.question.data.id === '83118').map(l => l.cuerpo.data.attributes.text);
+  assert.deepEqual(enviadas, [`Recal - (puesto no indicado) - ${actividades}`, completa]);
+  assert.ok(conversacion().temporal.sync['experiencia:1'], 'la revisión queda marcada como copiada');
+
+  await enviarMensaje('respuesta 1');
+  assert.equal(tipos('POST', /^\/answers$/).filter(l => l.cuerpo.data.relationships.question.data.id === '83118').length, 2, 'no se vuelve a mandar');
+});
+
 test('una vacante que no estaba en Supabase se trae de TeamTailor y la conversación sigue', async () => {
   entorno = crearEntornoConversaciones({
     tablas: { usuarios: [{ id: 'u1', id_rol: 2 }] },

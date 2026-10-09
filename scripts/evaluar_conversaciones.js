@@ -14,9 +14,11 @@
 // y defectos en lo que mandó el bot. Los tiempos del bot solo existen en conversaciones posteriores al 8-oct-2026: antes el
 // mensaje del candidato y la respuesta se anotaban con la misma hora.
 import { createClient } from '@supabase/supabase-js';
-import { HORA_FIN_SILENCIO, HORA_INICIO_SILENCIO, LIMITE_RECORDATORIOS, MENSAJE_DESISTIMIENTO } from '../lib/chatbot/constantes.js';
+import {
+  DOMICILIO_NO_PROPORCIONADO, HORA_FIN_SILENCIO, HORA_INICIO_SILENCIO, LIMITE_RECORDATORIOS, MENSAJE_CONFIRMAR_INTERES, MENSAJE_DESISTIMIENTO,
+  MENSAJE_FALLBACK_ERROR,
+} from '../lib/chatbot/constantes.js';
 import { PASO } from '../lib/chatbot/pasos.js';
-import { MENSAJE_FALLBACK_ERROR } from '../lib/chatbot/constantes.js';
 import { tratoDeUsted, validarMensajeAgente } from '../lib/chatbot/guardrails.js';
 import { esRelleno, extraerEdad } from '../lib/chatbot/interpretacion.js';
 import { horaCdmx } from '../lib/chatbot/utilidades.js';
@@ -112,7 +114,25 @@ mostrar({
   errores_al_procesar_un_mensaje: vecesQue(new RegExp(MENSAJE_FALLBACK_ERROR.slice(0, 40))),
   mensajes_que_no_se_pudieron_entregar: vecesQue(/No se pudieron entregar/),
   candidatos_que_dijeron_que_ya_no_quieren_seguir: vecesQue(/Entendido, gracias por avisarnos/),
+  veces_que_pregunto_si_quiere_continuar_porque_la_vacante_no_le_acomoda: vecesQue(new RegExp(MENSAJE_CONFIRMAR_INTERES.slice(0, 40))),
 });
+
+// Fallos que la API dejó en la tabla `eventos` (lib/registro.js): el modelo que falla, los mensajes que rechazan los
+// guardrails, los envíos que no salen. Si la tabla todavía no existe (scripts/eventos.sql) solo se avisa.
+titulo(`Fallos registrados en las últimas ${Number(horas.toFixed(1))} horas`);
+const { data: eventos, error: errorEventos } = await supabase.from('eventos')
+  .select('origen, etapa, estado, detalle').gte('creado', new Date(ahora - horas * 60 * MINUTO).toISOString()).limit(5000);
+if (errorEventos) {
+  mostrar({ sin_datos: `no se pudo leer la tabla eventos (${errorEventos.message})` });
+} else {
+  const detalleDe = evento => evento.detalle?.herramienta ?? evento.detalle?.reglas?.join('+') ?? '';
+  mostrar({
+    total: eventos.length,
+    por_origen_y_etapa: contarPor(eventos, evento => `${evento.origen} / ${evento.etapa} / ${evento.estado}`),
+    modelo_por_herramienta: contarPor(eventos.filter(evento => evento.etapa === 'modelo'), evento => `${detalleDe(evento)} (${evento.estado})`),
+    guardrails_por_regla: contarPor(eventos.filter(evento => evento.etapa === 'guardrail'), detalleDe),
+  });
+}
 
 titulo('Sincronización con Supabase y TeamTailor');
 // Se le dan 10 minutos a la sincronización antes de contar algo como pendiente.
@@ -226,17 +246,22 @@ const calidad = {
   experiencia_con_relleno_mezclado:  conVacante.filter(c => String(datosDe(c).experiencia ?? '').split(' / ').length > 1 && String(datosDe(c).experiencia).split(' / ').some(parte => esRelleno(parte))),
   datos_con_enlace_de_archivo:       conVacante.filter(c => textosGuardados(c).some(texto => /https?:\/\//.test(texto))),
   edad_que_no_es_un_numero_valido:   conVacante.filter(c => datosDe(c).edad !== undefined && !/^\d{2}$/.test(String(datosDe(c).edad))),
-  domicilio_de_una_sola_parte:       conVacante.filter(c => datosDe(c).domicilio !== undefined && String(datosDe(c).domicilio).split(',').filter(parte => parte.trim()).length < 2),
+  domicilio_de_una_sola_parte:       conVacante.filter(c => ![undefined, DOMICILIO_NO_PROPORCIONADO].includes(datosDe(c).domicilio) && String(datosDe(c).domicilio).split(',').filter(parte => parte.trim()).length < 2),
+  domicilio_que_el_candidato_no_dio: conVacante.filter(c => datosDe(c).domicilio === DOMICILIO_NO_PROPORCIONADO),
+  experiencia_completada_despues:    conVacante.filter(c => c.temporal?.revisionExperiencia),
   experiencia_de_una_sola_palabra:   conVacante.filter(c => datosDe(c).experiencia !== undefined && String(datosDe(c).experiencia).trim().split(/\s+/).length < 2),
 };
 mostrar(Object.fromEntries(Object.entries(calidad).map(([nombre, lista]) => [nombre, lista.length])));
 
 titulo('Defectos en lo que mandó el bot (mensajes dentro de la ventana)');
 const mensajesDelBot = c => historiales[c.id].filter(e => e.actor === 'agente' && enLaVentana(e) && !esInformacionDeVacante(e.texto));
+const incumple = regla => recientes.filter(c => mensajesDelBot(c).some(m => validarMensajeAgente(m.texto, { mensajeCandidato: '' }).menores.includes(regla)));
 const defectos = {
   mensajes_cortados_a_media_frase:   recientes.filter(c => mensajesDelBot(c).some(m => /\w\.\.\.(\s|$)/.test(m.texto))),
   trato_de_usted:                    recientes.filter(c => mensajesDelBot(c).some(m => tratoDeUsted(m.texto))),
-  frases_que_el_bot_no_debe_decir:   recientes.filter(c => mensajesDelBot(c).some(m => validarMensajeAgente(m.texto, { mensajeCandidato: '' }).menores.includes('frase_prohibida'))),
+  frases_que_el_bot_no_debe_decir:   incumple('frase_prohibida'),
+  promesas_de_que_algo_quedo_anotado: incumple('promesa'),
+  modismos:                          incumple('jerga'),
   mensajes_de_mas_de_250_caracteres: recientes.filter(c => mensajesDelBot(c).some(m => m.texto.length > 250 && !/https?:\/\//.test(m.texto))),
   fuga_de_instrucciones_del_prompt:  recientes.filter(c => mensajesDelBot(c).some(m => /Ejemplo de formato|\[Mensaje del candidato/.test(m.texto))),
   misma_respuesta_dos_veces_seguidas: recientes.filter(c => {

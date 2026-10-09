@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PASO } from '../lib/chatbot/pasos.js';
-import { MENSAJE_DESISTIMIENTO, MENSAJE_DESPEDIDA_COMPLETADO, MENSAJE_LIMITE_PREGUNTAS_GENERALES, MENSAJE_RECORDATORIO_COMPLETADO } from '../lib/chatbot/constantes.js';
+import {
+  MENSAJE_DESISTIMIENTO, MENSAJE_DESPEDIDA_COMPLETADO, MENSAJE_DUDA_POSTERIOR, MENSAJE_LIMITE_PREGUNTAS_GENERALES, MENSAJE_RECORDATORIO_COMPLETADO,
+} from '../lib/chatbot/constantes.js';
 import { conversacionNueva, crearExtractores, escribir, llegaVacante, vacante } from './pasos_ayudas.js';
 
 // El clasificador de mensajes: decide si una pregunta abierta quedó contestada, si el candidato ya no quiere seguir
@@ -59,7 +61,7 @@ test('en las preguntas extra, un mensaje que no contesta la pregunta no la gasta
     extras:  [['¿El transporte de personal te sirve?', '¿Cuándo podrías empezar?']],
     clasificar: [responde, { responde: 0.05, duda: 0, desiste: 0, otra_cosa: 0.95 }, responde], // el primero es del paso de experiencia
 
-    aclarar: [{ valor: '', mensaje: 'Anotado. ¿El transporte de personal te sirve?' }],
+    aclarar: [{ valor: '', mensaje: 'Entiendo. ¿El transporte de personal te sirve?' }],
   });
   const opciones = { extractores };
   await llegaVacante(conversacion, sinPreguntas, { ...opciones, conocidos });
@@ -67,7 +69,7 @@ test('en las preguntas extra, un mensaje que no contesta la pregunta no la gasta
   assert.equal(conversacion.paso, PASO.EXTRAS);
 
   let d = await escribir(conversacion, 'En total eran 2 almacenes', opciones);
-  assert.equal(d.mensajes[0], 'Anotado. ¿El transporte de personal te sirve?');
+  assert.equal(d.mensajes[0], 'Entiendo. ¿El transporte de personal te sirve?');
   assert.equal(conversacion.temporal.datos.extras[0], undefined);
 
   d = await escribir(conversacion, 'Me serviría el transporte', opciones);
@@ -148,20 +150,20 @@ test('después de la despedida: un agradecimiento se contesta una sola vez y una
   assert.deepEqual(d.mensajes, ['Ese dato te lo confirmará tu reclutadora cuando te contacte.']);
   assert.equal(extractores.argumentos.aclarar[0].paso, 'completada');
 
+  // Su empleo ya estaba completo: lo que agrega después no se guarda ni se le repite lo que ya se le dijo.
   d = await escribir(conversacion, 'Y estibaba tarimas y jaulas', opciones);
-  assert.deepEqual(d.mensajes, [MENSAJE_RECORDATORIO_COMPLETADO]);
+  assert.deepEqual(d.mensajes, []);
   assert.deepEqual(d.efectos, []);
   assert.equal(conversacion.paso, PASO.COMPLETADA);
 });
 
-test('después de la despedida, sin clasificador se contesta como antes', async () => {
+test('después de la despedida, sin clasificador se le recuerda una sola vez y las dudas se deciden con las reglas', async () => {
   const conversacion = conversacionNueva();
   const opciones = { extractores: crearExtractores({ empleos: [empleo], extras: [[]] }) };
   await llegaVacante(conversacion, sinPreguntas, { ...opciones, conocidos });
   await escribir(conversacion, 'Oxxo, encargado, inventario', opciones);
 
-  for (const texto of ['Gracias', 'Ok']) {
-    const d = await escribir(conversacion, texto, opciones);
-    assert.deepEqual(d.mensajes, [MENSAJE_RECORDATORIO_COMPLETADO]);
-  }
+  assert.deepEqual((await escribir(conversacion, 'Gracias', opciones)).mensajes, [MENSAJE_RECORDATORIO_COMPLETADO]);
+  assert.deepEqual((await escribir(conversacion, 'Ok', opciones)).mensajes, []);
+  assert.deepEqual((await escribir(conversacion, '¿Cuándo me llaman?', opciones)).mensajes, [MENSAJE_DUDA_POSTERIOR], 'el agente no contestó: no se le deja sin respuesta');
 });

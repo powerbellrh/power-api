@@ -186,7 +186,7 @@ test('un domicilio dado en tres mensajes con un dato cada uno no agota los inten
   assert.equal(conversacion.temporal.datos.domicilio, 'Federico Chopan 4082, Miravalle, Guadalajara');
 });
 
-test('si al domicilio le faltan datos y el candidato no aporta nada nuevo tres veces, se guarda todo lo que escribió', async () => {
+test('si al domicilio le faltan datos y el candidato no aporta nada nuevo tres veces, se guarda solo lo que sí era domicilio', async () => {
   const conversacion = conversacionNueva();
   const opciones = { extractores: crearExtractores({ domicilio: [{ calle: 'Vallarta 1234' }, {}, {}, {}] }) };
   await llegaVacante(conversacion, vacante, { ...opciones, conocidos: { nombre: 'Ana', edad: '28' } });
@@ -198,7 +198,7 @@ test('si al domicilio le faltan datos y el candidato no aporta nada nuevo tres v
   await escribir(conversacion, 'eso es todo', opciones);
 
   assert.equal(conversacion.paso, PASO.PREGUNTAS);
-  assert.equal(conversacion.temporal.datos.domicilio, 'Vallarta 1234, no sé qué más, ya te dije, eso es todo');
+  assert.equal(conversacion.temporal.datos.domicilio, 'Vallarta 1234');
 });
 
 test('una duda del candidato en una pregunta de texto se manda a la reclutadora y se repite la pregunta', async () => {

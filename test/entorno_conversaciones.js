@@ -69,17 +69,20 @@ export function crearEntornoConversaciones({ tablas = {}, vacantesTeamTailor = {
       if (cola.length === 0) return respuestaHttp({ error: `sin respuesta simulada para ${herramienta}` }, 500);
 
       const siguiente = cola.shift();
+      if (siguiente instanceof Error) return respuestaHttp({ error: siguiente.message }, 500); // un fallo pasajero del proveedor
       return respuestaHttp({ choices: [{ message: { tool_calls: [{ function: { name: herramienta, arguments: JSON.stringify(siguiente) } }] } }] });
     }
 
     // Clasificador de mensajes: cada respuesta simulada son las `answers` de una petición; se toma la primera que
-    // conteste las preguntas que se hicieron. Sin respuesta simulada falla, que es como se prueba que todo sigue
-    // funcionando con las reglas cuando el clasificador no contesta.
+    // sea de las preguntas que se hicieron. Las preguntas de sí/no que el test no contestó salen en 0 (el modelo
+    // siempre las contesta todas). Sin respuesta simulada falla, que es como se prueba que todo sigue funcionando
+    // con las reglas cuando el clasificador no contesta.
     if (url.startsWith('https://openrouter.ai/api/alpha/decisions')) {
       peticionesDecision.push(cuerpo);
-      const indice = colaDecisiones.findIndex(respuestas => Object.keys(cuerpo.questions).every(pregunta => pregunta in respuestas));
+      const indice = colaDecisiones.findIndex(respuestas => Object.keys(respuestas).every(pregunta => pregunta in cuerpo.questions));
       if (indice < 0) return respuestaHttp({ error: 'sin decisión simulada' }, 500);
-      return respuestaHttp({ answers: colaDecisiones.splice(indice, 1)[0] });
+      const sinContestar = Object.entries(cuerpo.questions).filter(([, pregunta]) => pregunta.type === 'noul').map(([clave]) => [clave, { type: 'noul', noul: 0 }]);
+      return respuestaHttp({ answers: { ...Object.fromEntries(sinContestar), ...colaDecisiones.splice(indice, 1)[0] } });
     }
 
     if (url.startsWith('https://api.manychat.com')) {
