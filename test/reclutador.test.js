@@ -91,15 +91,18 @@ test('un reclutador se reconoce por su teléfono en usuarios, con o sin lada de 
 
 test('el reclutador pregunta por la bandeja: el agente consulta TeamTailor y contesta con los dos números', async () => {
   nuevoEntorno();
-  entorno.encolarModelo('agente', cierre('contar_candidatos', { id: 555555 }), responder('Tiene 107 personas en la bandeja; 2 llegaron en las últimas 24 horas.'));
+  entorno.encolarModelo('agente', cierre('contar_candidatos', { id: 555555 }), responder('Tiene 107 personas en la bandeja; 2 llegaron hoy.'));
 
   const resultado = await escribir('cuántos hay en la bandeja de la 555555?');
   assert.equal(resultado.reclutador, true);
   assert.deepEqual(resultadosDeHerramientas(), [{
-    en_bandeja_de_entrada: 107, llegaron_en_las_ultimas_24_horas: 2, // la rechazada no cuenta
+    en_bandeja_de_entrada: 107, llegaron_hoy: 2, // la rechazada no cuenta
     por_etapa: [{ etapa: 'Bandeja de entrada', personas: 107 }, { etapa: 'Filtrado', personas: 14 }, { etapa: 'Contratados', personas: 3 }], // en el orden del proceso
+    activos_en_todas_las_etapas: 124, // ya sumado, para que el modelo no haga la cuenta
   }]);
-  assert.deepEqual(entorno.mensajes, ['Tiene 107 personas en la bandeja; 2 llegaron en las últimas 24 horas.']);
+  assert.deepEqual(entorno.mensajes, ['Tiene 107 personas en la bandeja; 2 llegaron hoy.']);
+  // "Hoy" se le pide a TeamTailor desde las 00:00 de México (06:00 UTC), no desde hace 24 horas.
+  assert.match(decodeURIComponent(entorno.llamadasTT.find(llamada => llamada.ruta.includes('/job-applications')).ruta), /filter\[created-at\]\[from\]=\d{4}-\d{2}-\d{2}T06:00:00\.000Z/);
   assert.match(entorno.peticionesModelo[0].usuario, /Reclutadora: Laura/);
   assert.match(conversacion().historial, /reclutador: cuántos hay en la bandeja[\s\S]*agente: Tiene 107/);
   assert.equal(conversacion().paso, 'sin_vacante', 'no entra a la máquina de pasos de los candidatos');
@@ -155,7 +158,7 @@ test('crear una vacante: resumen con imagen y anuncio, y se publica una sola vez
   await escribir('sí, confirmo');
   assert.equal(creaciones(), 1);
   assert.equal(entorno.llamadasTT_('POST', /^\/custom-field-values$/).length, 1);
-  assert.match(entorno.mensajes.at(-1), /Vacante creada en TeamTailor \(ID 777001\)\nhttps:\/\/careers\.test\/jobs\/777001/);
+  assert.match(entorno.mensajes.at(-1), /Vacante creada y publicada en TeamTailor \(ID 777001\)\nhttps:\/\/careers\.test\/jobs\/777001/);
   assert.equal(imagenes.enviadas.length, 2, 'al publicar se entrega otra vez la imagen con el anuncio');
   assert.match(imagenes.enviadas[1].texto, /^Empresa busca almacenista\./);
   assert.deepEqual(borrador(), {}, 'el borrador se limpia al entregar');

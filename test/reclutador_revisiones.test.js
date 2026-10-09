@@ -224,7 +224,7 @@ test('el resumen muestra lo que completó el agente y, tras un cambio, qué camb
 
 // ── Listar, clonar, fichas y candidatos destacados ───────────────────────────
 
-test('listar vacantes: cada una con su bandeja y cuántas llegaron en 24 horas', async () => {
+test('listar vacantes: cada una con su bandeja y cuántas llegaron hoy', async () => {
   nuevoEntorno();
   entorno.encolarModelo('agente', cierre('listar_vacantes', { texto: '', filtro: 'todas' }), responder('Estas son.'));
   await escribir('qué vacantes tengo?');
@@ -242,6 +242,33 @@ test('clonar: se lee la vacante completa de TeamTailor', async () => {
   entorno.encolarModelo('agente', cierre('leer_vacante_completa', { id: 555555 }), responder('Listo.'));
   await escribir('hazme otra igual que la 555555 pero en Zapopan');
   assert.deepEqual(resultadosDeHerramientas()[0], { id: 555555, nombre_interno: 'Cliente - Almacenista', titulo: 'Almacenista', estatus: '', ubicacion: '', descripcion: DESCRIPCION, contexto: 'Contexto viejo' });
+});
+
+test('vacante inspirada en otra: el sueldo de la referencia solo pasa si es del mismo cliente o si ella pide lo mismo', async () => {
+  const conSueldo = DESCRIPCION.replace('Sueldo competitivo', 'Sueldo de $9,500 al mes');
+  const referencia = vacanteTeamTailor({ titulo: 'Cajero/a', cuerpo: conSueldo, contexto: 'Cajero de tienda' });
+  referencia.attributes['internal-name'] = 'Alpezzi - Cajero';
+  const inspirada = nombre => [cierre('leer_vacante_completa', { id: 888888 }), vacanteNueva({ nombre_interno: nombre, descripcion: conSueldo }), cierre('leer_vacante_completa', { id: 888888 }), vacanteNueva({ nombre_interno: nombre, descripcion: conSueldo })];
+
+  // Otro cliente: la cifra no tiene respaldo, se le pide al agente corregir y, si insiste, el sistema la quita.
+  nuevoEntorno({ vacantes: { 888888: referencia } });
+  entorno.encolarModelo('agente', ...inspirada('Península - Cajero'));
+  await escribir('crea una de cajero para Península, inspírate en la de cajero de Alpezzi');
+  assert.match(entorno.peticionesModelo.at(-1).usuario, /sistema: CORRIGE: /);
+  assert.doesNotMatch(borrador().descripcion, /9,500/);
+  assert.match(borrador().descripcion, /Sueldo competitivo/);
+
+  // Mismo cliente (clonar): se conserva.
+  nuevoEntorno({ vacantes: { 888888: referencia } });
+  entorno.encolarModelo('agente', ...inspirada('Alpezzi - Cajero'));
+  await escribir('hazme otra igual que la 888888');
+  assert.match(borrador().descripcion, /Sueldo de \$9,500 al mes/);
+
+  // Otro cliente, pero ella pide expresamente lo mismo.
+  nuevoEntorno({ vacantes: { 888888: referencia } });
+  entorno.encolarModelo('agente', ...inspirada('Península - Cajero'));
+  await escribir('crea una de cajero para Península como la 888888, con el mismo sueldo');
+  assert.match(borrador().descripcion, /Sueldo de \$9,500 al mes/);
 });
 
 test('fichas de clientes: viven en la tabla empresas; se completan sin borrar y se crean si no existen', async () => {
@@ -346,11 +373,97 @@ test('cerrar una vacante: se prepara, no se hace hasta que confirma, y al confir
   assert.equal(conversacion().temporal.reclutador.accion_pendiente, undefined);
   assert.match(entorno.peticionesModelo.at(-1).usuario, /ACCIÓN PENDIENTE de confirmar[^\n]*Cerrar/);
 
-  // Un segundo "sí" ya no hace nada.
-  entorno.encolarModelo('agente', cierre('resolver_accion', { decision: 'confirmar', mensaje: 'Va.' }));
+  // Un segundo "sí" ya no hace nada: al agente se le avisa que no hay acción pendiente y, si insiste, se le dice a ella.
+  entorno.encolarModelo('agente', cierre('resolver_accion', { decision: 'confirmar', mensaje: 'Va.' }), cierre('resolver_accion', { decision: 'confirmar', mensaje: 'Va.' }));
   await escribir('sí');
   assert.equal(parches(/^\/jobs\/555555$/).length, 1);
+  assert.match(entorno.peticionesModelo.at(-1).usuario, /sistema: CORRIGE: No hay ninguna ACCIÓN PENDIENTE/);
   assert.match(entorno.mensajes.at(-1), /^No tengo ninguna acción pendiente/);
+
+  // Si pide otra vez la acción ("ahora sí ciérrala") y el agente contesta como si confirmara, con el aviso la prepara de nuevo.
+  entorno.encolarModelo('agente', cierre('resolver_accion', { decision: 'confirmar', mensaje: 'Va.' }), accion('cerrar_vacante'), responder('Voy a cerrar Península - Almacenista.'));
+  await escribir('ahora sí ciérrala');
+  assert.match(entorno.mensajes.at(-1), /Voy a cerrar Península - Almacenista\.\n\n¿Confirmas\?$/);
+});
+
+test('una vacante recién subida no se vuelve a armar como borrador: el agente recibe el aviso y se le corrige', async () => {
+  nuevoEntorno();
+  const fila = entorno.supabase.tablas.conversaciones;
+  entorno.encolarModelo('agente', responder('Hola.'));
+  await escribir('hola');
+  fila[0].temporal = { reclutador: { ultima_vacante: { id: '777001', nombre_interno: 'Oxxo - Cajero', creada: new Date().toISOString() } } };
+
+  entorno.encolarModelo('agente', vacanteNueva({ generar_imagen: true }), responder('Esa vacante ya está publicada y su imagen ya no se puede cambiar desde aquí.'));
+  await escribir('genera la imagen por favor');
+  assert.match(entorno.peticionesModelo.at(-1).usuario, /ÚLTIMA VACANTE CREADA en esta conversación: "Oxxo - Cajero" \(ID 777001\)/);
+  assert.match(entorno.peticionesModelo.at(-1).usuario, /sistema: CORRIGE: La vacante "Oxxo - Cajero" \(ID 777001\) YA está publicada/);
+  assert.equal(entorno.mensajes.at(-1), 'Esa vacante ya está publicada y su imagen ya no se puede cambiar desde aquí.');
+  assert.deepEqual(borrador(), {});
+});
+
+test('al confirmar una acción y pedir algo más en el mismo mensaje, se le contesta también lo otro', async () => {
+  nuevoEntorno();
+  entorno.encolarModelo('agente', accion('cerrar_vacante'), responder('Voy a cerrar Península - Almacenista.'));
+  await escribir('cierra la 555555');
+  entorno.encolarModelo('agente', cierre('resolver_accion', { decision: 'confirmar', mensaje: 'Va.', algo_mas: 'No puedo borrar clientes del registro: eso lo hace el equipo de sistemas.' }));
+  await escribir('sí por favor, también borra a tresguerras como empresa');
+  assert.equal(entorno.mensajes.at(-1), 'Listo, cerré la vacante 555555. Ya no recibe postulaciones.\n\nNo puedo borrar clientes del registro: eso lo hace el equipo de sistemas.');
+});
+
+test('el cliente escrito con su nombre corto se guarda con el nombre registrado y no se da de alta otra vez', async () => {
+  nuevoEntorno({ tablas: { empresas: [{ id: 7, nombre: 'Convert Solutions' }, { id: 8, nombre: 'Grupo San Carlos' }, { id: 9, nombre: 'Grupo Supplier' }] } });
+  entorno.encolarModelo('agente', vacanteNueva({ nombre_interno: 'Convert - Cajero' }));
+  await escribir('una de cajero para convert en Guadalajara');
+  assert.equal(borrador().nombre_interno, 'Convert Solutions - Cajero');
+  assert.doesNotMatch(todo(), /no está registrado como cliente/);
+
+  // Si el nombre corto le queda a varios clientes, no se adivina.
+  nuevoEntorno({ tablas: { empresas: [{ id: 8, nombre: 'Grupo San Carlos' }, { id: 9, nombre: 'Grupo Supplier' }] } });
+  entorno.encolarModelo('agente', vacanteNueva({ nombre_interno: 'Grupo - Cajero' }));
+  await escribir('una de cajero para grupo en Guadalajara');
+  assert.equal(borrador().nombre_interno, 'Grupo - Cajero');
+});
+
+test('copia de una vacante para otra ciudad: el nombre interno conserva la ciudad entre paréntesis para distinguirla', async () => {
+  const original = vacanteTeamTailor({ titulo: 'Almacenista', cuerpo: DESCRIPCION, contexto: 'Contexto viejo' });
+  original.attributes['internal-name'] = 'Península - Almacenista';
+  nuevoEntorno({ vacantes: { 555555: original } });
+  const copia = vacanteNueva({ nombre_interno: 'Península - Almacenista (Tlajomulco)', ubicacion: 'Tlajomulco de Zúñiga, Jalisco' });
+  entorno.encolarModelo('agente', cierre('leer_vacante_completa', { id: 555555 }), copia);
+  await escribir('hazme otra igual que la 555555 pero en Tlajomulco');
+  assert.equal(borrador().nombre_interno, 'Península - Almacenista (Tlajomulco)');
+  // En los turnos siguientes (ya sin leer la original) el nombre se conserva.
+  entorno.encolarModelo('agente', copia);
+  await escribir('ok');
+  assert.equal(borrador().nombre_interno, 'Península - Almacenista (Tlajomulco)');
+
+  // Si no es copia de otra, la ciudad que ella no puso en el nombre se sigue quitando.
+  nuevoEntorno();
+  entorno.encolarModelo('agente', vacanteNueva({ nombre_interno: 'Bimbo - Chofer (Tlajomulco)', ubicacion: 'Tlajomulco de Zúñiga, Jalisco' }));
+  await escribir('un chofer para Bimbo en Tlajomulco');
+  assert.equal(borrador().nombre_interno, 'Bimbo - Chofer');
+});
+
+test('mientras el agente sigue preguntando datos no se manda el anuncio ni se genera la imagen', async () => {
+  nuevoEntorno();
+  entorno.encolarModelo('agente', vacanteNueva({ mensaje: 'Ya tengo el puesto. ¿Qué horario tiene?' }));
+  await escribir('Oxxo cajero en Guadalajara');
+  assert.deepEqual(entorno.mensajes.filter(m => m !== 'Un momento, estoy trabajando en ello.').filter(m => !/^Ojo:/.test(m)), ['Ya tengo el puesto. ¿Qué horario tiene?']);
+  assert.equal(imagenes.generadas.length, 0);
+
+  // Cuando ya presenta el resumen, llegan la imagen y el anuncio.
+  entorno.encolarModelo('agente', vacanteNueva());
+  await escribir('de 9 a 6');
+  assert.equal(imagenes.generadas.length, 1);
+  assert.equal(imagenes.enviadas.length, 1);
+});
+
+test('un cierre sin mensaje se le devuelve al agente una vez; la confirmación de una vacante no lo necesita', async () => {
+  nuevoEntorno();
+  entorno.encolarModelo('agente', responder(''), responder('Hola, Laura.'));
+  await escribir('hola');
+  assert.match(entorno.peticionesModelo.at(-1).usuario, /sistema: CORRIGE: El campo "mensaje" venía vacío/);
+  assert.equal(entorno.mensajes.at(-1), 'Hola, Laura.');
 });
 
 test('cancelar una acción pendiente no cambia nada', async () => {
@@ -411,7 +524,7 @@ test('mover por evaluación: "los primeros N con X estrellas" toma a las mejor e
   entorno.encolarModelo('agente', cierre('resolver_accion', { decision: 'confirmar', mensaje: 'Va.' }));
   await escribir('sí');
   assert.deepEqual(parches(/^\/job-applications\//).map(p => p.ruta), ['/job-applications/904'], 'la 904 (19) va antes que la 901 (18); la 903 (20) está rechazada');
-  assert.match(entorno.mensajes.at(-1), /^Listo, moví 1 persona con 5 estrellas de "Bandeja de entrada" a "Filtrado" \(vacante 555555\)\.$/);
+  assert.match(entorno.mensajes.at(-1), /^Listo, moví 1 persona con 5 estrellas de "Bandeja de entrada" a "Filtrado" \(vacante 555555\)\. TeamTailor puede tardar hasta un minuto en reflejarlo\.$/);
 
   // Todas las de 5 estrellas, pidiendo más de las que hay; y un filtro que nadie cumple.
   nuevoEntorno();

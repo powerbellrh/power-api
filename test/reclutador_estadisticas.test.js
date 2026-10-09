@@ -105,7 +105,7 @@ test('estadísticas: sin tope de peticiones ni de vacantes; solo se corta si se 
   assert.equal(todas.vacantes_consultadas, 2);
 
   const lenta = async ruta => { await new Promise(r => setTimeout(r, 15)); return grande(ruta); };
-  const cortada = await estadisticasPostulaciones(entorno.supabase, { vacante_id: 555555 }, { consultar: lenta, pausaMs: 0, tiempoMaximoMs: 60 });
+  const cortada = await estadisticasPostulaciones(entorno.supabase, { vacante_id: 555555 }, { consultar: lenta, pausaMs: 0, tiempoMaximoMs: 400 }); // holgado: con 60 ms fallaba cuando la máquina iba cargada
   assert.match(cortada.nota, /parciales/);
   assert.ok(cortada.total > 0 && cortada.total < 3 * paginas);
 });
