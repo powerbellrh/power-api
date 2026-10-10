@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { crearSupabase } from '../lib/supabase.js';
 import { waitUntil } from '@vercel/functions';
 import { EVALUACION_MAX_INTENTOS } from '../lib/config.js';
 import { procesarEvaluacion, procesarReevaluacion } from '../lib/evaluaciones/proceso.js';
@@ -83,7 +83,7 @@ async function manejarEvaluacion(req, res, supabase) {
 export default async function handler(req, res) {
   if (rechazarSolicitud(req, res)) return;
 
-  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const supabase = crearSupabase();
 
   if ('reevaluacion' in (req.body ?? {})) return manejarReevaluacion(req, res, supabase);
   return manejarEvaluacion(req, res, supabase);

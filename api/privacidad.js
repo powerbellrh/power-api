@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { crearSupabase } from '../lib/supabase.js';
 import { ttObtener, mcCrear, mcObtener } from '../lib/clientes_api.js';
 import { limpiarTelefono, normalizarTelefonoMx } from '../lib/telefono.js';
 import { MANYCHAT_TAG_ID_BAJA, TEAMTAILOR_TAG_BAJA, AGENDA_MANYCHAT_FIELD_CANDIDATO_TEAMTAILOR_ID } from '../lib/config.js';
@@ -204,7 +204,7 @@ export default async function handler(req, res) {
     if (candidatoTT && !(candidatoTT.data.attributes.tags ?? []).includes(TEAMTAILOR_TAG_BAJA))
       return res.status(200).json({ status: 'ignored', reason: 'without_deletion_tag' });
 
-    const supabase   = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+    const supabase   = crearSupabase();
     const eliminados = await eliminarDatosCandidato(supabase, idTT, candidatoTT);
 
     console.log(JSON.stringify({ etapa: 'privacidad_eliminacion', estado: 'ok', motivo: candidatoTT ? 'etiqueta' : 'eliminado_en_teamtailor', candidato_id: idTT, ...eliminados }));

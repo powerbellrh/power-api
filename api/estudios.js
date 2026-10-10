@@ -3,10 +3,11 @@ import { orChatCompletion }         from '../lib/openrouter.js';
 import { SALARIO_MINIMO_MENSUAL, SEMANAS_POR_MES } from '../lib/config.js';
 import { leerPrompt }               from '../lib/prompts.js';
 import { rechazarSolicitud } from '../lib/http.js';
+import { MODELOS } from '../lib/modelos.js';
 
 const PROMPT_CONCLUSIONES           = leerPrompt('estudios/conclusiones_ia');
 const PROMPT_CONCLUSIONES_GLASSDOOR = leerPrompt('estudios/conclusiones_ia_glassdoor');
-const OPENROUTER_MODEL              = 'z-ai/glm-5.3';
+const OPENROUTER_MODEL              = MODELOS.estudios;
 
 const costo      = (ti, to) => +((ti / 1_000_000) + (to / 1_000_000 * 5)).toFixed(6);
 const redondear  = v => Math.round(v * 100) / 100;

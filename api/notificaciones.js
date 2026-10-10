@@ -1,5 +1,6 @@
-import { createClient } from '@supabase/supabase-js';
-import { enviarNotificacionAgendaManyChat } from './historial.js';
+import { rechazarCron } from '../lib/http.js';
+import { crearSupabase } from '../lib/supabase.js';
+import { enviarNotificacionAgendaManyChat } from '../lib/notificacion_agenda.js';
 
 const TAMANO_LOTE = 10;
 const RETENCION_DIAS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -26,13 +27,9 @@ async function limpiarNotificacionesViejas(supabase) {
 export default async function handler(req, res) {
   console.log(JSON.stringify({ etapa: 'notificaciones_invocado', ahora: new Date().toISOString() }));
 
-  const encabezadoAuth = req.headers['authorization'];
-  if (encabezadoAuth !== `Bearer ${process.env.CRON_SECRET}`) {
-    console.log(JSON.stringify({ etapa: 'notificaciones_invocado', estado: 'error', mensaje: 'Unauthorized' }));
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  if (rechazarCron(req, res)) return;
 
-  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const supabase = crearSupabase();
 
   const { data: pendientes, error: errorConsulta } = await supabase
     .from('notificaciones')

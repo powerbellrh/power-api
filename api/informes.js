@@ -1,4 +1,4 @@
-import { createClient }  from '@supabase/supabase-js';
+import { crearSupabase } from '../lib/supabase.js';
 import { ttObtener } from '../lib/clientes_api.js';
 import { esperarDescripcion } from '../lib/descripcion_de_texto.js';
 import { analizarRespuestas } from '../lib/evaluacion_postulacion.js';
@@ -160,7 +160,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Los campos 'postulacion' y 'vacante' son requeridos" });
   }
 
-  const supabase     = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const supabase     = crearSupabase();
   const registro     = crearRegistro({ origen: 'informes', referencia: postulacionId, tipoReferencia: 'postulacion' });
   const esCorreccion = Boolean(comentarios);
   const llamadas     = [];

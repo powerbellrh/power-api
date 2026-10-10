@@ -1,21 +1,10 @@
-import { createClient } from '@supabase/supabase-js';
+import { crearSupabase } from '../lib/supabase.js';
 import { waitUntil }    from '@vercel/functions';
-import { ttObtener, ttCrear, mcCrear, mcObtener } from '../lib/clientes_api.js';
+import { ttObtener, ttCrear } from '../lib/clientes_api.js';
 import { limpiarTelefono, normalizarTelefonoMx } from '../lib/telefono.js';
 import { registrarEnAgenda } from '../lib/backfill_agenda.js';
 import { crearPowerId, crearFelicitacion } from '../lib/imagenes/candidato.js';
-import {
-  AGENDA_MANYCHAT_FLOW_NS,
-  AGENDA_MANYCHAT_FIELD_RECLUTADORA_NOMBRE,
-  AGENDA_MANYCHAT_FIELD_RECLUTADORA_WHATSAPP,
-  AGENDA_MANYCHAT_FIELD_VACANTE_TITULO,
-  AGENDA_MANYCHAT_FIELD_VACANTE_URL,
-  AGENDA_MANYCHAT_FIELD_CANDIDATO_NOMBRE,
-  AGENDA_MANYCHAT_FIELD_CANDIDATO_TEAMTAILOR_ID,
-  AGENDA_MANYCHAT_FIELD_CANDIDATO_CORREO,
-  MANYCHAT_FIELD_PHONE_ID,
-  TEAMTAILOR_USER_ID,
-} from '../lib/config.js';
+import { TEAMTAILOR_USER_ID } from '../lib/config.js';
 
 // Tiempo que se espera antes de disparar el flujo de WhatsApp de "Enviar agenda"
 // (se guarda en `notificaciones` y la envía después un cron, no este handler).
@@ -126,7 +115,7 @@ async function manejarEnviadoACliente(data, candidato) {
   // Registro en la tabla `agenda` (con backfill de vacante/candidato/postulación
   // vía Teamtailor + IA si todavía no existen). Corre en segundo plano con `waitUntil`
   // para no bloquear la respuesta del webhook con las llamadas a Teamtailor/OpenRouter.
-  const supabaseAgenda = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const supabaseAgenda = crearSupabase();
   waitUntil(registrarEnAgenda(supabaseAgenda, { candidato, candidatoTT, data, entrevista, reclutadorValor, powerIDUrl }));
 }
 
@@ -234,7 +223,7 @@ async function manejarEnviarAgenda(supabase, candidato, data) {
 
   // Sin teléfono no hay canal de WhatsApp (ManyChat necesita whatsapp_phone para
   // crear el suscriptor), pero la fila se agenda igual — el cron simplemente
-  // salta ese canal al procesarla (ver enviarNotificacionAgendaManyChat).
+  // salta ese canal al procesarla (ver lib/notificacion_agenda.js).
   const telefonoLimpio = limpiarTelefono(candidato.phone);
   const telefono       = telefonoLimpio ? normalizarTelefonoMx(telefonoLimpio) : '';
   if (!telefono) {
@@ -274,63 +263,6 @@ async function manejarEnviarAgenda(supabase, candidato, data) {
 
   await agendarNotificacionWhatsApp(supabase, candidato, data, payload);
   if (telefono) await crearNotaWhatsApp(candidato, data, telefono, tituloVacante);
-}
-
-// Envía el flujo de WhatsApp de agenda a ManyChat a partir de un `payload` ya
-// resuelto (usado por el cron que procesa `notificaciones`, no por este handler).
-export async function enviarNotificacionAgendaManyChat(payload, candidatoId) {
-  const { telefono, correo, nombreCandidato, tituloVacante, urlVacante, nombreReclutadora, whatsappReclutadora } = payload;
-
-  // Sin teléfono no hay canal de WhatsApp (no se puede crear el suscriptor de
-  // ManyChat); se procesa la fila igual, solo se salta este canal.
-  if (!telefono) {
-    console.log(JSON.stringify({ etapa: 'agenda_notificacion_enviada', estado: 'saltado', razon: 'sin_telefono', candidato_id: candidatoId }));
-    return;
-  }
-
-  let idUsuarioMc;
-  try {
-    const respSuscriptor = await mcCrear('/fb/subscriber/createSubscriber', {
-      first_name:     nombreCandidato,
-      whatsapp_phone: `+${telefono}`,
-      consent_phrase: 'Consiento a que mi contacto sea usado para enviarme actualizaciones de las vacantes disponibles',
-    });
-
-    if (respSuscriptor.status !== 'success' || !respSuscriptor.data)
-      throw new Error('createSubscriber did not return success');
-
-    idUsuarioMc = parseInt(respSuscriptor.data.id, 10);
-    if (isNaN(idUsuarioMc))
-      throw new Error(`Invalid subscriber ID: ${respSuscriptor.data.id}`);
-  } catch (errorCreacion) {
-    if (errorCreacion.message.includes('wa_id') && errorCreacion.message.includes('already exists')) {
-      const encontrado = await mcObtener('/fb/subscriber/findByCustomField', {
-        field_id:    MANYCHAT_FIELD_PHONE_ID,
-        field_value: telefono,
-      });
-      const existente = encontrado?.data?.[0];
-      if (!existente?.id)
-        throw new Error(`createSubscriber failed (already exists) and findByCustomField returned no results for phone ${telefono}`);
-      idUsuarioMc = existente.id;
-    } else {
-      throw errorCreacion;
-    }
-  }
-
-  await mcCrear('/fb/subscriber/setCustomFields', {
-    subscriber_id: idUsuarioMc,
-    fields: [
-      { field_id: AGENDA_MANYCHAT_FIELD_RECLUTADORA_NOMBRE,     field_value: nombreReclutadora },
-      { field_id: AGENDA_MANYCHAT_FIELD_RECLUTADORA_WHATSAPP,   field_value: whatsappReclutadora },
-      { field_id: AGENDA_MANYCHAT_FIELD_VACANTE_TITULO,         field_value: tituloVacante },
-      { field_id: AGENDA_MANYCHAT_FIELD_VACANTE_URL,            field_value: urlVacante },
-      { field_id: AGENDA_MANYCHAT_FIELD_CANDIDATO_NOMBRE,       field_value: nombreCandidato },
-      { field_id: AGENDA_MANYCHAT_FIELD_CANDIDATO_TEAMTAILOR_ID, field_value: candidatoId.toString() },
-      { field_id: AGENDA_MANYCHAT_FIELD_CANDIDATO_CORREO,       field_value: correo },
-    ],
-  });
-
-  await mcCrear('/fb/sending/sendFlow', { subscriber_id: idUsuarioMc, flow_ns: AGENDA_MANYCHAT_FLOW_NS });
 }
 
 // Cada cambio de etapa (o rechazo) de una postulación llega como un nuevo
@@ -378,7 +310,7 @@ export default async function handler(req, res) {
   }
 
   const stage = (data.stage_name || '').toLowerCase().trim();
-  const supabaseNotificaciones = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const supabaseNotificaciones = crearSupabase();
 
   // Si la postulación fue rechazada o ya no está en "enviar agenda" (se movió a
   // otra etapa), se cancela cualquier notificación de WhatsApp aún no enviada.

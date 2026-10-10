@@ -1,12 +1,13 @@
-import { createClient }      from '@supabase/supabase-js';
-import { orChatCompletion }  from '../lib/openrouter.js';
+import { crearSupabase } from '../lib/supabase.js';
+import { argumentosDeHerramienta, orChatCompletion } from '../lib/openrouter.js';
 import { leerPrompt }        from '../lib/prompts.js';
 import { rechazarSolicitud } from '../lib/http.js';
+import { MODELOS } from '../lib/modelos.js';
 
 const PROMPT_EXTRACCION_HABILIDADES = leerPrompt('emparejamiento/extraccion_habilidades');
 const PROMPT_VERIFICACION_MATCH     = leerPrompt('emparejamiento/verificacion_emparejamiento');
 const PROMPT_NORMALIZACION_DOMICILIO = leerPrompt('emparejamiento/normalizacion_domicilio');
-const OPENROUTER_MODEL              = 'z-ai/glm-5.3-flash';
+const OPENROUTER_MODEL              = MODELOS.emparejamiento;
 
 const DOMICILIO_TOOL = {
   type: 'function',
@@ -113,7 +114,7 @@ export async function detectarUbicacionPorLlm(texto) {
   const llamada = datos?.choices?.[0]?.message?.tool_calls?.find(c => c.function?.name === 'normalizar_domicilio');
   if (!llamada) throw new Error('OpenRouter no devolvió una respuesta estructurada válida');
 
-  const argumentos = typeof llamada.function.arguments === 'string' ? JSON.parse(llamada.function.arguments) : llamada.function.arguments;
+  const argumentos = argumentosDeHerramienta(llamada);
   return {
     estado: argumentos.estado === 'NO_DETERMINADO' ? null : argumentos.estado,
     ciudad: argumentos.ciudad === 'NO_DETERMINADO' ? null : argumentos.ciudad,
@@ -155,7 +156,7 @@ export async function detectarHabilidadesPorLlm(texto, habilidadesDisponibles) {
   const llamada = datos?.choices?.[0]?.message?.tool_calls?.find(c => c.function?.name === 'extraer_habilidades');
   if (!llamada) throw new Error('OpenRouter no devolvió una respuesta estructurada válida');
 
-  const argumentos = typeof llamada.function.arguments === 'string' ? JSON.parse(llamada.function.arguments) : llamada.function.arguments;
+  const argumentos = argumentosDeHerramienta(llamada);
   return argumentos.habilidades ?? [];
 }
 
@@ -189,7 +190,7 @@ async function verificarCompatibilidad(candidato, descripcion) {
   const llamada = datos?.choices?.[0]?.message?.tool_calls?.find(c => c.function?.name === 'verificar_compatibilidad');
   if (!llamada) throw new Error('OpenRouter no devolvió una respuesta estructurada válida');
 
-  return typeof llamada.function.arguments === 'string' ? JSON.parse(llamada.function.arguments) : llamada.function.arguments;
+  return argumentosDeHerramienta(llamada);
 }
 
 async function verificarRecomendaciones(candidato, vacantesCoincidentes) {
@@ -278,7 +279,7 @@ export default async function handler(req, res) {
 
   console.log(JSON.stringify({ etapa: 'inicio', telefono, domicilio, chars: experiencia.length, preguntas_opcional: preguntasOpcional.length, id_vacante: Number.isInteger(idVacante) ? idVacante : null }));
 
-  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const supabase = crearSupabase();
 
   const { data: candidato, error: errorCandidato } = await supabase
     .from('candidatos')

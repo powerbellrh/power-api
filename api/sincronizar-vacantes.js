@@ -1,13 +1,12 @@
-import { createClient } from '@supabase/supabase-js';
+import { crearSupabase } from '../lib/supabase.js';
+import { rechazarCron } from '../lib/http.js';
 import { sincronizarVacantes } from '../lib/sincronizar_vacantes.js';
 
 // Cron cada hora (vercel.json): actualiza en Supabase las vacantes que cambiaron en TeamTailor.
 export default async function handler(req, res) {
-  if (req.headers['authorization'] !== `Bearer ${process.env.CRON_SECRET}`) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  if (rechazarCron(req, res)) return;
 
-  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const supabase = crearSupabase();
   const log = (etapa, datos = {}) => console.log(JSON.stringify({ etapa: `sincronizar_vacantes_${etapa}`, ...datos }));
 
   try {
