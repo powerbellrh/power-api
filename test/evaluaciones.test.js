@@ -277,3 +277,9 @@ test('una postulación evaluada antes de existir la columna guarda su primera ca
   await reevaluar();
   assert.equal(entorno.fila().calificacion_inicial, 12);
 });
+
+test('el reclutador de la vacante se toma del usuario incluido cuando TeamTailor no manda la relación', async () => {
+  entorno = crearEntornoEvaluaciones({ relacionConUsuario: false });
+  await evaluar();
+  assert.equal(entorno.fila().reclutador_id, '45146');
+});

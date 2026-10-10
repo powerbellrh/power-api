@@ -25,7 +25,7 @@ export const filaPendiente = (extra = {}) => ({
 
 // `curriculum`: URL del CV del candidato ('' = sin CV). `respuestas`: sus respuestas del formulario, { titulo: texto }.
 // `modelo`: lo que contesta OpenRouter en cada llamada, en orden; un texto es el resultado y un Error es un fallo.
-export function crearEntornoEvaluaciones({ fila = filaPendiente(), curriculum = 'https://archivos.teamtailor.test/cv.pdf', respuestas = { '¿Cuál es tu edad?': '31' }, modelo = [RESULTADO_AD], manychat = {} } = {}) {
+export function crearEntornoEvaluaciones({ fila = filaPendiente(), curriculum = 'https://archivos.teamtailor.test/cv.pdf', respuestas = { '¿Cuál es tu edad?': '31' }, modelo = [RESULTADO_AD], relacionConUsuario = true, manychat = {} } = {}) {
   const supabase = crearSupabaseFalso({ tablas: { evaluaciones: fila ? [fila] : [] }, autoincrementales: ['registros'] });
   const llamadasTT = [];        // { metodo, ruta, cuerpo }
   const llamadasManyChat = [];  // { ruta, cuerpo }
@@ -40,9 +40,9 @@ export function crearEntornoEvaluaciones({ fila = filaPendiente(), curriculum = 
   const vacanteTT = {
     data: {
       id: String(VACANTE), attributes: { title: 'Analista de datos', 'internal-name': 'Cliente Uno - Analista de datos', body: '<p>Analiza <b>datos</b></p>' },
-      relationships: { user: { data: { id: '45146', type: 'users' } } },
+      relationships: { user: { data: relacionConUsuario ? { id: '45146', type: 'users' } : null } },
     },
-    included: [{ type: 'locations', attributes: { name: 'Guadalajara' } }],
+    included: [{ type: 'locations', attributes: { name: 'Guadalajara' } }, { type: 'users', id: '45146', attributes: {} }],
   };
 
   const fetchOriginal = globalThis.fetch;
