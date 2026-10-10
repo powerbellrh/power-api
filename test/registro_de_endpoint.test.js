@@ -72,6 +72,12 @@ test('`resumen` puede cambiar el estado, y `desdeElInicio` deja la fila abierta 
   assert.deepEqual(largo.filas.map(f => [f.estado, f.costo_usd, f.detalle.fuente, Boolean(f.terminado)]), [['ok', 0.05, 'indeed', true]]);
 });
 
+test('una solicitud sin permiso a un endpoint que registra desde el inicio no deja una fila atorada', async () => {
+  const e = entorno({ desdeElInicio: true }, async (req, res) => res.status(401).json({ error: 'Unauthorized' }));
+  assert.equal((await e.llamar()).codigo, 401);
+  assert.equal(e.filas.length, 0);
+});
+
 test('si la tabla falla, la solicitud se contesta igual', async () => {
   const e = entorno({}, async (req, res) => res.status(200).json({ ok: true }));
   e.supabase.fallar = () => 'sin conexión';
