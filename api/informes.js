@@ -80,7 +80,7 @@ const INFORME_TOOL = {
         datos_personales: {
           type: 'object',
           properties: {
-            estado_civil:   { type: 'string', description: 'Una sola línea, ej. "Soltero(a)" o "Casado(a)". Usa ÚNICAMENTE lo que el candidato indicó explícitamente; nunca lo asumas ni uses "Casado(a)" por defecto. Si no está indicado, usa "-".' },
+            estado_civil:   { type: 'string', description: 'Una sola línea, ej. "Soltero(a)" o "Casado(a)". Usa ÚNICAMENTE lo que el candidato indicó explícitamente; nunca lo asumas ni uses "Casado(a)" por defecto. Si no está indicado, usa "-" (aunque sí haya dicho si tiene hijos). Si indicó su estado civil y además si tiene hijos, agrégalo después de una coma, sin paréntesis (ej. "Soltero(a), sin hijos", "Unión libre, 2 hijos").' },
             educacion:      { type: 'string', description: 'Una sola línea, ej. "Lic. en Administración".' },
             domicilio:      { type: 'string', description: 'Una sola línea.' },
             sueldo_deseado: { type: 'string', description: 'Una sola línea. Si el candidato especifica que es nominal o libre, inclúyelo.' },
@@ -90,13 +90,13 @@ const INFORME_TOOL = {
         },
         trayectoria: {
           type: 'array',
-          description: 'Máximo 2 empleos (idealmente 1: el más reciente y relevante), más reciente primero. Lista vacía si no hay información.',
+          description: 'Los 2 empleos más recientes y relevantes, más reciente primero. Si el candidato mencionó dos o más empleos formales (o prácticas en una empresa), incluye siempre 2; solo 1 si únicamente mencionó uno. Lista vacía si no hay información.',
           maxItems: 2,
           items: {
             type: 'object',
             properties: {
               compania: { type: 'string', description: 'Una sola línea.' },
-              periodo:  { type: 'string', description: 'Una sola línea. Usa fechas concretas si están disponibles, formato "<Mes> <año> a <Mes> <año>" (ej. "Marzo 2019 a Febrero 2021"), o "<Mes> <año> a la fecha" si sigue vigente. Nunca uses una duración aproximada como "5 años"; solo recurre a eso si no hay ninguna fecha disponible.' },
+              periodo:  { type: 'string', description: 'Una sola línea. Usa fechas concretas si están disponibles, formato "<Mes> <año> a <Mes> <año>" (ej. "Marzo 2019 a Febrero 2021"), o "<Mes> <año> a la fecha" si sigue vigente. Nunca uses una duración aproximada como "5 años"; solo recurre a eso si no hay ninguna fecha disponible. Si falta el año pero se deduce sin duda de la fecha de hoy (ej. empleo actual "desde marzo"), escríbelo.' },
               puesto:   { type: 'string', description: 'SOLO el nombre del puesto tal cual, lo más corto posible. Nunca incluir área, empresa, giro del negocio ni descripciones adicionales (ej. "Gerente de Ventas", nunca "Gerente de Ventas de la división industrial").' },
               sueldo:   { type: 'string', description: 'Una sola línea. Si el candidato especifica que es nominal o libre, inclúyelo.' },
               salida:   { type: 'string', description: 'Una sola línea.' },
@@ -130,7 +130,7 @@ const INFORME_TOOL = {
             required: ['competencia', 'nivel'],
           },
         },
-        comentarios: { type: 'string', description: 'Un solo párrafo, máximo 70 palabras. La última frase siempre debe ser una recomendación explícita de avance en el proceso — este informe solo se genera para candidatos que ya se decidió avanzar.' },
+        comentarios: { type: 'string', description: 'Un solo párrafo, máximo 70 palabras, con la fortaleza principal y la motivación del candidato. Sin carencias deducidas, sin opiniones del entrevistador y sin mencionar lo que el candidato no dijo. La última frase siempre debe ser una recomendación explícita de avance en el proceso — este informe solo se genera para candidatos que ya se decidió avanzar.' },
       },
       required: ['nombre', 'cliente', 'vacante', 'datos_personales', 'trayectoria', 'apego_vacante', 'competencias', 'comentarios'],
     },
@@ -151,7 +151,7 @@ const INFORME_TOOL_OPERATIVO = {
         datos_personales: {
           type: 'object',
           properties: {
-            estado_civil:   { type: 'string', description: 'Una sola línea, ej. "Soltero(a)" o "Casado(a)". Usa ÚNICAMENTE lo que el candidato indicó explícitamente; nunca lo asumas ni uses "Casado(a)" por defecto. Si no está indicado, usa "-".' },
+            estado_civil:   { type: 'string', description: 'Una sola línea, ej. "Soltero(a)" o "Casado(a)". Usa ÚNICAMENTE lo que el candidato indicó explícitamente; nunca lo asumas ni uses "Casado(a)" por defecto. Si no está indicado, usa "-" (aunque sí haya dicho si tiene hijos). Si indicó su estado civil y además si tiene hijos, agrégalo después de una coma, sin paréntesis (ej. "Soltero(a), sin hijos", "Unión libre, 2 hijos").' },
             educacion:      { type: 'string', description: 'Una sola línea, ej. "Lic. en Administración".' },
             domicilio:      { type: 'string', description: 'Una sola línea.' },
             sueldo_deseado: { type: 'string', description: 'Una sola línea. Si el candidato especifica que es nominal o libre, inclúyelo.' },
@@ -161,13 +161,13 @@ const INFORME_TOOL_OPERATIVO = {
         },
         trayectoria: {
           type: 'array',
-          description: 'Máximo 2 empleos (idealmente 1: el más reciente y relevante), más reciente primero. Lista vacía si no hay información.',
+          description: 'Los 2 empleos más recientes y relevantes, más reciente primero. Si el candidato mencionó dos o más empleos formales (o prácticas en una empresa), incluye siempre 2; solo 1 si únicamente mencionó uno. Lista vacía si no hay información.',
           maxItems: 2,
           items: {
             type: 'object',
             properties: {
               compania: { type: 'string', description: 'Una sola línea.' },
-              periodo:  { type: 'string', description: 'Una sola línea. Usa fechas concretas si están disponibles, formato "<Mes> <año> a <Mes> <año>" (ej. "Marzo 2019 a Febrero 2021"), o "<Mes> <año> a la fecha" si sigue vigente. Nunca uses una duración aproximada como "5 años"; solo recurre a eso si no hay ninguna fecha disponible.' },
+              periodo:  { type: 'string', description: 'Una sola línea. Usa fechas concretas si están disponibles, formato "<Mes> <año> a <Mes> <año>" (ej. "Marzo 2019 a Febrero 2021"), o "<Mes> <año> a la fecha" si sigue vigente. Nunca uses una duración aproximada como "5 años"; solo recurre a eso si no hay ninguna fecha disponible. Si falta el año pero se deduce sin duda de la fecha de hoy (ej. empleo actual "desde marzo"), escríbelo.' },
               puesto:   { type: 'string', description: 'SOLO el nombre del puesto tal cual, lo más corto posible. Nunca incluir área, empresa, giro del negocio ni descripciones adicionales (ej. "Gerente de Ventas", nunca "Gerente de Ventas de la división industrial").' },
               sueldo:   { type: 'string', description: 'Una sola línea. Si el candidato especifica que es nominal o libre, inclúyelo.' },
               salida:   { type: 'string', description: 'Una sola línea.' },
@@ -234,9 +234,11 @@ function construirToolClasificacion(catalogoIntenciones) {
 // cual llegaron, lo que se devolvió, y en `llamadas` cada llamada de IA con su actividad, modelo, costo y duración.
 // `modelo` y `costo_usd` resumen esa lista (qué modelo hizo cada actividad, y la suma de todas las llamadas).
 
-function anotarLlamada(llamadas, actividad, modelo, inicio, datos, error) {
+// `detalle` son datos de la entrada de esa llamada que ayudan a entender el resultado (cuántas preguntas se
+// clasificaron, si el análisis llevó el CV adjunto). Nunca texto del candidato.
+function anotarLlamada(llamadas, actividad, modelo, inicio, datos, error, detalle) {
   llamadas?.push({
-    actividad, modelo,
+    actividad, modelo, ...detalle,
     segundos:       Number(((Date.now() - inicio) / 1000).toFixed(1)),
     costo_usd:      datos?.usage?.cost ?? null,
     tokens_entrada: datos?.usage?.prompt_tokens ?? null,
@@ -246,14 +248,14 @@ function anotarLlamada(llamadas, actividad, modelo, inicio, datos, error) {
 }
 
 // Llamada de chat a OpenRouter que queda anotada en `llamadas`, también cuando falla.
-async function llamarModelo(llamadas, actividad, peticion) {
+async function llamarModelo(llamadas, actividad, peticion, detalle) {
   const inicio = Date.now();
   try {
     const datos = await orChatCompletion({ ...peticion, usage: { include: true } }, process.env.OPENROUTER_API_KEY_INFORMES);
-    anotarLlamada(llamadas, actividad, peticion.model, inicio, datos);
+    anotarLlamada(llamadas, actividad, peticion.model, inicio, datos, null, detalle);
     return datos;
   } catch (error) {
-    anotarLlamada(llamadas, actividad, peticion.model, inicio, null, error);
+    anotarLlamada(llamadas, actividad, peticion.model, inicio, null, error, detalle);
     throw error;
   }
 }
@@ -319,7 +321,7 @@ async function clasificarPreguntasPorIntencion(paresPreguntaRespuesta, catalogoI
       ],
       tools:       [tool],
       tool_choice: { type: 'function', function: { name: 'clasificar_preguntas' } },
-    });
+    }, { preguntas: paresPreguntaRespuesta.length });
 
     const llamada = datos?.choices?.[0]?.message?.tool_calls?.find(c => c.function?.name === 'clasificar_preguntas');
     if (!llamada) return {};
@@ -522,10 +524,12 @@ async function obtenerAnalisisEstructurado(bloqueCrudo, nombreCandidato, vacante
     llamadas,
   } = opciones;
 
-  let mensajeUsuario = `Candidato: ${nombreCandidato}\nVacante: ${vacante}\n\n${bloqueCrudo}`;
+  // La fecha de hoy le permite poner el año a periodos que el candidato dio a medias ("desde marzo", "hace 7 meses").
+  const hoy = new Date().toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', day: 'numeric', month: 'long', year: 'numeric' });
+  let mensajeUsuario = `Fecha de hoy: ${hoy}\nCandidato: ${nombreCandidato}\nVacante: ${vacante}\n\n${bloqueCrudo}`;
 
   if (comentarios) {
-    mensajeUsuario += `\n\n### COMENTARIOS_DE_CORRECCION_DEL_RECLUTADOR\nEste informe ya fue generado previamente y el reclutador solicitó una corrección. A continuación tienes el informe anterior (JSON) y los comentarios del reclutador sobre él. Tu respuesta es ESE MISMO informe con la corrección aplicada, no un informe nuevo:\n- Parte del informe anterior y copia cada campo tal cual está, palabra por palabra, salvo los que los comentarios piden cambiar.\n- Cambia ÚNICAMENTE lo que los comentarios indican, exactamente como se indica. No uses las respuestas del candidato para volver a redactar, completar ni "mejorar" ningún otro campo (nombre, cliente, vacante, domicilio, etc.), aunque te parezca que quedaría mejor.\n- En los textos largos (como "comentarios") no agregues, quites ni reformules frases. Solo toca la frase que el reclutador pide cambiar, o la que quedaría contradiciendo un dato corregido (por ejemplo, dice "soltero" y el reclutador corrigió a casado). Un dato corregido no se agrega al texto si antes no se mencionaba.\n- Si piden quitar un elemento de una lista, elimínalo y deja los demás idénticos y en el mismo orden.\n- "nombre", "cliente" y "vacante" se copian idénticos del informe anterior, salvo que los comentarios los mencionen expresamente.\n- Tu respuesta debe traer TODAS las secciones del informe anterior (ninguna se omite aunque no cambie).`;
+    mensajeUsuario += `\n\n### COMENTARIOS_DE_CORRECCION_DEL_RECLUTADOR\nEste informe ya fue generado previamente y el reclutador solicitó una corrección. A continuación tienes el informe anterior (JSON) y los comentarios del reclutador sobre él. Tu respuesta es ESE MISMO informe con la corrección aplicada, no un informe nuevo:\n- Parte del informe anterior y copia cada campo tal cual está, palabra por palabra, salvo los que los comentarios piden cambiar.\n- Cambia ÚNICAMENTE lo que los comentarios indican, exactamente como se indica. No uses las respuestas del candidato para volver a redactar, completar ni "mejorar" ningún otro campo (nombre, cliente, vacante, domicilio, etc.), aunque te parezca que quedaría mejor.\n- En los textos largos (como "comentarios") no agregues, quites ni reformules frases. Solo toca la frase que el reclutador pide cambiar, o la que quedaría contradiciendo un dato corregido (por ejemplo, dice "soltero" y el reclutador corrigió a casado). Un dato corregido no se agrega al texto si antes no se mencionaba.\n- Si piden quitar un elemento de una lista, elimínalo y deja los demás idénticos y en el mismo orden. Si piden cambiar o reemplazar un elemento, el nuevo ocupa el mismo lugar y trata de lo que el reclutador pidió, con un hecho concreto tomado de las respuestas del candidato (nunca una frase genérica como "tiene experiencia en...").\n- Un dato corregido se corrige en TODOS los campos donde aparezca el valor anterior (por ejemplo, si cambia el nombre de una empresa, cámbialo también en "apego_vacante" y en "comentarios").\n- Si piden borrar una frase o un tema de "comentarios" (por ejemplo "su área de oportunidad"), borra todo lo que trate de eso, aunque el informe lo nombre con otras palabras ("área de desarrollo", "área de mejora", "aunque aún no...") y aunque comparta oración con otra idea; lo que el candidato no dijo o no detalló ("no describió...", "no señaló...") forma parte de su área de oportunidad y se borra con ella.\n- Escribe los datos que dicte el reclutador tal como los dictó y completos: no los acortes ni los resumas aunque las reglas generales pidan brevedad (si dicta el puesto "residente de obra civil y acabados", el puesto es "Residente de Obra Civil y Acabados"). Corrige solo ortografía, mayúsculas y formato (por ejemplo, estado civil e hijos: "Soltero, sin hijos", "Unión libre, 2 hijos"; sin paréntesis).\n- Los comentarios pueden traer varias rondas ("Ronda 2", "Ronda 3"...). Las rondas anteriores ya están aplicadas en el informe anterior: aplica la última y no deshagas nada de las anteriores.\n- "nombre", "cliente" y "vacante" se copian idénticos del informe anterior, salvo que los comentarios los mencionen expresamente.\n- Tu respuesta debe traer TODAS las secciones del informe anterior (ninguna se omite aunque no cambie).`;
 
     if (respuestaAnterior && typeof respuestaAnterior === 'object') {
       const informeAnteriorTexto = JSON.stringify(reconstruirAnalisisPrevio(respuestaAnterior));
@@ -569,7 +573,7 @@ async function obtenerAnalisisEstructurado(bloqueCrudo, nombreCandidato, vacante
       tool_choice: 'auto',
       reasoning:   comentarios ? RAZONAMIENTO_CORRECCION : reasoning,
       max_tokens:  100000,
-    });
+    }, { con_cv: adjuntoCurriculum.length > 0 });
 
     const opcion = datos?.choices?.[0];
     const llamada = opcion?.message?.tool_calls?.find(c => c.function?.name === nombreTool);
