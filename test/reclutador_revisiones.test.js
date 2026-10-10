@@ -675,7 +675,7 @@ test('la retroalimentación queda guardada en el registro (tabla eventos), con e
 
 test('lo que el cliente publica en sus otras vacantes llega con su ficha, pero sus sueldos no respaldan el anuncio nuevo', async () => {
   nuevoEntorno({ tablas: {
-    empresas: [{ id: 2, nombre: 'Península', giro: 'Desarrolladora inmobiliaria', notas: '' }],
+    empresas: [{ id: 2, nombre: 'Península', giro: 'Desarrolladora inmobiliaria', notas: 'Sueldos publicados por nivel: supervisores $20,000 a $25,000.' }],
     vacantes: [
       { id: 10, id_team_tailor: 555555, id_empresa: 2, vacante: 'Península - PM', titulo_externo: 'PM', estatus: 'Publicada', creado: '2026-10-01T00:00:00Z',
         descripcion: '<p>Empresa busca PM.</p><strong>Ofrecemos:</strong><ul><li>Sueldo de $20,000 libres</li><li>Prestaciones de ley</li><li>Bono de permanencia</li></ul><strong>Requisitos:</strong><ul><li>Licenciatura</li></ul>' },
