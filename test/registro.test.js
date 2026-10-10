@@ -127,6 +127,13 @@ test('una operación que falla guarda el error; el costo solo cuenta lo de esa o
   assert.deepEqual({ estado: supabase.tablas.registros[0].estado, error: supabase.tablas.registros[0].error, costo: supabase.tablas.registros[0].costo_usd, detalle: supabase.tablas.registros[0].detalle }, { estado: 'error', error: 'OpenRouter timeout tras 280s', costo: 0, detalle: { etapa: 'analisis' } });
 });
 
+test('un estado como `error_envio` se guarda como error, con su motivo', () => {
+  const { registro, lineas } = registroDePrueba();
+  registro.log('imagen_vacante', { estado: 'error_envio', error: 'ManyChat 400' });
+  assert.equal(lineas[0].estado, 'error_envio', 'en la consola se imprime tal como se anotó');
+  assert.deepEqual(registro.pendientes.map(f => [f.operacion, f.estado, f.detalle.motivo, f.error]), [['imagen_vacante', 'error', 'envio', 'ManyChat 400']]);
+});
+
 test('todas las columnas se llenan aunque el dato no aplique: referencia, actor, intento, segundos y costo', async () => {
   const supabase = baseDeRegistros();
   const registro = crearRegistro({ origen: 'sincronizar_vacantes', imprimir: () => {} });
