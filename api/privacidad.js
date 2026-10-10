@@ -42,6 +42,28 @@ async function eliminarFilas(supabase, tabla, columna, valores) {
   return count ?? 0;
 }
 
+// La bitácora (`registros`) no guarda datos del candidato, pero sí a qué postulación o contacto se refiere cada fila:
+// se borran las suyas (las filas hijas llevan la misma referencia). Es lo único que borra filas de esa tabla.
+async function eliminarRegistros(supabase, tipoReferencia, referencias) {
+  if (!referencias.length) return 0;
+
+  const { count, error } = await supabase.from('registros').delete({ count: 'exact' })
+    .eq('tipo_referencia', tipoReferencia).in('referencia', referencias.map(String));
+  if (error) throw new Error(`registros.${tipoReferencia}: ${error.message}`);
+  return count ?? 0;
+}
+
+// `informes_log` es la bitácora anterior de /informes (esa sí guardaba el informe): se sigue limpiando mientras
+// exista la tabla, y deja de hacer falta cuando se elimine.
+async function eliminarInformesAnteriores(supabase, idsPostulacionTT) {
+  try {
+    return await eliminarFilas(supabase, 'informes_log', 'postulacion_id', idsPostulacionTT);
+  } catch (error) {
+    if (/does not exist|could not find the table|schema cache/i.test(error.message)) return 0;
+    throw error;
+  }
+}
+
 // Los archivos del candidato viven en `<id_teamtailor>/...` dentro de cada bucket.
 async function eliminarArchivos(supabase, idTT) {
   let total = 0;
@@ -150,7 +172,10 @@ export async function eliminarDatosCandidato(supabase, idTT, candidatoTT) {
   eliminados.agenda          = await eliminarFilas(supabase, 'agenda',         'id_postulacion',     idsPostulacion);
   eliminados.evaluaciones    = await eliminarFilas(supabase, 'evaluaciones',   'postulacion_id',     idsPostulacionTT);
   eliminados.evaluaciones   += await eliminarFilas(supabase, 'evaluaciones',   'candidato_telefono', listaTelefonos);
-  eliminados.informes        = await eliminarFilas(supabase, 'informes_log',   'postulacion_id',     idsPostulacionTT);
+  eliminados.informes        = await eliminarInformesAnteriores(supabase, idsPostulacionTT);
+  eliminados.registros       = await eliminarRegistros(supabase, 'postulacion', idsPostulacionTT);
+  eliminados.registros      += await eliminarRegistros(supabase, 'contacto',    idsSuscriptor);
+  eliminados.registros      += await eliminarRegistros(supabase, 'candidato',   [idTT]);
   eliminados.notificaciones  = await eliminarFilas(supabase, 'notificaciones', 'candidato_id',       [idNumerico]);
   eliminados.postulaciones   = await eliminarFilas(supabase, 'postulaciones',  'id',                 idsPostulacion);
   eliminados.conversaciones  = await eliminarFilas(supabase, 'conversaciones', 'id',                 idsConversacion);
