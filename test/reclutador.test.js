@@ -70,7 +70,7 @@ function escribir(texto, { telefono = TELEFONO } = {}) {
 const cierre       = (herramienta, argumentos) => ({ herramienta, argumentos });
 const responder    = mensaje => cierre('responder', { mensaje });
 const vacanteNueva = (extra = {}) => cierre('actualizar_vacante', {
-  mensaje: 'Este es el resumen.', nombre_interno: 'Península - Almacenista', titulo: 'Almacenista', ubicacion: 'Guadalajara, Jalisco',
+  mensaje: 'Este es el resumen.', nombre_interno: 'Península - Almacenista', titulo: 'Almacenista', tipo: 'operativa', ubicacion: 'Guadalajara, Jalisco',
   descripcion: DESCRIPCION, contexto: 'Busca perfil con experiencia', confirmado: false, escena_imagen: 'A warehouse worker', generar_imagen: false,
   ...extra,
 });
@@ -81,7 +81,7 @@ const resultadosDeHerramientas = () => entorno.peticionesModelo.at(-1).mensajes.
 
 test('un reclutador se reconoce por su teléfono en usuarios, con o sin lada de país', async () => {
   nuevoEntorno();
-  const laura = { id: 'u1', nombre: 'Laura', rol: 'gerente', idTeamTailor: null };
+  const laura = { id: 'u1', nombre: 'Laura', rol: 'gerente', idTeamTailor: null, tipoDeVacantes: null };
   assert.deepEqual(await buscarReclutador(entorno.supabase, '5213312345678'), laura);
   assert.deepEqual(await buscarReclutador(entorno.supabase, '3312345678'), laura);
   assert.equal(await buscarReclutador(entorno.supabase, '5213387654321'), null, 'el rol de reclutador no tiene agente');
@@ -131,7 +131,7 @@ test('una vacante que no existe o una consulta que falla se le informa al modelo
 
 test('crear una vacante: resumen con imagen y anuncio, y se publica una sola vez al confirmar', async () => {
   nuevoEntorno();
-  entorno.encolarModelo('agente', vacanteNueva({ nombre_interno: '', titulo: '', ubicacion: '', descripcion: '', contexto: '', escena_imagen: '', mensaje: '¿Qué nombre interno le ponemos?' }));
+  entorno.encolarModelo('agente', vacanteNueva({ nombre_interno: '', titulo: '', tipo: '', ubicacion: '', descripcion: '', contexto: '', escena_imagen: '', mensaje: '¿Qué nombre interno le ponemos?' }));
   await escribir('quiero crear una vacante');
   assert.deepEqual(entorno.mensajes, ['¿Qué nombre interno le ponemos?']);
   assert.equal(imagenes.generadas.length, 0);
@@ -144,7 +144,7 @@ test('crear una vacante: resumen con imagen y anuncio, y se publica una sola vez
   assert.match(imagenes.enviadas[0].url, /^https:\/\/firmada\.test\//);
   assert.match(imagenes.enviadas[0].texto, /^Empresa busca almacenista\.[\s\S]*\*Ofrecemos:\*/);
   // Ya existe "Península - Almacenista" (555555): se le avisa antes del resumen, sin impedirle confirmar.
-  assert.equal(entorno.mensajes.at(-1), 'Ojo: ya hay una vacante publicada igual: Península - Almacenista (ID 555555). Si es otra distinta, confirma y la subo; si no, dime y la descartamos.\n\nEste es el resumen.\n\n¿Confirmas que la suba a TeamTailor?');
+  assert.equal(entorno.mensajes.at(-1), 'Ojo: ya hay una vacante publicada igual: Península - Almacenista (ID 555555). Si es otra distinta, confirma y la subo; si no, dime y la descartamos.\n\n*Nombre interno:* Península - Almacenista\n*Título:* Almacenista\n*Tipo:* Operativa\n*Contexto:* Busca perfil con experiencia\n\nEste es el resumen.\n\n¿Confirmas que la suba a TeamTailor?');
   assert.match(entorno.peticionesModelo.at(-1).usuario, /Borrador de vacante en curso:\n\(ninguno\)/);
   assert.equal(creaciones(), 0);
 

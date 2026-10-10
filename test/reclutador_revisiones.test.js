@@ -76,7 +76,7 @@ const escribir = (texto, imagenesExtra = {}) => procesarConversacion({
 const cierre    = (herramienta, argumentos) => ({ herramienta, argumentos });
 const responder = mensaje => cierre('responder', { mensaje });
 const vacanteNueva = (extra = {}) => cierre('actualizar_vacante', {
-  mensaje: 'Este es el resumen.', nombre_interno: 'Oxxo - Cajero', titulo: 'Cajero/a', ubicacion: 'Guadalajara, Jalisco',
+  mensaje: 'Este es el resumen.', nombre_interno: 'Oxxo - Cajero', titulo: 'Cajero/a', tipo: 'administrativa', ubicacion: 'Guadalajara, Jalisco',
   descripcion: DESCRIPCION, contexto: 'Busca perfil con experiencia', confirmado: false, escena_imagen: 'A cashier', generar_imagen: false,
   descripcion_modificada: true, contexto_modificado: true, datos_supuestos: [],
   ...extra,
@@ -118,7 +118,7 @@ test('el nombre del cliente en el anuncio se corrige con un reintento, y si el m
   entorno.encolarModelo('agente', conNombre, conNombre);
   await escribir('Oxxo cajero en Guadalajara');
   assert.doesNotMatch(borrador().descripcion, /Oxxo/);
-  assert.match(borrador().descripcion, /la empresa busca almacenista/);
+  assert.match(borrador().descripcion, /La empresa busca almacenista/);
   assert.doesNotMatch(borrador().escena_imagen, /Oxxo/);
   assert.doesNotMatch(imagenes.generadas[0], /Oxxo/);
 });
@@ -606,7 +606,7 @@ test('un sueldo escrito "30 000" (miles con espacio) se respeta: el anuncio no q
   nuevoEntorno();
   const conSueldo = vacanteNueva({ descripcion: DESCRIPCION.replace('Sueldo competitivo', 'Sueldo de $30,000 MXN mensuales libres') });
   entorno.encolarModelo('agente', conSueldo);
-  await escribir('30 000 y mismas prestaciones');
+  await escribir('30 000 libres y mismas prestaciones');
   assert.equal(llamadasAlAgente(), 1, 'la cifra la dio ella: no hay nada que corregir');
   assert.match(borrador().descripcion, /Sueldo de \$30,000 MXN mensuales libres/);
 });
@@ -659,6 +659,67 @@ test('"mis vacantes": se listan solo las vacantes de las que es responsable en T
   await escribir('qué vacantes tengo a mi nombre');
   assert.deepEqual(resultadosDeHerramientas()[0].vacantes.map(v => v.id), [666666]);
   assert.equal(resultadosDeHerramientas()[0].publicadas_en_total, 1);
+});
+
+test('una vacante operativa se crea con la plantilla operativa y una administrativa con la suya; la responsable es quien la pidió', async () => {
+  const publicar = async (tipo, idTeamTailor, pedido = 'Oxxo cajero en Guadalajara') => {
+    const usuarios = [{ id: 'u1', nombre: 'Laura', id_rol: 2, telefono: 3312345678, ...(idTeamTailor ? { id_team_tailor: idTeamTailor } : {}) }];
+    nuevoEntorno({ tablas: { usuarios }, vacantes: { 777001: vacanteTeamTailor({ titulo: 'Cajero' }) } });
+    entorno.encolarModelo('agente', vacanteNueva({ tipo }), vacanteNueva({ tipo, confirmado: true, descripcion_modificada: false, contexto_modificado: false }));
+    await escribir(pedido);
+    await escribir('sí');
+    const creada = entorno.llamadasTT_('POST', /^\/jobs$/)[0].cuerpo.data;
+    return { plantilla: creada.attributes['template-id'], responsable: creada.relationships.user.data.id };
+  };
+
+  // Regla general: quien está en la lista de operativas crea operativas, y los demás administrativas, diga lo que diga el modelo.
+  assert.deepEqual(await publicar('administrativa', '45147'), { plantilla: '126960', responsable: '45147' });
+  assert.match(entorno.peticionesModelo[0].usuario, /Tipo de vacantes que crea esta persona: operativa/);
+  assert.deepEqual(await publicar('operativa', '900'), { plantilla: '129919', responsable: '900' });
+  // La excepción: que ella diga de qué tipo es. El tipo queda guardado aunque la responsable no sea de operativas.
+  assert.deepEqual(await publicar('administrativa', '900', 'Oxxo cajero en Guadalajara, esta es operativa'), { plantilla: '126960', responsable: '900' });
+  assert.equal(entorno.supabase.tablas.vacantes.find(v => v.id_team_tailor === 777001)?.tipo, 'Operativa');
+  // Sin usuario de TeamTailor ligado: la operativa queda con el responsable de operativas y la administrativa con el bot.
+  assert.deepEqual(await publicar('operativa'), { plantilla: '126960', responsable: '42381' });
+  assert.deepEqual(await publicar('administrativa'), { plantilla: '129919', responsable: '43720' });
+});
+
+test('sin tipo la vacante no está completa: no se presenta el resumen ni se publica', async () => {
+  nuevoEntorno();
+  entorno.encolarModelo('agente', vacanteNueva({ tipo: '', mensaje: '¿Es operativa o administrativa?' }));
+  await escribir('Oxxo cajero en Guadalajara');
+  assert.equal(imagenes.generadas.length, 0);
+  assert.equal(entorno.mensajes.at(-1), '¿Es operativa o administrativa?');
+});
+
+test('el nombre interno, el título, el tipo y el contexto del resumen los escribe el sistema, no el modelo', async () => {
+  nuevoEntorno();
+  entorno.encolarModelo('agente', vacanteNueva({ titulo: 'Cajero - Tienda de Conveniencia', mensaje: '*Nombre interno:* Oxxo - Cajero\n*Título:* Cajero\n- Tipo: Administrativa\n*Contexto:* otro texto\n\n**Listo**, ¿confirmas?' }));
+  await escribir('Oxxo cajero en Guadalajara');
+  assert.match(todo(), /\*Título:\* Cajero - Tienda de Conveniencia\n/);
+  assert.doesNotMatch(todo(), /Título:\* Cajero\n|otro texto|Tipo: Administrativa/);
+  assert.match(entorno.mensajes.at(-1), /\n\n\*Listo\*, ¿confirmas\?$/);
+});
+
+test('la misma vacante en otra ciudad no se avisa como duplicada', async () => {
+  nuevoEntorno({ tablas: { vacantes: [{ id: 12, id_team_tailor: 777777, vacante: 'Oxxo - Cajero (Vallarta)', titulo_externo: 'Cajero', descripcion: '<p>z</p>', estatus: 'Publicada', creado: '2026-10-03T00:00:00Z' }] } });
+  entorno.encolarModelo('agente', vacanteNueva({ nombre_interno: 'Oxxo - Cajero (Guadalajara)' }));
+  await escribir('Oxxo cajero, se llama Oxxo - Cajero (Guadalajara), en Guadalajara');
+  assert.doesNotMatch(todo(), /ya hay una vacante publicada igual/);
+});
+
+test('"las vacantes de Paulina": se listan las de esa persona; un nombre que no existe se le dice al modelo', async () => {
+  nuevoEntorno({ tablas: { usuarios: [{ id: 'u1', nombre: 'Laura', id_rol: 2, telefono: 3312345678, id_team_tailor: '900' }, { id: 'u2', nombre: 'Paulina Hernández', id_rol: 3, id_team_tailor: '111' }] } });
+  SOLICITUDES_TT['/jobs'] = { links: {}, data: [
+    { id: '555555', relationships: { user: { data: { id: '111' } } } }, { id: '666666', relationships: { user: { data: { id: '900' } } } },
+  ] };
+  const listar = responsable => cierre('listar_vacantes', { texto: '', filtro: 'todas', tipo: 'todas', solo_mias: false, responsable });
+  entorno.encolarModelo('agente', listar('paulina'), listar('Hugo'), responder('Paulina tiene una.'));
+  await escribir('cuántas vacantes tiene Paulina y cuántas Hugo');
+  const [dePaulina, deHugo] = resultadosDeHerramientas();
+  assert.deepEqual(dePaulina.vacantes.map(v => v.id), [555555]);
+  assert.match(dePaulina.solo, /Paulina Hernández es responsable/);
+  assert.match(deHugo.error, /No hay nadie en el equipo que se llame "Hugo"/);
 });
 
 test('la retroalimentación queda guardada en el registro (tabla eventos), con el comentario completo', async () => {

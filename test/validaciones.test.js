@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { resumenDeCambios, resumenDeSupuestos } from '../lib/chatbot/reclutador/avisos.js';
 import {
   asegurarSueldo, cambiarCiudad, hayCriterioDiscriminatorio, horariosSinRespaldo, limpiarMensaje, mencionaAlCliente, mismaOferta, montosDeTexto, montosSinRespaldo, nombreSinUbicacionAjena,
-  normalizarDescripcion, repararVacante, revisarVacante, sueldoDado, SUELDO_POR_OMISION, textoParecido,
+  normalizarDescripcion, quitarNetoNoDicho, repararEncabezadoOperativo, repararVacante, revisarVacante, sueldoDado, SUELDO_POR_OMISION, textoParecido,
 } from '../lib/chatbot/reclutador/validaciones.js';
 import { limpiarHtmlParaWhatsApp } from '../lib/formato_texto.js';
 
@@ -34,6 +34,9 @@ test('el nombre del cliente no puede estar en el anuncio, salvo que ella lo pida
   assert.equal(mencionaAlCliente('Una cadena de autoservicios', 'Walmart - Auxiliar'), false);
   assert.equal(mencionaAlCliente('Hospital Ángeles busca enfermera', 'Hospital Ángeles - Enfermera (Tijuana)'), true);
   assert.equal(mencionaAlCliente('¡Walmart te busca!', 'Walmart - Auxiliar', 'pon el nombre del cliente en el anuncio'), false);
+  assert.equal(mencionaAlCliente('¡Walmart te busca!', 'Walmart - Auxiliar', 'me falta que menciones la empresa Walmart en el anuncio'), false);
+  assert.equal(mencionaAlCliente('¡Walmart te busca!', 'Walmart - Auxiliar', 'le pedí que apareciera el nombre Walmart'), false);
+  assert.equal(repararVacante({ args: { nombre_interno: 'Walmart - Auxiliar', descripcion: '<p>Walmart, cadena de autoservicios, busca auxiliar.</p>' }, textoReclutadora: 'auxiliar para walmart', respaldoMontos: '', textoActual: '' }).descripcion, '<p>La empresa, cadena de autoservicios, busca auxiliar.</p>');
 });
 
 test('la ciudad entre paréntesis del nombre solo se queda si ella la escribió como parte del nombre', () => {
@@ -79,6 +82,36 @@ test('revisarVacante junta todos los problemas y repararVacante los arregla en c
 test('limpia el mensaje: sin emojis y sin prometer lo que no se envió', () => {
   assert.equal(limpiarMensaje('Listo 😊. Arriba te llega el anuncio. ¿Confirmas?', { anuncioEnviado: false }), 'Listo . ¿Confirmas?');
   assert.equal(limpiarMensaje('Arriba te llega el anuncio. ¿Confirmas?', { anuncioEnviado: true }), 'Arriba te llega el anuncio. ¿Confirmas?');
+});
+
+test('las negritas del modelo con doble asterisco salen con uno solo, como las marca WhatsApp', () => {
+  assert.equal(limpiarMensaje('**Ana** tiene *2* vacantes', { anuncioEnviado: true }), '*Ana* tiene *2* vacantes');
+});
+
+test('el encabezado del anuncio operativo: un solo párrafo, con el puesto primero y sin repetir el sueldo en la lista', () => {
+  const suelto = '<p>🏢 <strong>Empresa:</strong> Empresa Chocolatera</p><p>💰 <strong>Salario:</strong> $2,800 semanales libres</p><p>🕒 <strong>Horario:</strong> Lunes a sábado</p><p>🤝 <strong>Ofrecemos:</strong></p><ul><li>Sueldo de $2,800 semanales libres</li><li>Comedor</li></ul><p>📲 ¡Postúlate!</p>';
+  assert.equal(
+    repararEncabezadoOperativo(suelto, 'Montacarguista - Empresa Chocolatera'),
+    '<p>👷🏻 <strong>Puesto:</strong> Montacarguista<br>🏢 <strong>Empresa:</strong> Empresa Chocolatera<br>💰 <strong>Salario:</strong> $2,800 semanales libres<br>🕒 <strong>Horario:</strong> Lunes a sábado</p><p>🤝 <strong>Ofrecemos:</strong></p><ul><li>Comedor</li></ul><p>📲 ¡Postúlate!</p>',
+  );
+  // Un bono con otra cifra no es el sueldo repetido, y un anuncio bien armado o sin encabezado no se toca.
+  const bien = '<p>👷🏻 <strong>Puesto:</strong> Almacenista<br>💰 <strong>Salario:</strong> $2,400 libres semanales</p><p>🤝 <strong>Ofrecemos:</strong></p><ul><li>Sueldo de $2,400 más bono de $300</li></ul>';
+  assert.equal(repararEncabezadoOperativo(bien, 'Almacenista'), bien);
+  assert.equal(repararEncabezadoOperativo(ANUNCIO, 'Almacenista'), ANUNCIO);
+  const conListaDeHorario = `${ANUNCIO}<p><strong>Horario:</strong></p><ul><li>Lunes a sábado</li></ul>`;
+  assert.equal(repararEncabezadoOperativo(conListaDeHorario, 'Almacenista'), conListaDeHorario);
+});
+
+test('"libres" o "netos" junto al sueldo se quita si ella no lo dijo', () => {
+  assert.equal(quitarNetoNoDicho('<strong>Salario:</strong> $3,000 semanales libres', 'auxiliar, 3000 semanales'), '<strong>Salario:</strong> $3,000 semanales');
+  assert.equal(quitarNetoNoDicho('Sueldo de $2,500 libres semanales + vales', 'paga 2500 a la semana'), 'Sueldo de $2,500 semanales + vales');
+  assert.equal(quitarNetoNoDicho('Sueldo de $14,000 netos al mes', '14 mil'), 'Sueldo de $14,000 al mes');
+  assert.equal(quitarNetoNoDicho('Sueldo de $2,500 libres semanales', '2500 libres semanales'), 'Sueldo de $2,500 libres semanales');
+  assert.equal(quitarNetoNoDicho('Fines de semana libres. Sueldo de $9,000', '9 mil'), 'Fines de semana libres. Sueldo de $9,000');
+  // Al copiar una vacante, la cifra que ya venía como libre se queda así; otra cifra no.
+  const leido = '<li>Sueldo de $2,800 semanales libres</li>';
+  assert.equal(quitarNetoNoDicho('Sueldo de $2,800 semanales libres', 'una igual a la de cajero', leido), 'Sueldo de $2,800 semanales libres');
+  assert.equal(quitarNetoNoDicho('Sueldo de $3,000 semanales libres', '3000 semanales', leido), 'Sueldo de $3,000 semanales');
 });
 
 test('resumen de cambios y de supuestos', () => {

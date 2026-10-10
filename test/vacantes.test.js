@@ -10,22 +10,22 @@ const DESCRIPCION = '<p>Empresa busca almacenista.</p><p><strong>Ofrecemos:</str
 // ── Funciones del borrador ───────────────────────────────────────────────────
 
 test('el resumen está completo solo con todos los datos publicables', () => {
-  const completo = { nombre_interno: 'a', titulo: 'b', ubicacion: 'c', descripcion: 'd', contexto: 'e' };
+  const completo = { nombre_interno: 'a', titulo: 'b', tipo: 'operativa', ubicacion: 'c', descripcion: 'd', contexto: 'e' };
   assert.equal(resumenCompleto(completo), true);
   for (const campo of Object.keys(completo)) assert.equal(resumenCompleto({ ...completo, [campo]: '' }), false, campo);
 });
 
 test('la huella cambia si cambia cualquier dato que la reclutadora revisa, y no por la escena de la imagen', () => {
-  const base = { nombre_interno: 'a', titulo: 'b', ubicacion: 'c', descripcion: 'd', contexto: 'e', imagen_ruta: 'f', escena_imagen: 'x' };
+  const base = { nombre_interno: 'a', titulo: 'b', tipo: 'operativa', ubicacion: 'c', descripcion: 'd', contexto: 'e', imagen_ruta: 'f', escena_imagen: 'x' };
   const huella = huellaResumen(base);
   assert.equal(huellaResumen({ ...base, escena_imagen: 'otra escena' }), huella);
-  for (const campo of ['nombre_interno', 'titulo', 'ubicacion', 'descripcion', 'contexto', 'imagen_ruta']) {
+  for (const campo of ['nombre_interno', 'titulo', 'tipo', 'ubicacion', 'descripcion', 'contexto', 'imagen_ruta']) {
     assert.notEqual(huellaResumen({ ...base, [campo]: 'cambio' }), huella, campo);
   }
 });
 
 test('una confirmación solo es válida si el resumen estaba completo y no cambió desde que se mostró', () => {
-  const borrador = { nombre_interno: 'a', titulo: 'b', ubicacion: 'c', descripcion: 'd', contexto: 'e', imagen_ruta: 'f' };
+  const borrador = { nombre_interno: 'a', titulo: 'b', tipo: 'operativa', ubicacion: 'c', descripcion: 'd', contexto: 'e', imagen_ruta: 'f' };
   const huellaMostrada = huellaResumen(borrador);
   assert.equal(confirmacionValida({ confirmadoPorModelo: true, borrador, huellaMostrada }), true);
   assert.equal(confirmacionValida({ confirmadoPorModelo: false, borrador, huellaMostrada }), false);

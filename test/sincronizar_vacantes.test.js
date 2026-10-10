@@ -85,7 +85,7 @@ test('diferencias ignora lo igual y trata null y ausente como lo mismo', () => {
 
 test('agrega las vacantes de TeamTailor que faltan y completa cliente, periodo, tipo, habilidades, ubicación y contexto', async () => {
   const supabase = crearSupabaseFalso({ tablas: {
-    vacantes: [copia(1, { vacante: 'Península - Puesto 1', tipo: 'Administrativa', creado: '2026-10-01T00:00:00Z', habilidades: null, id_empresa: null, salario_periodo: null })],
+    vacantes: [copia(1, { vacante: 'Península - Puesto 1', tipo: null, creado: '2026-10-01T00:00:00Z', habilidades: null, id_empresa: null, salario_periodo: null })],
     empresas: [{ id: 7, nombre: 'Península' }, { id: 8, nombre: 'Convert Solutions' }],
     ubicaciones_seleccionadas: [],
   } });
