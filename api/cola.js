@@ -11,13 +11,11 @@ const UMBRAL_ATASCO_MS = 6 * 60 * 1000;
 
 // Deja en `registros` lo que hizo la corrida. Solo se llama cuando procesó algo o falló (la cola corre cada minuto y
 // casi siempre está vacía). Nunca lanza ni cambia la respuesta.
-// `referencia` es la postulación cuando la corrida mandó una sola; con varias (o ninguna) no se refiere a una en particular.
-async function registrarCorrida(supabase, estado, { error = null, inicio, postulaciones = [], ...detalle }) {
+// De la corrida queda cuántas postulaciones encontró y mandó, no cuáles (cada una deja su propia fila al evaluarse).
+async function registrarCorrida(supabase, estado, { error = null, inicio, ...detalle }) {
   try {
-    const una = postulaciones.length === 1;
     await supabase.from('registros').insert({
-      origen: 'cola', operacion: 'corrida', estado, actor: 'cron',
-      referencia: una ? String(postulaciones[0]) : 'cola', tipo_referencia: una ? 'postulacion' : 'proceso',
+      origen: 'cola', operacion: 'corrida', estado, actor: 'cron', referencia: 'cola', tipo_referencia: 'proceso',
       creado: new Date(inicio).toISOString(), terminado: new Date().toISOString(),
       intento: 1, segundos: Number(((Date.now() - inicio) / 1000).toFixed(1)), costo_usd: 0,
       error: limpiarError(error), detalle,
@@ -106,7 +104,7 @@ export default async function handler(req, res) {
 
   console.log(JSON.stringify({ etapa: 'completado', encontrados: trabajos.length, enviados: procesados.length, fallidos: fallidos.length }));
   await registrarCorrida(supabase, fallidos.length > 0 ? 'error' : 'ok', {
-    inicio, postulaciones: trabajos.map(t => t.id),
+    inicio,
     encontrados: trabajos.length, enviados: procesados.length, fallidos: fallidos.length,
     evaluaciones: trabajos.filter(t => t.tipo === 'evaluacion').length, reevaluaciones: trabajos.filter(t => t.tipo === 'reevaluacion').length,
     error: fallidos[0]?.error ?? null,
