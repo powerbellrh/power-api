@@ -35,6 +35,7 @@ export default async function handler(req, res) {
     candidato_telefono:    telefonoLimpio,
     vacante_id:            vacanteId,
     vacante_tipo:          'AD',
+    origen:                'teamtailor',
     evaluacion_agendada:   false,
     evaluacion_completada: false,
   }]);
