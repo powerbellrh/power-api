@@ -722,16 +722,24 @@ test('"las vacantes de Paulina": se listan las de esa persona; un nombre que no 
   assert.match(deHugo.error, /No hay nadie en el equipo que se llame "Hugo"/);
 });
 
-test('la retroalimentación queda guardada en el registro (tabla eventos), con el comentario completo', async () => {
+test('la retroalimentación se manda a guardar descrita (tipo y qué pide), sin el comentario ni el nombre de quien lo dijo', async () => {
   nuevoEntorno();
   const comentario = `Para el revisor: los mensajes son muy verbosos. ${'Detalle. '.repeat(80)}`.trim();
   entorno.encolarModelo('agente', cierre('registrar_retroalimentacion', { comentario }), responder('Quedó registrado para el equipo de sistemas.'));
+  entorno.encolarModelo('describir_texto', { categoria: 'redaccion', para_sistemas: true, pedido: 'Laura pide que los mensajes del asistente sean más cortos' });
   await escribir(comentario);
-  const evento = entorno.registros.find(registro => registro.etapa === 'retroalimentacion_reclutador');
-  assert.equal(evento.guardar, true);
-  assert.equal(evento.de, 'Laura');
-  assert.equal(evento.comentario.join(''), comentario);
-  assert.ok(evento.comentario.every(parte => parte.length <= 450));
+
+  const evento = entorno.registros.find(registro => registro.etapa === 'retroalimentacion');
+  assert.deepEqual(evento, { etapa: 'retroalimentacion', estado: 'ok', guardar: true, largo: comentario.length, categoria: 'redaccion', pedido: 'pide que los mensajes del asistente sean más cortos' });
+  assert.equal(entorno.peticionesDescripcion[0].texto, comentario, 'el modelo que la describe sí recibe el comentario');
+  assert.match(entorno.mensajes.at(-1), /Quedó registrado/);
+});
+
+test('si no se puede describir la retroalimentación, igual queda registrada (solo con su largo)', async () => {
+  nuevoEntorno();
+  entorno.encolarModelo('agente', cierre('registrar_retroalimentacion', { comentario: 'tarda mucho' }), responder('Quedó registrado.'));
+  await escribir('tarda mucho');
+  assert.deepEqual(entorno.registros.find(registro => registro.etapa === 'retroalimentacion'), { etapa: 'retroalimentacion', estado: 'ok', guardar: true, largo: 11, categoria: null, pedido: null });
 });
 
 test('lo que el cliente publica en sus otras vacantes llega con su ficha, pero sus sueldos no respaldan el anuncio nuevo', async () => {

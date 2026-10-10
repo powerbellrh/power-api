@@ -323,9 +323,9 @@ test('una vacante sin tipo guardado se cuenta como "Sin tipo" y no entra en oper
   assert.equal((await (await import('../lib/chatbot/reclutador/estadisticas.js')).estadisticasVacantes(entorno.supabase, { tipo: 'operativa' })).total, 0);
 });
 
-// ── Lo que queda en la tabla eventos ─────────────────────────────────────────
+// ── Lo que queda en la tabla registros ───────────────────────────────────────
 
-test('el reinicio y la compactación del contexto se mandan a guardar en eventos, con el texto de la conversación', async () => {
+test('el reinicio y la compactación del contexto se mandan a guardar solo con cifras, sin el texto de la conversación', async () => {
   const eventos = [];
   const log = (etapa, datos) => eventos.push({ etapa, ...datos });
   const historial = Array.from({ length: MUCHAS }, (_, i) => `[2026-10-09 10:00:00] ${i % 2 ? 'agente' : 'reclutador'}: mensaje secreto ${i}`).join('\n');
@@ -336,10 +336,6 @@ test('el reinicio y la compactación del contexto se mandan a guardar en eventos
   assert.deepEqual(eventos.map(evento => [evento.etapa, evento.estado, evento.guardar]), [['contexto_compactado', 'ok', true], ['contexto_reiniciado', 'ok', true]]);
   assert.deepEqual({ resumidas: eventos[0].lineas_resumidas, conservadas: eventos[0].lineas_conservadas, resumen: eventos[0].caracteres_del_resumen }, { resumidas: MUCHAS - LINEAS_CONSERVADAS, conservadas: LINEAS_CONSERVADAS, resumen: 13 });
   assert.deepEqual({ descartadas: eventos[1].lineas_descartadas, probabilidad: eventos[1].probabilidad_operacion_nueva }, { descartadas: MUCHAS, probabilidad: 0.97 });
-  // El texto va completo, para poder revisar después qué se resumió o se descartó.
-  assert.equal(eventos[0].conversacion.mensajes_resumidos.length, MUCHAS - LINEAS_CONSERVADAS);
-  assert.match(eventos[0].conversacion.mensajes_resumidos[0], /reclutador: mensaje secreto 0$/);
-  assert.equal(eventos[0].conversacion.resumen_nuevo, 'resumen corto');
-  assert.equal(eventos[1].conversacion.mensaje_nuevo, 'otra cosa');
-  assert.equal(eventos[1].conversacion.mensajes_descartados.length, MUCHAS);
+  // Lo que se platicó no se guarda: ni los mensajes, ni el resumen, ni el mensaje que provocó el reinicio.
+  assert.equal(/mensaje secreto|resumen corto|otra cosa/.test(JSON.stringify(eventos)), false);
 });

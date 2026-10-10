@@ -1,5 +1,6 @@
 import { createClient }  from '@supabase/supabase-js';
-import { dormir, ttObtener } from '../lib/clientes_api.js';
+import { ttObtener } from '../lib/clientes_api.js';
+import { esperarDescripcion } from '../lib/descripcion_de_texto.js';
 import { analizarRespuestas } from '../lib/evaluacion_postulacion.js';
 import { rechazarSolicitud } from '../lib/http.js';
 import { cambiosDeLaCorreccion, cumplimientoDeReglas, describirCorreccion, formaDelInforme, rondaDe } from '../lib/informes/bitacora.js';
@@ -23,9 +24,6 @@ import { normalizarTelefonoMx } from '../lib/telefono.js';
 //
 // Cada informe o corrección deja una fila en `registros` (origen 'informes'), SIN contenido: ni el informe, ni los
 // comentarios del reclutador, ni datos del candidato. Lo que se guarda está en lib/informes/bitacora.js.
-
-// Cuánto se espera, ya con el informe listo, a que termine la descripción de la corrección (va en paralelo).
-const ESPERA_DESCRIPCION_MS = 5000;
 
 // ── TeamTailor ───────────────────────────────────────────────────────────
 
@@ -352,7 +350,7 @@ export default async function handler(req, res) {
       bitacora.cumplimiento = cumplimientoDeReglas(entregado, { tipo: tipoInforme, bloqueCrudo, conCv: bitacora.con_cv });
       if (esCorreccion) {
         if (respuestaAnterior && typeof respuestaAnterior === 'object') bitacora.cambios = cambiosDeLaCorreccion(reconstruirAnalisisPrevio(respuestaAnterior), entregado);
-        bitacora.descripcion = await Promise.race([descripcion, dormir(ESPERA_DESCRIPCION_MS).then(() => null)]);
+        bitacora.descripcion = await esperarDescripcion(descripcion);
       }
       await operacion.cerrar('ok', bitacora);
 

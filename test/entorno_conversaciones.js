@@ -19,7 +19,7 @@ const ahora = () => new Date().toISOString();
 export function crearEntornoConversaciones({ tablas = {}, vacantesTeamTailor = {}, preguntasTeamTailor = {}, aplicacionesTeamTailor = [], respuestasTeamTailor = {} } = {}) {
   const supabase = crearSupabaseFalso({
     tablas,
-    autoincrementales: ['candidatos', 'postulaciones', 'vacantes', 'preguntas', 'preguntas_seleccionadas', 'respuestas', 'conversaciones', 'usuarios', 'reclutadores_asignados'],
+    autoincrementales: ['candidatos', 'postulaciones', 'vacantes', 'preguntas', 'preguntas_seleccionadas', 'respuestas', 'conversaciones', 'usuarios', 'reclutadores_asignados', 'registros'],
     unicos: {
       conversaciones: ['telefono', 'manychat'],
       candidatos:     ['telefono'],
@@ -37,6 +37,7 @@ export function crearEntornoConversaciones({ tablas = {}, vacantesTeamTailor = {
   const colasModelo   = {};
   const peticionesModelo = [];
   const peticionesModeloCrudas = [];  // el cuerpo completo de cada petición al agente con herramientas
+  const peticionesDescripcion = [];
   const colaDecisiones = [];
   const peticionesDecision = [];
   const envios        = [];           // lo que ManyChat mostró: { flow_ns, campos: { [field_id]: valor } }
@@ -64,6 +65,14 @@ export function crearEntornoConversaciones({ tablas = {}, vacantesTeamTailor = {
       }
 
       const herramienta = cuerpo.tool_choice?.function?.name ?? 'texto';
+      // La descripción de lo que escribió una reclutadora (para `registros`) va aparte: no cuenta como petición del
+      // chatbot, y sin respuesta simulada falla, que es como se queda sin descripción.
+      if (herramienta === 'describir_texto') {
+        peticionesDescripcion.push({ sistema: cuerpo.messages[0].content, texto: cuerpo.messages[1].content });
+        const descripcion = (colasModelo.describir_texto ?? []).shift();
+        if (!descripcion) return respuestaHttp({ error: 'sin descripción simulada' }, 500);
+        return respuestaHttp({ choices: [{ message: { tool_calls: [{ function: { name: herramienta, arguments: JSON.stringify(descripcion) } }] } }], usage: { cost: 0.0002 } });
+      }
       peticionesModelo.push({ herramienta, sistema: cuerpo.messages[0].content, usuario: cuerpo.messages[1].content });
       const cola = colasModelo[herramienta] ?? [];
       if (cola.length === 0) return respuestaHttp({ error: `sin respuesta simulada para ${herramienta}` }, 500);
@@ -145,6 +154,7 @@ export function crearEntornoConversaciones({ tablas = {}, vacantesTeamTailor = {
     etiquetas,
     peticionesModelo,
     peticionesModeloCrudas,
+    peticionesDescripcion,
     llamadasTT,
     aplicaciones,
     fallarManyChatSi: null,     // (ruta, cuerpo) => boolean
