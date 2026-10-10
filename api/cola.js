@@ -11,13 +11,22 @@ const UMBRAL_ATASCO_MS = 6 * 60 * 1000;
 
 // Deja en `registros` lo que hizo la corrida. Solo se llama cuando procesó algo o falló (la cola corre cada minuto y
 // casi siempre está vacía). Nunca lanza ni cambia la respuesta.
-async function registrarCorrida(supabase, estado, { error = null, ...detalle }) {
+// `referencia` es la postulación cuando la corrida mandó una sola; con varias (o ninguna) no se refiere a una en particular.
+async function registrarCorrida(supabase, estado, { error = null, inicio, postulaciones = [], ...detalle }) {
   try {
-    await supabase.from('registros').insert({ origen: 'cola', operacion: 'corrida', estado, actor: 'cron', terminado: new Date().toISOString(), error: limpiarError(error), detalle });
+    const una = postulaciones.length === 1;
+    await supabase.from('registros').insert({
+      origen: 'cola', operacion: 'corrida', estado, actor: 'cron',
+      referencia: una ? String(postulaciones[0]) : 'cola', tipo_referencia: una ? 'postulacion' : 'proceso',
+      creado: new Date(inicio).toISOString(), terminado: new Date().toISOString(),
+      intento: 1, segundos: Number(((Date.now() - inicio) / 1000).toFixed(1)), costo_usd: 0,
+      error: limpiarError(error), detalle,
+    });
   } catch (_) {}
 }
 
 export default async function handler(req, res) {
+  const inicio = Date.now(); // solo para el registro
   const encabezadoAuth = req.headers['authorization'];
   if (encabezadoAuth !== `Bearer ${process.env.CRON_SECRET}`)
     return res.status(401).json({ error: 'Unauthorized' });
@@ -39,7 +48,7 @@ export default async function handler(req, res) {
 
   if (errorConsultaEvaluacion) {
     console.log(JSON.stringify({ etapa: 'consulta_pendientes', estado: 'error', mensaje: errorConsultaEvaluacion.message }));
-    await registrarCorrida(supabase, 'error', { error: errorConsultaEvaluacion.message, etapa: 'consulta_pendientes' });
+    await registrarCorrida(supabase, 'error', { inicio, error: errorConsultaEvaluacion.message, etapa: 'consulta_pendientes' });
     return res.status(500).json({ status: 'error', message: 'Database query failed', detail: errorConsultaEvaluacion.message });
   }
 
@@ -53,7 +62,7 @@ export default async function handler(req, res) {
 
   if (errorConsultaReevaluacion) {
     console.log(JSON.stringify({ etapa: 'consulta_pendientes_reevaluacion', estado: 'error', mensaje: errorConsultaReevaluacion.message }));
-    await registrarCorrida(supabase, 'error', { error: errorConsultaReevaluacion.message, etapa: 'consulta_pendientes_reevaluacion' });
+    await registrarCorrida(supabase, 'error', { inicio, error: errorConsultaReevaluacion.message, etapa: 'consulta_pendientes_reevaluacion' });
     return res.status(500).json({ status: 'error', message: 'Database query failed', detail: errorConsultaReevaluacion.message });
   }
 
@@ -97,6 +106,7 @@ export default async function handler(req, res) {
 
   console.log(JSON.stringify({ etapa: 'completado', encontrados: trabajos.length, enviados: procesados.length, fallidos: fallidos.length }));
   await registrarCorrida(supabase, fallidos.length > 0 ? 'error' : 'ok', {
+    inicio, postulaciones: trabajos.map(t => t.id),
     encontrados: trabajos.length, enviados: procesados.length, fallidos: fallidos.length,
     evaluaciones: trabajos.filter(t => t.tipo === 'evaluacion').length, reevaluaciones: trabajos.filter(t => t.tipo === 'reevaluacion').length,
     error: fallidos[0]?.error ?? null,

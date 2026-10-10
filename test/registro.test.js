@@ -124,7 +124,31 @@ test('una operación que falla guarda el error; el costo solo cuenta lo de esa o
 
   const operacion = await registro.abrir(supabase, 'informe');
   await operacion.cerrar('error', { error: new Error('OpenRouter timeout tras 280s'), etapa: 'analisis' });
-  assert.deepEqual({ estado: supabase.tablas.registros[0].estado, error: supabase.tablas.registros[0].error, costo: supabase.tablas.registros[0].costo_usd, detalle: supabase.tablas.registros[0].detalle }, { estado: 'error', error: 'OpenRouter timeout tras 280s', costo: null, detalle: { etapa: 'analisis' } });
+  assert.deepEqual({ estado: supabase.tablas.registros[0].estado, error: supabase.tablas.registros[0].error, costo: supabase.tablas.registros[0].costo_usd, detalle: supabase.tablas.registros[0].detalle }, { estado: 'error', error: 'OpenRouter timeout tras 280s', costo: 0, detalle: { etapa: 'analisis' } });
+});
+
+test('todas las columnas se llenan aunque el dato no aplique: referencia, actor, intento, segundos y costo', async () => {
+  const supabase = baseDeRegistros();
+  const registro = crearRegistro({ origen: 'sincronizar_vacantes', imprimir: () => {} });
+  registro.log('sincronizacion', { estado: 'ok', guardar: true, revisadas: 262 });
+  registro.log('aviso', { estado: 'error', error: 'falló algo' });
+  await registro.guardar(supabase);
+  const abierta = await registro.abrir(supabase, 'estudio');
+  const alAbrir = { ...supabase.tablas.registros.at(-1) };
+  await abierta.cerrar('ok');
+
+  const [suelta, fallo, operacion] = supabase.tablas.registros;
+  for (const fila of [suelta, fallo, operacion]) {
+    assert.deepEqual(
+      { referencia: fila.referencia, tipo: fila.tipo_referencia, actor: fila.actor, intento: fila.intento, costo: fila.costo_usd },
+      { referencia: 'sincronizar_vacantes', tipo: 'proceso', actor: 'sistema', intento: 1, costo: 0 },
+    );
+    assert.ok(fila.creado && fila.terminado && fila.segundos >= 0);
+  }
+  // Solo quedan vacías las que vacías significan algo.
+  assert.deepEqual({ error: suelta.error, padre: suelta.id_padre }, { error: null, padre: null });
+  assert.equal(fallo.error, 'falló algo');
+  assert.deepEqual({ estado: alAbrir.estado, terminado: alAbrir.terminado ?? null, segundos: alAbrir.segundos }, { estado: 'iniciado', terminado: null, segundos: 0 });
 });
 
 test('si la tabla falla al abrir, la operación sigue y al cerrar se guarda la fila completa', async () => {

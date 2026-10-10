@@ -555,6 +555,6 @@ async function handler(req, res) {
 // Un estudio tarda minutos: la fila se inserta al empezar ('iniciado') y se cierra con su estado, segundos y el costo
 // de los modelos (el de Apify no viene en su respuesta).
 export default conRegistro({
-  origen: 'estudios', operacion: 'estudio', desdeElInicio: true,
+  origen: 'estudios', operacion: 'estudio', actor: 'herramientas', desdeElInicio: true,
   resumen: ({ req }) => ({ fuente: req.body?.fuente ?? null, muestra: Number(req.body?.muestra) || null }),
 }, handler);

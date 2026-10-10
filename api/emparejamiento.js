@@ -423,6 +423,7 @@ async function handler(req, res) {
 
 // Cada emparejamiento deja en `registros` cuántas vacantes encontró, si usó el modelo y lo que costó (sin el teléfono).
 export default conRegistro({
-  origen: 'emparejamiento', operacion: 'emparejamiento', actor: 'manychat',
+  origen: 'emparejamiento', operacion: 'emparejamiento', actor: 'manychat', tipoReferencia: 'vacante',
+  referencia: req => Number.parseInt(req.body?.id_vacante, 10) || null,
   resumen: ({ req, cuerpo }) => ({ vacante_id: Number.parseInt(req.body?.id_vacante, 10) || null, coincidencias: cuerpo?.id_team_tailor?.length ?? null, uso_ia: cuerpo?.uso_ia ?? null }),
 }, handler);

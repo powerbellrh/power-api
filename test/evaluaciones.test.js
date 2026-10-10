@@ -268,7 +268,7 @@ test('la reevaluación conserva la primera calificación, suma su costo y deja s
   const [corrida] = registros();
   assert.deepEqual(
     { operacion: corrida.operacion, estado: corrida.estado, intento: corrida.intento, antes: corrida.detalle.calificacion_anterior, despues: corrida.detalle.calificacion, costo: corrida.costo_usd },
-    { operacion: 'reevaluacion', estado: 'ok', intento: null, antes: 12, despues: 16, costo: 0.004 },
+    { operacion: 'reevaluacion', estado: 'ok', intento: 1, antes: 12, despues: 16, costo: 0.004 },
   );
 });
 

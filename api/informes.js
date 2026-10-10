@@ -161,7 +161,7 @@ export default async function handler(req, res) {
   }
 
   const supabase     = crearSupabase();
-  const registro     = crearRegistro({ origen: 'informes', referencia: postulacionId, tipoReferencia: 'postulacion' });
+  const registro     = crearRegistro({ origen: 'informes', referencia: postulacionId, tipoReferencia: 'postulacion', actor: 'herramientas' });
   const esCorreccion = Boolean(comentarios);
   const llamadas     = [];
   // Lo que se va sabiendo de la operación; es lo que queda en `registros`, también si falla a medias.
@@ -172,7 +172,7 @@ export default async function handler(req, res) {
   };
 
   return registro.ejecutar(async () => {
-    const operacion = await registro.abrir(supabase, esCorreccion ? 'correccion' : 'informe', { vacante_id: bitacora.vacante_id });
+    const operacion = await registro.abrir(supabase, esCorreccion ? 'correccion' : 'informe', { vacante_id: bitacora.vacante_id, intento: esCorreccion ? bitacora.ronda + 1 : 1 }); // el informe es el intento 1 y cada ronda de corrección, el siguiente
 
     try {
       const candidatoCrudo = await ttObtener(`/job-applications/${postulacionId}/candidate`, true);
@@ -215,7 +215,7 @@ export default async function handler(req, res) {
       const idReclutador   = datosReclutador?.data?.id ?? null;
       const esOperativo    = idReclutador != null && RECLUTADORES_OPERATIVA.has(idReclutador);
       const tipoInforme    = esOperativo ? 'operativo' : 'administrativo';
-      registro.asignarActor(idReclutador); // de la reclutadora solo queda su id de TeamTailor
+      if (idReclutador) registro.asignarActor(idReclutador); // de la reclutadora solo queda su id de TeamTailor
       bitacora.tipo = tipoInforme;
 
       // La descripción de la corrección (qué tipo de cambio se pidió, sin el texto) va en paralelo con el informe.
