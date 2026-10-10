@@ -29,7 +29,13 @@ test('evaluación administrativa: guarda el resultado, pone foto y nota en TeamT
   );
   assert.equal(Object.keys(fila.evaluacion_preguntas).join(), 'pregunta_1,pregunta_2,pregunta_3,pregunta_4,pregunta_5,pregunta_6,pregunta_7,pregunta_8,pregunta_9');
   assert.match(fila.evaluacion_preguntas.pregunta_9, /logro número 9/);
-  assert.ok(fila.evaluacion_prompt.length > 100 && JSON.parse(fila.evaluacion_peticion).model === 'z-ai/glm-5.3-flash');
+  // El prompt ya no se guarda (ni aparte ni dentro de la petición): queda cuál fue. El modelo sí lo recibe completo.
+  assert.equal(fila.evaluacion_prompt, undefined);
+  const guardada = JSON.parse(fila.evaluacion_peticion);
+  assert.equal(guardada.model, 'z-ai/glm-5.3-flash');
+  assert.deepEqual(guardada.messages[0], { role: 'system', content: '(prompts/evaluaciones/evaluacion_administrativa.txt)' });
+  assert.match(guardada.messages[1].content[0].text, /\*\*Nombre:\*\* Analista de datos/);
+  assert.ok(entorno.peticionesModelo[0].messages[0].content.length > 1000);
   assert.ok(fila.evaluacion_fecha);
 
   // La petición lleva el CV como archivo con el motor de OCR, y los bloques de la vacante y del candidato.
