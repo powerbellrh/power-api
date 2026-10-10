@@ -1,4 +1,5 @@
 import { crearSupabase } from '../lib/supabase.js';
+import { conRegistro } from '../lib/registro_de_endpoint.js';
 import { waitUntil }    from '@vercel/functions';
 import { ttObtener, ttCrear } from '../lib/clientes_api.js';
 import { limpiarTelefono, normalizarTelefonoMx } from '../lib/telefono.js';
@@ -292,7 +293,7 @@ async function cancelarNotificacionesPendientes(supabase, postulacionId) {
 // HANDLER PRINCIPAL (webhook de TeamTailor, sin auth — ver recepcion-postulaciones.js)
 // ****************************************************************************
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST')
     return res.status(405).json({ error: 'Método no permitido, usa POST' });
 
@@ -345,3 +346,11 @@ export default async function handler(req, res) {
     return res.status(500).json({ status: 'error', message: error.message });
   }
 }
+
+// TeamTailor avisa de cada cambio de una postulación: en `registros` solo quedan los que se atendieron (o fallaron).
+export default conRegistro({
+  origen: 'historial', operacion: 'cambio_de_etapa', actor: 'teamtailor', tipoReferencia: 'postulacion',
+  referencia: req => req.body?.id,
+  guardarSi: ({ cuerpo }) => cuerpo?.status !== 'ignored',
+  resumen: ({ req }) => ({ etapa: String(req.body?.stage_name ?? '').toLowerCase().trim() || null, vacante_id: req.body?.job_id ?? null }),
+}, handler);

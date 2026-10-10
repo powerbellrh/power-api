@@ -1,5 +1,6 @@
 import { rechazarCron } from '../lib/http.js';
 import { crearSupabase } from '../lib/supabase.js';
+import { conRegistro } from '../lib/registro_de_endpoint.js';
 import { enviarNotificacionAgendaManyChat } from '../lib/notificacion_agenda.js';
 
 const TAMANO_LOTE = 10;
@@ -24,7 +25,7 @@ async function limpiarNotificacionesViejas(supabase) {
   console.log(JSON.stringify({ etapa: 'notificaciones_limpieza', estado: 'ok', cantidad: eliminadas?.length ?? 0 }));
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   console.log(JSON.stringify({ etapa: 'notificaciones_invocado', ahora: new Date().toISOString() }));
 
   if (rechazarCron(req, res)) return;
@@ -97,3 +98,10 @@ export default async function handler(req, res) {
     failed_ids: fallidos,
   });
 }
+
+// Corre cada minuto: en `registros` solo queda cuando mandó algo o falló.
+export default conRegistro({
+  origen: 'notificaciones', operacion: 'envio_de_agenda', actor: 'cron',
+  guardarSi: ({ cuerpo }) => (cuerpo?.total_found ?? 0) > 0,
+  resumen: ({ cuerpo }) => ({ encontradas: cuerpo?.total_found ?? 0, enviadas: cuerpo?.processed_count ?? 0, fallidas: cuerpo?.failed_count ?? 0, ...(cuerpo?.failed_count > 0 && { estado: 'error' }) }),
+}, handler);

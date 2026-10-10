@@ -1,6 +1,7 @@
 import { ttActualizar, ttCrear, mcCrear } from '../lib/clientes_api.js';
 import { AD_TEAMTAILOR_QUESTION_EXPERIENCIA_ID as TT_PREGUNTA_EXPERIENCIA_ID, MANYCHAT_FIELD_EXPERIENCIA_ID } from '../lib/config.js';
 import { rechazarSolicitud } from '../lib/http.js';
+import { conRegistro } from '../lib/registro_de_endpoint.js';
 
 const EXTENSIONES_IMAGEN    = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'];
 const EXTENSIONES_DOCUMENTO = ['doc', 'docx', 'document'];
@@ -15,7 +16,7 @@ const obtenerExtension = (url) => {
 // HANDLER
 // ============================================================================
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (rechazarSolicitud(req, res)) return;
 
   const { candidato: candidatoId, experiencia: experienciaUrl, manychat: idSuscriptor } = req.body ?? {};
@@ -74,3 +75,9 @@ export default async function handler(req, res) {
   console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', candidatoId }));
   return res.status(200).json({ ok: true });
 }
+
+// Cada archivo de experiencia que manda un candidato deja una fila en `registros` (ver lib/registro_de_endpoint.js).
+export default conRegistro({
+  origen: 'experiencia', operacion: 'experiencia', actor: 'manychat', tipoReferencia: 'candidato',
+  referencia: req => req.body?.candidato,
+}, handler);

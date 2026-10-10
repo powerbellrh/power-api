@@ -2,6 +2,7 @@ import { crearSupabase } from '../lib/supabase.js';
 import { argumentosDeHerramienta, orChatCompletion } from '../lib/openrouter.js';
 import { leerPrompt }        from '../lib/prompts.js';
 import { rechazarSolicitud } from '../lib/http.js';
+import { conRegistro } from '../lib/registro_de_endpoint.js';
 import { MODELOS } from '../lib/modelos.js';
 
 const PROMPT_EXTRACCION_HABILIDADES = leerPrompt('emparejamiento/extraccion_habilidades');
@@ -250,7 +251,7 @@ async function crearPostulaciones(supabase, candidatoId, vacantesVerificadas, da
 // HANDLER
 // ============================================================================
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (rechazarSolicitud(req, res)) return;
 
   const cuerpo            = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
@@ -419,3 +420,9 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: error.message });
   }
 }
+
+// Cada emparejamiento deja en `registros` cuántas vacantes encontró, si usó el modelo y lo que costó (sin el teléfono).
+export default conRegistro({
+  origen: 'emparejamiento', operacion: 'emparejamiento', actor: 'manychat',
+  resumen: ({ req, cuerpo }) => ({ vacante_id: Number.parseInt(req.body?.id_vacante, 10) || null, coincidencias: cuerpo?.id_team_tailor?.length ?? null, uso_ia: cuerpo?.uso_ia ?? null }),
+}, handler);

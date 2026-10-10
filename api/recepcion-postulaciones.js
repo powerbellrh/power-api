@@ -1,10 +1,11 @@
 import { crearSupabase } from '../lib/supabase.js';
+import { conRegistro } from '../lib/registro_de_endpoint.js';
 import { limpiarTelefono, pareceNumeroTelefono } from '../lib/telefono.js';
 
 // ============================================================================
 // HANDLER PRINCIPAL
 // ============================================================================
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST')
     return res.status(405).json({ error: 'Método no permitido, usa POST' });
 
@@ -49,3 +50,10 @@ export default async function handler(req, res) {
 
   return res.status(200).json({ status: 'success', message: 'Application queued for evaluation' });
 }
+
+// Cada postulación que llega de TeamTailor deja una fila en `registros`: encolada, o descartada porque el nombre era un teléfono.
+export default conRegistro({
+  origen: 'recepcion', operacion: 'postulacion_recibida', actor: 'teamtailor', tipoReferencia: 'postulacion',
+  referencia: req => req.body?.id,
+  resumen: ({ req, cuerpo }) => ({ vacante_id: req.body?.job_id ?? null, ...(cuerpo?.status === 'rejected' && { estado: 'omitido', motivo: 'nombre_es_telefono' }) }),
+}, handler);

@@ -3,6 +3,7 @@ import { orChatCompletion }         from '../lib/openrouter.js';
 import { SALARIO_MINIMO_MENSUAL, SEMANAS_POR_MES } from '../lib/config.js';
 import { leerPrompt }               from '../lib/prompts.js';
 import { rechazarSolicitud } from '../lib/http.js';
+import { conRegistro } from '../lib/registro_de_endpoint.js';
 import { MODELOS } from '../lib/modelos.js';
 
 const PROMPT_CONCLUSIONES           = leerPrompt('estudios/conclusiones_ia');
@@ -387,7 +388,7 @@ async function manejarGlassdoor(vacante, ubicacion, url, muestra, res) {
 
 // ── Handler principal ──────────────────────────────────────────────────────
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (rechazarSolicitud(req, res)) return;
 
   const { vacante, ubicacion, fuente, muestra, url } = req.body;
@@ -550,3 +551,10 @@ export default async function handler(req, res) {
   console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', validas: aprobadas.length, costo_usd: costo_total }));
   return res.status(respuesta.status).json(respuesta.body);
 }
+
+// Un estudio tarda minutos: la fila se inserta al empezar ('iniciado') y se cierra con su estado, segundos y el costo
+// de los modelos (el de Apify no viene en su respuesta).
+export default conRegistro({
+  origen: 'estudios', operacion: 'estudio', desdeElInicio: true,
+  resumen: ({ req }) => ({ fuente: req.body?.fuente ?? null, muestra: Number(req.body?.muestra) || null }),
+}, handler);

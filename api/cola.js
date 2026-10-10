@@ -1,12 +1,21 @@
 import { createClient } from '@supabase/supabase-js';
 import { EVALUACIONES_URL, EVALUACION_MAX_INTENTOS } from '../lib/config.js';
 import { dormir } from '../lib/clientes_api.js';
+import { limpiarError } from '../lib/registro.js';
 
 const TAMANO_LOTE   = 5;
 const RETRASO_MS      = 5000;
 const URL_EVALUACIONES = EVALUACIONES_URL;
 // Debe superar el maxDuration de /api/evaluaciones (300s) para no reintentar un intento aún en curso
 const UMBRAL_ATASCO_MS = 6 * 60 * 1000;
+
+// Deja en `registros` lo que hizo la corrida. Solo se llama cuando procesó algo o falló (la cola corre cada minuto y
+// casi siempre está vacía). Nunca lanza ni cambia la respuesta.
+async function registrarCorrida(supabase, estado, { error = null, ...detalle }) {
+  try {
+    await supabase.from('registros').insert({ origen: 'cola', operacion: 'corrida', estado, actor: 'cron', error: limpiarError(error), detalle });
+  } catch (_) {}
+}
 
 export default async function handler(req, res) {
   const encabezadoAuth = req.headers['authorization'];
@@ -30,6 +39,7 @@ export default async function handler(req, res) {
 
   if (errorConsultaEvaluacion) {
     console.log(JSON.stringify({ etapa: 'consulta_pendientes', estado: 'error', mensaje: errorConsultaEvaluacion.message }));
+    await registrarCorrida(supabase, 'error', { error: errorConsultaEvaluacion.message, etapa: 'consulta_pendientes' });
     return res.status(500).json({ status: 'error', message: 'Database query failed', detail: errorConsultaEvaluacion.message });
   }
 
@@ -43,6 +53,7 @@ export default async function handler(req, res) {
 
   if (errorConsultaReevaluacion) {
     console.log(JSON.stringify({ etapa: 'consulta_pendientes_reevaluacion', estado: 'error', mensaje: errorConsultaReevaluacion.message }));
+    await registrarCorrida(supabase, 'error', { error: errorConsultaReevaluacion.message, etapa: 'consulta_pendientes_reevaluacion' });
     return res.status(500).json({ status: 'error', message: 'Database query failed', detail: errorConsultaReevaluacion.message });
   }
 
@@ -85,6 +96,11 @@ export default async function handler(req, res) {
   }
 
   console.log(JSON.stringify({ etapa: 'completado', encontrados: trabajos.length, enviados: procesados.length, fallidos: fallidos.length }));
+  await registrarCorrida(supabase, fallidos.length > 0 ? 'error' : 'ok', {
+    encontrados: trabajos.length, enviados: procesados.length, fallidos: fallidos.length,
+    evaluaciones: trabajos.filter(t => t.tipo === 'evaluacion').length, reevaluaciones: trabajos.filter(t => t.tipo === 'reevaluacion').length,
+    error: fallidos[0]?.error ?? null,
+  });
 
   return res.status(fallidos.length > 0 ? 207 : 200).json({
     status: 'success',

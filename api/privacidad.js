@@ -1,4 +1,5 @@
 import { crearSupabase } from '../lib/supabase.js';
+import { conRegistro } from '../lib/registro_de_endpoint.js';
 import { ttObtener, mcCrear, mcObtener } from '../lib/clientes_api.js';
 import { limpiarTelefono, normalizarTelefonoMx } from '../lib/telefono.js';
 import { MANYCHAT_TAG_ID_BAJA, TEAMTAILOR_TAG_BAJA, AGENDA_MANYCHAT_FIELD_CANDIDATO_TEAMTAILOR_ID } from '../lib/config.js';
@@ -184,7 +185,7 @@ export async function eliminarDatosCandidato(supabase, idTT, candidatoTT) {
   return eliminados;
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST')
     return res.status(405).json({ error: 'Método no permitido, usa POST' });
 
@@ -214,3 +215,11 @@ export default async function handler(req, res) {
     return res.status(500).json({ status: 'error', message: error.message });
   }
 }
+
+// TeamTailor avisa de cada cambio de un candidato: en `registros` solo queda cuando de verdad se borraron sus datos (o
+// falló el borrado), con cuántas filas de cada tabla y SIN referencia: no se guarda de quién eran.
+export default conRegistro({
+  origen: 'privacidad', operacion: 'eliminacion', actor: 'teamtailor',
+  guardarSi: ({ cuerpo }) => cuerpo?.status === 'success',
+  resumen: ({ cuerpo }) => ({ eliminados: cuerpo?.eliminados ?? null }),
+}, handler);
