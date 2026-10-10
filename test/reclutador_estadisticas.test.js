@@ -134,10 +134,52 @@ test('entre una petición a TeamTailor y la siguiente pasan al menos 250 ms, tam
   assert.ok(intervalos.every(ms => ms >= 250), `intervalos: ${intervalos.join(', ')}`);
 });
 
+test('una sola pasada trae todos los desgloses, y lo ya consultado no se vuelve a pedir a TeamTailor', async () => {
+  nuevoEntorno();
+  let peticiones = 0;
+  const consultar = async ruta => { peticiones++; return Object.entries(RESPUESTAS_TT).find(([clave]) => ruta === clave || ruta.startsWith(`${clave}?`))[1]; };
+  const completa = await estadisticasPostulaciones(entorno.supabase, { vacante_id: 555555 }, { consultar, pausaMs: 0 });
+  assert.equal(completa.grupos, undefined);
+  assert.deepEqual(completa.desgloses.etapa, [{ grupo: 'Bandeja de entrada', cantidad: 4 }, { grupo: 'Filtrado', cantidad: 1 }, { grupo: 'Contratados', cantidad: 1 }]);
+  assert.deepEqual(completa.desgloses.dia.map(grupo => grupo.cantidad), [1, 4, 1]);
+  assert.deepEqual(completa.desgloses.vacante, [{ grupo: 'Península - Almacenista', cantidad: 6 }], 'van todos, aunque tengan un solo grupo');
+
+  // El ejecutor guarda el resultado: pedir lo mismo, o lo mismo por etapa o por día, no vuelve a consultar.
+  let pasadas = 0;
+  const estadisticas = async (supabase, argumentos) => { pasadas++; return estadisticasPostulaciones(supabase, argumentos, { consultar, pausaMs: 0 }); };
+  const ejecutor = crearEjecutor({ supabase: entorno.supabase, log: () => {}, estadisticas });
+  const total = await ejecutor.ejecutar('consultar_estadisticas', { recurso: 'postulaciones', vacante_id: 555555, desde: '', hasta: '', agrupar_por: 'ninguna', tipo: 'todas' });
+  const porEtapa = await ejecutor.ejecutar('consultar_estadisticas', { recurso: 'postulaciones', vacante_id: 555555, agrupar_por: 'etapa' });
+  const porDia = await ejecutor.ejecutar('consultar_estadisticas', { vacante_id: 555555, agrupar_por: 'dia' });
+  assert.equal(pasadas, 1);
+  assert.equal(total.total, 6);
+  assert.deepEqual([porEtapa.agrupado_por, porEtapa.grupos[0]], ['etapa', { grupo: 'Bandeja de entrada', cantidad: 4 }]);
+  assert.deepEqual([porDia.agrupado_por, porDia.grupos.length, porDia.desgloses.etapa.length], ['dia', 3, 3]);
+  assert.equal(ejecutor.consultasNuevas, true);
+
+  // Otra vacante sí se consulta; y lo guardado vence a los 10 minutos.
+  await ejecutor.ejecutar('consultar_estadisticas', { vacante_id: 777777 });
+  assert.equal(pasadas, 2);
+  const viejas = ejecutor.consultas.map(consulta => ({ ...consulta, cuando: new Date(Date.now() - 11 * 60_000).toISOString() }));
+  const despues = crearEjecutor({ supabase: entorno.supabase, log: () => {}, estadisticas, consultasPrevias: viejas });
+  await despues.ejecutar('consultar_estadisticas', { vacante_id: 555555 });
+  assert.equal(pasadas, 3);
+});
+
+test('la misma gráfica pedida dos veces en un turno se manda una sola vez', async () => {
+  let subidas = 0;
+  const ejecutor = crearEjecutor({ supabase: null, log: () => {}, subirGrafica: async () => `ruta-${++subidas}` });
+  const grafica = { titulo: 'Postulaciones de hoy', tipo: 'barras', etiquetas: ['A', 'B', 'C', 'D'], valores: [5, 1, 1, 1] };
+  for (let i = 0; i < 3; i++) assert.equal((await ejecutor.ejecutar('enviar_grafica', grafica)).enviada, true);
+  assert.equal(ejecutor.graficas.length, 1);
+  await ejecutor.ejecutar('enviar_grafica', { ...grafica, valores: [5, 2, 1, 1] });
+  assert.equal(ejecutor.graficas.length, 2);
+});
+
 test('el reclutador no tiene tope de consultas: muchas seguidas se atienden todas y no se guarda ningún contador', async () => {
   let llamadas = 0;
   const ejecutor = crearEjecutor({ supabase: null, log: () => {}, estadisticas: async () => { llamadas++; return { total: 1 }; } });
-  for (let i = 0; i < 100; i++) assert.deepEqual(await ejecutor.ejecutar('consultar_estadisticas', {}), { total: 1 });
+  for (let i = 1; i <= 100; i++) assert.deepEqual(await ejecutor.ejecutar('consultar_estadisticas', { vacante_id: i }), { total: 1 });
   assert.equal(llamadas, 100);
 
   nuevoEntorno();

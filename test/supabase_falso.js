@@ -30,8 +30,11 @@ class Consulta {
     this.filtros.push(f => regex.test(String(f[columna] ?? '')));
     return this;
   }
+  gte(columna, valor)      { this.filtros.push(f => Date.parse(f[columna]) >= Date.parse(valor)); return this; } // solo se usa con fechas
+  lte(columna, valor)      { this.filtros.push(f => Date.parse(f[columna]) <= Date.parse(valor)); return this; }
   order(columna, { ascending = true } = {}) { this.orden = { columna, ascending }; return this; }
   limit(cantidad)          { this.limite = cantidad; return this; }
+  range(desde, hasta)      { this.rango = [desde, hasta]; return this; }
   single()                 { this.modo = 'una'; return this; }
   maybeSingle()            { this.modo = 'quizas'; return this; }
 
@@ -45,6 +48,7 @@ class Consulta {
       const { columna, ascending } = this.orden;
       filas = [...filas].sort((a, b) => (String(a[columna] ?? '') < String(b[columna] ?? '') ? -1 : 1) * (ascending ? 1 : -1));
     }
+    if (this.rango) filas = filas.slice(this.rango[0], this.rango[1] + 1);
     return this.limite != null ? filas.slice(0, this.limite) : filas;
   }
 

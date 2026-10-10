@@ -81,7 +81,7 @@ const resultadosDeHerramientas = () => entorno.peticionesModelo.at(-1).mensajes.
 
 test('un reclutador se reconoce por su teléfono en usuarios, con o sin lada de país', async () => {
   nuevoEntorno();
-  const laura = { id: 'u1', nombre: 'Laura', rol: 'gerente' };
+  const laura = { id: 'u1', nombre: 'Laura', rol: 'gerente', idTeamTailor: null };
   assert.deepEqual(await buscarReclutador(entorno.supabase, '5213312345678'), laura);
   assert.deepEqual(await buscarReclutador(entorno.supabase, '3312345678'), laura);
   assert.equal(await buscarReclutador(entorno.supabase, '5213387654321'), null, 'el rol de reclutador no tiene agente');
@@ -110,11 +110,11 @@ test('el reclutador pregunta por la bandeja: el agente consulta TeamTailor y con
 
 test('ver una vacante: se le manda tal como la ve el candidato, sin pasar por la redacción del modelo', async () => {
   nuevoEntorno();
-  entorno.encolarModelo('agente', cierre('buscar_vacantes', { texto: 'peninsula almacenista' }), cierre('ver_vacante', { id: 555555 }), responder('Así la ve el candidato:'));
+  entorno.encolarModelo('agente', cierre('buscar_vacantes', { texto: 'peninsula almacenista' }), cierre('ver_vacante', { id: 555555, mostrar: true }), responder('Así la ve el candidato:'));
 
   await escribir('enséñame la de almacenista de península');
   const [busqueda, vista] = resultadosDeHerramientas();
-  assert.deepEqual(busqueda.vacantes, [{ id: 555555, nombre_interno: 'Península - Almacenista', titulo: 'Almacenista', estatus: 'Publicada', tipo: 'Sin tipo' }]);
+  assert.deepEqual(busqueda.vacantes, [{ id: 555555, nombre_interno: 'Península - Almacenista', titulo: 'Almacenista', estatus: 'Publicada', tipo: 'Sin tipo', publicada_el: '2026-10-01' }]);
   assert.deepEqual(vista.preguntas_al_candidato, ['¿Cuentas con licencia?']);
   assert.deepEqual(entorno.mensajes, ['Así la ve el candidato:\n\nAquí tienes la información de la vacante 👇:\n\n*Vacante:* Almacenista']);
 });
@@ -158,9 +158,9 @@ test('crear una vacante: resumen con imagen y anuncio, y se publica una sola vez
   await escribir('sí, confirmo');
   assert.equal(creaciones(), 1);
   assert.equal(entorno.llamadasTT_('POST', /^\/custom-field-values$/).length, 1);
-  assert.match(entorno.mensajes.at(-1), /Vacante creada y publicada en TeamTailor \(ID 777001\)\nhttps:\/\/careers\.test\/jobs\/777001/);
-  assert.equal(imagenes.enviadas.length, 2, 'al publicar se entrega otra vez la imagen con el anuncio');
-  assert.match(imagenes.enviadas[1].texto, /^Empresa busca almacenista\./);
+  assert.match(entorno.mensajes.at(-1), /\*Vacante creada y publicada en TeamTailor\* \(ID 777001\)\nhttps:\/\/careers\.test\/jobs\/777001/);
+  assert.equal(imagenes.enviadas.length, 1, 'al publicar NO se manda otra vez el anuncio que ya vio y confirmó');
+  assert.match(entorno.mensajes.at(-1), /la imagen y el anuncio son los de arriba/);
   assert.deepEqual(borrador(), {}, 'el borrador se limpia al entregar');
 });
 

@@ -84,9 +84,9 @@ test('limpia el mensaje: sin emojis y sin prometer lo que no se envió', () => {
 test('resumen de cambios y de supuestos', () => {
   const previo = { nombre_interno: 'A - B', titulo: 'Cajero', descripcion: '<strong>Ofrecemos:</strong><ul><li>Sueldo de $9,000</li><li>Vales</li></ul>', contexto: 'x' };
   const nuevo  = { ...previo, titulo: 'Cajero/a', descripcion: '<strong>Ofrecemos:</strong><ul><li>Sueldo de $9,500</li><li>Seguro</li></ul>' };
-  assert.equal(resumenDeCambios(previo, nuevo), 'Esto cambió desde el último resumen:\n- Título: Cajero → Cajero/a\n- Sueldo: Sueldo de $9,000 → Sueldo de $9,500\n- Agregué: Seguro\n- Quité: Vales');
+  assert.equal(resumenDeCambios(previo, nuevo), '*Esto cambió desde el último resumen:*\n- Título: Cajero → Cajero/a\n- Sueldo: Sueldo de $9,000 → Sueldo de $9,500\n- Agregué: Seguro\n- Quité: Vales');
   assert.equal(resumenDeCambios(previo, previo), '');
-  assert.equal(resumenDeSupuestos(['Vales de despensa', ' ', 'Cierre del anuncio']), 'Lo que completé yo, revísalo:\n- Vales de despensa\n- Cierre del anuncio');
+  assert.equal(resumenDeSupuestos(['Vales de despensa', ' ', 'Cierre del anuncio']), '*Lo que completé yo, revísalo:*\n- Vales de despensa\n- Cierre del anuncio');
   assert.equal(resumenDeSupuestos([]), '');
 });
 

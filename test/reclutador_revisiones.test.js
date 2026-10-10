@@ -216,10 +216,11 @@ test('el resumen muestra lo que completó el agente y, tras un cambio, qué camb
     vacanteNueva({ datos_supuestos: ['Vales de despensa', 'Cierre del anuncio'] }),
     vacanteNueva({ descripcion: DESCRIPCION.replace('Vales de despensa', 'Seguro de vida') }));
   await escribir('Oxxo cajero en Guadalajara');
-  assert.match(todo(), /Lo que completé yo, revísalo:\n- Vales de despensa\n- Cierre del anuncio\n\n/);
+  assert.match(todo(), /\*Lo que completé yo, revísalo:\*\n- Vales de despensa\n- Cierre del anuncio\n\n/);
+  assert.match(entorno.mensajes.at(-1), /completé yo[\s\S]*Confirmas/, 'los avisos y el mensaje del agente van en un solo mensaje');
 
   await escribir('cambia los vales por seguro de vida');
-  assert.match(entorno.mensajes.at(-1), /Esto cambió desde el último resumen:\n- Agregué: Seguro de vida\n- Quité: Vales de despensa/);
+  assert.match(entorno.mensajes.at(-1), /\*Esto cambió desde el último resumen:\*\n- Agregué: Seguro de vida\n- Quité: Vales de despensa/);
 });
 
 // ── Listar, clonar, fichas y candidatos destacados ───────────────────────────
@@ -241,7 +242,7 @@ test('clonar: se lee la vacante completa de TeamTailor', async () => {
   nuevoEntorno();
   entorno.encolarModelo('agente', cierre('leer_vacante_completa', { id: 555555 }), responder('Listo.'));
   await escribir('hazme otra igual que la 555555 pero en Zapopan');
-  assert.deepEqual(resultadosDeHerramientas()[0], { id: 555555, nombre_interno: 'Cliente - Almacenista', titulo: 'Almacenista', estatus: '', ubicacion: '', descripcion: DESCRIPCION, contexto: 'Contexto viejo' });
+  assert.deepEqual(resultadosDeHerramientas()[0], { id: 555555, nombre_interno: 'Cliente - Almacenista', titulo: 'Almacenista', estatus: '', creada_el: '2026-10-01', ubicacion: '', descripcion: DESCRIPCION, contexto: 'Contexto viejo' });
 });
 
 test('vacante inspirada en otra: el sueldo de la referencia solo pasa si es del mismo cliente o si ella pide lo mismo', async () => {
@@ -369,7 +370,7 @@ test('cerrar una vacante: se prepara, no se hace hasta que confirma, y al confir
   await escribir('sí');
   assert.deepEqual(parches(/^\/jobs\/555555$/).map(p => p.cuerpo.data.attributes), [{ status: 'archived' }]);
   assert.equal(entorno.supabase.tablas.vacantes.find(v => v.id_team_tailor === 555555).estatus, 'Cerrada');
-  assert.equal(entorno.mensajes.at(-1), 'Listo, cerré la vacante 555555. Ya no recibe postulaciones.');
+  assert.equal(entorno.mensajes.at(-1), 'Listo, cerré *Cliente - Almacenista* (555555). Ya no recibe postulaciones.');
   assert.equal(conversacion().temporal.reclutador.accion_pendiente, undefined);
   assert.match(entorno.peticionesModelo.at(-1).usuario, /ACCIÓN PENDIENTE de confirmar[^\n]*Cerrar/);
 
@@ -407,7 +408,7 @@ test('al confirmar una acción y pedir algo más en el mismo mensaje, se le cont
   await escribir('cierra la 555555');
   entorno.encolarModelo('agente', cierre('resolver_accion', { decision: 'confirmar', mensaje: 'Va.', algo_mas: 'No puedo borrar clientes del registro: eso lo hace el equipo de sistemas.' }));
   await escribir('sí por favor, también borra a tresguerras como empresa');
-  assert.equal(entorno.mensajes.at(-1), 'Listo, cerré la vacante 555555. Ya no recibe postulaciones.\n\nNo puedo borrar clientes del registro: eso lo hace el equipo de sistemas.');
+  assert.equal(entorno.mensajes.at(-1), 'Listo, cerré *Cliente - Almacenista* (555555). Ya no recibe postulaciones.\n\nNo puedo borrar clientes del registro: eso lo hace el equipo de sistemas.');
 });
 
 test('el cliente escrito con su nombre corto se guarda con el nombre registrado y no se da de alta otra vez', async () => {
@@ -597,4 +598,92 @@ test('el cliente se escribe como está registrado en empresas; uno nuevo se avis
   entorno.encolarModelo('agente', vacanteNueva({ nombre_interno: 'Cantina La Docena - Mesero' }));
   await escribir('mesero para Cantina La Docena en Guadalajara');
   assert.doesNotMatch(todo(), /no está registrado/);
+});
+
+// ── Lo que falló en la conversación del 9-oct-2026 por la tarde ──────────────
+
+test('un sueldo escrito "30 000" (miles con espacio) se respeta: el anuncio no queda en "Sueldo competitivo"', async () => {
+  nuevoEntorno();
+  const conSueldo = vacanteNueva({ descripcion: DESCRIPCION.replace('Sueldo competitivo', 'Sueldo de $30,000 MXN mensuales libres') });
+  entorno.encolarModelo('agente', conSueldo);
+  await escribir('30 000 y mismas prestaciones');
+  assert.equal(llamadasAlAgente(), 1, 'la cifra la dio ella: no hay nada que corregir');
+  assert.match(borrador().descripcion, /Sueldo de \$30,000 MXN mensuales libres/);
+});
+
+test('cerrar dos vacantes en un mismo mensaje: quedan en una sola acción pendiente y un solo "sí" cierra las dos', async () => {
+  nuevoEntorno({ vacantes: { 666666: vacanteTeamTailor({ titulo: 'Cajero' }) } });
+  entorno.encolarModelo('agente', accion('cerrar_vacante'), accion('cerrar_vacante', { id: 666666 }), responder('Voy a cerrar las dos.'));
+  await escribir('archiva las dos');
+  const pendiente = conversacion().temporal.reclutador.accion_pendiente;
+  assert.equal(pendiente.tipo, 'varias');
+  assert.deepEqual(pendiente.acciones.map(a => a.id), [555555, 666666]);
+  assert.match(resultadosDeHerramientas()[1].nota, /se confirman TODAS juntas/);
+
+  entorno.encolarModelo('agente', cierre('resolver_accion', { decision: 'confirmar', mensaje: 'Va.' }));
+  await escribir('sí por favor');
+  assert.equal(parches(/^\/jobs\/555555$/).length, 1);
+  assert.equal(parches(/^\/jobs\/666666$/).length, 1);
+  assert.equal(entorno.mensajes.at(-1), '- Listo, cerré *Cliente - Almacenista* (555555). Ya no recibe postulaciones.\n- Listo, cerré *Cliente - Cajero* (666666). Ya no recibe postulaciones.');
+  assert.equal(conversacion().temporal.reclutador.accion_pendiente, undefined);
+});
+
+test('"déjame ver la vista previa otra vez": se reenvía la imagen con el anuncio aunque no haya cambiado', async () => {
+  nuevoEntorno();
+  entorno.encolarModelo('agente', vacanteNueva(), vacanteNueva({ descripcion_modificada: false, contexto_modificado: false, mensaje: '¿Confirmas?' }),
+    vacanteNueva({ descripcion_modificada: false, contexto_modificado: false, mostrar_anuncio: true, mensaje: 'Arriba va otra vez. ¿Confirmas?' }));
+  await escribir('Oxxo cajero en Guadalajara');
+  assert.equal(imagenes.enviadas.length, 1);
+  await escribir('ok, espera');
+  assert.equal(imagenes.enviadas.length, 1, 'sin cambios y sin pedirlo no se reenvía');
+  await escribir('déjame ver la previsualización una vez más');
+  assert.equal(imagenes.enviadas.length, 2);
+  assert.match(imagenes.enviadas[1].texto, /^Empresa busca almacenista\./);
+  assert.equal(imagenes.generadas.length, 1, 'no se genera otra imagen');
+});
+
+test('ver_vacante solo le manda el anuncio si ella lo pidió, y nunca más de dos por turno', async () => {
+  nuevoEntorno({ vacantes: { 666666: vacanteTeamTailor({ titulo: 'Cajero' }) } });
+  entorno.encolarModelo('agente', cierre('ver_vacante', { id: 555555, mostrar: false }), responder('Dan prestaciones de ley.'));
+  await escribir('qué prestaciones da la 555555');
+  assert.deepEqual(entorno.mensajes, ['Dan prestaciones de ley.']);
+  assert.match(resultadosDeHerramientas()[0].nota, /NO se le manda/);
+});
+
+test('"mis vacantes": se listan solo las vacantes de las que es responsable en TeamTailor', async () => {
+  nuevoEntorno({ tablas: { usuarios: [{ id: 'u1', nombre: 'Laura', id_rol: 2, telefono: 3312345678, id_team_tailor: '900' }] } });
+  SOLICITUDES_TT['/jobs'] = { links: {}, data: [
+    { id: '555555', relationships: { user: { data: { id: '111' } } } }, { id: '666666', relationships: { user: { data: { id: '900' } } } },
+  ] };
+  entorno.encolarModelo('agente', cierre('listar_vacantes', { texto: '', filtro: 'todas', tipo: 'todas', solo_mias: true }), responder('Tienes una.'));
+  await escribir('qué vacantes tengo a mi nombre');
+  assert.deepEqual(resultadosDeHerramientas()[0].vacantes.map(v => v.id), [666666]);
+  assert.equal(resultadosDeHerramientas()[0].publicadas_en_total, 1);
+});
+
+test('la retroalimentación queda guardada en el registro (tabla eventos), con el comentario completo', async () => {
+  nuevoEntorno();
+  const comentario = `Para el revisor: los mensajes son muy verbosos. ${'Detalle. '.repeat(80)}`.trim();
+  entorno.encolarModelo('agente', cierre('registrar_retroalimentacion', { comentario }), responder('Quedó registrado para el equipo de sistemas.'));
+  await escribir(comentario);
+  const evento = entorno.registros.find(registro => registro.etapa === 'retroalimentacion_reclutador');
+  assert.equal(evento.guardar, true);
+  assert.equal(evento.de, 'Laura');
+  assert.equal(evento.comentario.join(''), comentario);
+  assert.ok(evento.comentario.every(parte => parte.length <= 450));
+});
+
+test('lo que el cliente publica en sus otras vacantes llega con su ficha, pero sus sueldos no respaldan el anuncio nuevo', async () => {
+  nuevoEntorno({ tablas: {
+    empresas: [{ id: 2, nombre: 'Península', giro: 'Desarrolladora inmobiliaria', notas: '' }],
+    vacantes: [
+      { id: 10, id_team_tailor: 555555, id_empresa: 2, vacante: 'Península - PM', titulo_externo: 'PM', estatus: 'Publicada', creado: '2026-10-01T00:00:00Z',
+        descripcion: '<p>Empresa busca PM.</p><strong>Ofrecemos:</strong><ul><li>Sueldo de $20,000 libres</li><li>Prestaciones de ley</li><li>Bono de permanencia</li></ul><strong>Requisitos:</strong><ul><li>Licenciatura</li></ul>' },
+    ],
+  } });
+  const copiaSueldo = vacanteNueva({ nombre_interno: 'Península - Arquitecto', descripcion: DESCRIPCION.replace('Sueldo competitivo', 'Sueldo de $20,000 libres') });
+  entorno.encolarModelo('agente', cierre('ver_ficha_cliente', { cliente: 'Península' }), copiaSueldo, copiaSueldo);
+  await escribir('arquitecto para Península en Guadalajara');
+  assert.match(entorno.peticionesModelo.at(-1).usuario, /CORRIGE: El anuncio trae cifras que la reclutadora no dio/);
+  assert.match(borrador().descripcion, /Sueldo competitivo/);
 });
