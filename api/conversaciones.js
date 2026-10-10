@@ -1,4 +1,3 @@
-import { createClient } from '@supabase/supabase-js';
 import { waitUntil } from '@vercel/functions';
 import { crearExtractores } from '../lib/chatbot/extractores.js';
 import { nombreDeFlujo } from '../lib/chatbot/manychat.js';
@@ -6,6 +5,7 @@ import { procesarConversacion } from '../lib/chatbot/orquestador.js';
 import { leerSolicitud } from '../lib/chatbot/solicitud.js';
 import { rechazarSolicitud } from '../lib/http.js';
 import { crearRegistro } from '../lib/registro.js';
+import { crearSupabase } from '../lib/supabase.js';
 
 // Cuánto se espera por más mensajes del candidato antes de contestar (ver juntarMensajesSeguidos en el orquestador).
 // Los candidatos parten una respuesta en varios mensajes seguidos (nombre y edad, el domicilio por partes): esperar
@@ -46,7 +46,7 @@ export default async function handler(req, res) {
 
   // Se responde de inmediato a ManyChat (su External Request espera ~10 s) y el
   // procesamiento sigue en segundo plano.
-  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const supabase = crearSupabase();
   waitUntil(
     registro.ejecutar(() => procesarConversacion({ supabase, solicitud: lectura.solicitud, log, extractores: crearExtractores(supabase), esperaMs: ESPERA_MENSAJES_SEGUIDOS_MS }))
       .catch(error => log('conversaciones', { estado: 'error', error: error.message }))

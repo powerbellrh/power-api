@@ -131,7 +131,8 @@ test('entre una petición a TeamTailor y la siguiente pasan al menos 250 ms, tam
   await Promise.all([1, 2].map(() => estadisticasPostulaciones(entorno.supabase, { vacante_id: 555555 }, { consultar })));
   assert.equal(momentos.length, 8);
   const intervalos = momentos.slice(1).map((momento, i) => momento - momentos[i]);
-  assert.ok(intervalos.every(ms => ms >= 250), `intervalos: ${intervalos.join(', ')}`);
+  // Con 5 ms de margen: el reloj del sistema redondea, y un temporizador de 250 ms a veces se mide como 249.
+  assert.ok(intervalos.every(ms => ms >= 245), `intervalos: ${intervalos.join(', ')}`);
 });
 
 test('una sola pasada trae todos los desgloses, y lo ya consultado no se vuelve a pedir a TeamTailor', async () => {
