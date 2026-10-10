@@ -117,20 +117,20 @@ mostrar({
   veces_que_pregunto_si_quiere_continuar_porque_la_vacante_no_le_acomoda: vecesQue(new RegExp(MENSAJE_CONFIRMAR_INTERES.slice(0, 40))),
 });
 
-// Fallos que la API dejó en la tabla `eventos` (lib/registro.js): el modelo que falla, los mensajes que rechazan los
-// guardrails, los envíos que no salen. Si la tabla todavía no existe (scripts/eventos.sql) solo se avisa.
+// Fallos que la API dejó en la tabla `registros` (lib/registro.js): el modelo que falla, los mensajes que rechazan los
+// guardrails, los envíos que no salen.
 titulo(`Fallos registrados en las últimas ${Number(horas.toFixed(1))} horas`);
-const { data: eventos, error: errorEventos } = await supabase.from('eventos')
-  .select('origen, etapa, estado, detalle').gte('creado', new Date(ahora - horas * 60 * MINUTO).toISOString()).limit(5000);
+const { data: eventos, error: errorEventos } = await supabase.from('registros')
+  .select('origen, operacion, estado, detalle').in('origen', ['conversaciones', 'reclutador']).gte('creado', new Date(ahora - horas * 60 * MINUTO).toISOString()).limit(5000);
 if (errorEventos) {
-  mostrar({ sin_datos: `no se pudo leer la tabla eventos (${errorEventos.message})` });
+  mostrar({ sin_datos: `no se pudo leer la tabla registros (${errorEventos.message})` });
 } else {
   const detalleDe = evento => evento.detalle?.herramienta ?? evento.detalle?.reglas?.join('+') ?? '';
   mostrar({
     total: eventos.length,
-    por_origen_y_etapa: contarPor(eventos, evento => `${evento.origen} / ${evento.etapa} / ${evento.estado}`),
-    modelo_por_herramienta: contarPor(eventos.filter(evento => evento.etapa === 'modelo'), evento => `${detalleDe(evento)} (${evento.estado})`),
-    guardrails_por_regla: contarPor(eventos.filter(evento => evento.etapa === 'guardrail'), detalleDe),
+    por_origen_y_operacion: contarPor(eventos, evento => `${evento.origen} / ${evento.operacion} / ${evento.estado}`),
+    modelo_por_herramienta: contarPor(eventos.filter(evento => evento.operacion === 'modelo'), evento => `${detalleDe(evento)} (${evento.estado})`),
+    guardrails_por_regla: contarPor(eventos.filter(evento => evento.operacion === 'guardrail'), detalleDe),
   });
 }
 

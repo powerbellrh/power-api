@@ -36,9 +36,9 @@ export default async function handler(req, res) {
   }
 
   const { idContacto, flujo, esIrresponsivo, mensaje } = lectura.solicitud;
-  // Cada línea lleva el contexto de la solicitud; los fallos se guardan además en `eventos` (sin el mensaje del candidato).
+  // Cada línea lleva el contexto de la solicitud; los fallos se guardan además en `registros` (sin el mensaje del candidato).
   const registro = crearRegistro({
-    origen: 'conversaciones', referencia: idContacto,
+    origen: 'conversaciones', referencia: idContacto, tipoReferencia: 'contacto', actor: 'manychat',
     contexto: { idSuscriptor: idContacto, flujo: nombreDeFlujo(flujo) ?? flujo, mensajeCandidato: mensaje },
   });
   const { log } = registro;
