@@ -3,6 +3,7 @@ import { conRegistro } from '../lib/registro_de_endpoint.js';
 import { ttObtener, mcCrear, mcObtener } from '../lib/clientes_api.js';
 import { limpiarTelefono, normalizarTelefonoMx } from '../lib/telefono.js';
 import { MANYCHAT_TAG_ID_BAJA, TEAMTAILOR_TAG_BAJA, AGENDA_MANYCHAT_FIELD_CANDIDATO_TEAMTAILOR_ID } from '../lib/config.js';
+import { avisar } from '../lib/registro.js';
 
 const BUCKETS_CANDIDATO = ['powerID', 'felicitaciones'];
 
@@ -30,7 +31,7 @@ async function obtenerPostulacionesTT(idTT) {
     const respuesta = await ttObtener(`/candidates/${idTT}/job-applications`, true);
     return (respuesta.data ?? []).map(ja => Number(ja.id));
   } catch (error) {
-    console.log(JSON.stringify({ etapa: 'privacidad_postulaciones_tt', estado: 'error', candidato_id: idTT, mensaje: error.message }));
+    avisar({ etapa: 'privacidad_postulaciones_tt', estado: 'error', candidato_id: idTT, mensaje: error.message });
     return [];
   }
 }
@@ -80,7 +81,7 @@ async function buscarSuscriptoresManyChat(idTT) {
     const datos = respuesta.data;
     return (Array.isArray(datos) ? datos : datos ? [datos] : []).map(s => s.id);
   } catch (error) {
-    console.log(JSON.stringify({ etapa: 'privacidad_manychat_busqueda', estado: 'error', candidato_id: idTT, mensaje: error.message }));
+    avisar({ etapa: 'privacidad_manychat_busqueda', estado: 'error', candidato_id: idTT, mensaje: error.message });
     return [];
   }
 }
@@ -91,9 +92,9 @@ async function etiquetarBajaManyChat(idsSuscriptor) {
   for (const idSuscriptor of idsSuscriptor) {
     try {
       await mcCrear('/fb/subscriber/addTag', { subscriber_id: idSuscriptor, tag_id: MANYCHAT_TAG_ID_BAJA });
-      console.log(JSON.stringify({ etapa: 'privacidad_manychat_tag', estado: 'ok' }));
+      avisar({ etapa: 'privacidad_manychat_tag', estado: 'ok' });
     } catch (error) {
-      console.log(JSON.stringify({ etapa: 'privacidad_manychat_tag', estado: 'error', mensaje: error.message }));
+      avisar({ etapa: 'privacidad_manychat_tag', estado: 'error', mensaje: error.message });
     }
   }
 }
@@ -177,12 +178,8 @@ async function handler(req, res) {
   if (req.method !== 'POST')
     return res.status(405).json({ error: 'Método no permitido, usa POST' });
 
-  // Log de inspección: cuerpo completo del webhook tal como llega de TeamTailor. No se
-  // registran los encabezados porque incluyen tokens de Vercel.
-  console.log(JSON.stringify({ etapa: 'privacidad_webhook_recibido', metodo: req.method, body: req.body ?? null }));
-
   const idTT = extraerIdCandidato(req.body);
-  console.log(JSON.stringify({ etapa: 'privacidad_webhook', evento: req.body?.event_name ?? null, candidato_id: idTT }));
+  avisar({ etapa: 'privacidad_webhook', evento: req.body?.event_name ?? null, candidato_id: idTT });
 
   if (!idTT) return res.status(200).json({ status: 'ignored', reason: 'missing_candidate_id' });
 
@@ -196,10 +193,10 @@ async function handler(req, res) {
     const supabase   = crearSupabase();
     const eliminados = await eliminarDatosCandidato(supabase, idTT, candidatoTT);
 
-    console.log(JSON.stringify({ etapa: 'privacidad_eliminacion', estado: 'ok', motivo: candidatoTT ? 'etiqueta' : 'eliminado_en_teamtailor', candidato_id: idTT, ...eliminados }));
+    avisar({ etapa: 'privacidad_eliminacion', estado: 'ok', motivo: candidatoTT ? 'etiqueta' : 'eliminado_en_teamtailor', candidato_id: idTT, ...eliminados });
     return res.status(200).json({ status: 'success', eliminados });
   } catch (error) {
-    console.log(JSON.stringify({ etapa: 'privacidad_eliminacion', estado: 'error', candidato_id: idTT, mensaje: error.message }));
+    avisar({ etapa: 'privacidad_eliminacion', estado: 'error', candidato_id: idTT, mensaje: error.message });
     return res.status(500).json({ status: 'error', message: error.message });
   }
 }

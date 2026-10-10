@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { anotarCosto } from '../lib/registro.js';
+import { anotarCosto, avisar } from '../lib/registro.js';
 import { conRegistro } from '../lib/registro_de_endpoint.js';
 import { crearSupabaseFalso } from './supabase_falso.js';
 
@@ -77,6 +77,23 @@ test('una solicitud sin permiso a un endpoint que registra desde el inicio no de
   const e = entorno({ desdeElInicio: true }, async (req, res) => res.status(401).json({ error: 'Unauthorized' }));
   assert.equal((await e.llamar()).codigo, 401);
   assert.equal(e.filas.length, 0);
+});
+
+test('`resumen` puede decir que un 422 no es un error, y los avisos de dentro del handler que fallan también quedan', async () => {
+  const sinCv = entorno({ resumen: ({ codigo }) => (codigo === 422 ? { estado: 'omitido', motivo: 'sin_cv' } : {}) }, async (req, res) => res.status(422).json({ error: 'El candidato no tiene CV' }));
+  assert.equal((await sinCv.llamar()).codigo, 422);
+  assert.deepEqual(sinCv.filas.map(f => [f.estado, f.detalle.motivo]), [['omitido', 'sin_cv']]);
+
+  const conAviso = entorno({ tipoReferencia: 'candidato', referencia: () => 4321 }, async (req, res) => {
+    avisar({ etapa: 'manychat', estado: 'error', mensaje: 'ManyChat /fb/subscriber/setCustomFields → 400', candidato: 'Ana López' });
+    avisar({ etapa: 'completado', estado: 'ok' });
+    return res.status(200).json({ ok: true });
+  });
+  await conAviso.llamar();
+  assert.deepEqual(conAviso.filas.map(f => [f.operacion, f.estado, f.referencia, f.error]), [
+    ['manychat', 'error', '4321', 'ManyChat /fb/subscriber/setCustomFields → 400'], ['operacion', 'ok', '4321', null],
+  ]);
+  assert.equal(JSON.stringify(conAviso.filas).includes('Ana'), false);
 });
 
 test('si la tabla falla, la solicitud se contesta igual', async () => {

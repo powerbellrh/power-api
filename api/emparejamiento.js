@@ -4,6 +4,7 @@ import { leerPrompt }        from '../lib/prompts.js';
 import { rechazarSolicitud } from '../lib/http.js';
 import { conRegistro } from '../lib/registro_de_endpoint.js';
 import { MODELOS } from '../lib/modelos.js';
+import { avisar } from '../lib/registro.js';
 
 const PROMPT_EXTRACCION_HABILIDADES = leerPrompt('emparejamiento/extraccion_habilidades');
 const PROMPT_VERIFICACION_MATCH     = leerPrompt('emparejamiento/verificacion_emparejamiento');
@@ -199,10 +200,10 @@ async function verificarRecomendaciones(candidato, vacantesCoincidentes) {
     vacantesCoincidentes.map(async (vacante) => {
       try {
         const { apto, motivo } = await verificarCompatibilidad(candidato, vacante.descripcion);
-        console.log(JSON.stringify({ etapa: 'verificacion_match', estado: 'ok', id_team_tailor: vacante.id_team_tailor, apto: apto ?? true, motivo }));
+        avisar({ etapa: 'verificacion_match', estado: 'ok', id_team_tailor: vacante.id_team_tailor, apto: apto ?? true, motivo });
         return { vacante, apto: apto ?? true };
       } catch (error) {
-        console.log(JSON.stringify({ etapa: 'verificacion_match', estado: 'error', id_team_tailor: vacante.id_team_tailor, mensaje: error.message }));
+        avisar({ etapa: 'verificacion_match', estado: 'error', id_team_tailor: vacante.id_team_tailor, mensaje: error.message });
         return { vacante, apto: true };
       }
     })
@@ -215,7 +216,7 @@ async function crearPostulaciones(supabase, candidatoId, vacantesVerificadas, da
   const idsVacantes = [...new Set(vacantesVerificadas.map(vacante => vacante.id))];
 
   if (idsVacantes.length === 0) {
-    console.log(JSON.stringify({ etapa: 'creacion_postulaciones', estado: 'ok', nuevas: 0 }));
+    avisar({ etapa: 'creacion_postulaciones', estado: 'ok', nuevas: 0 });
     return;
   }
 
@@ -234,16 +235,16 @@ async function crearPostulaciones(supabase, candidatoId, vacantesVerificadas, da
 
     if (errorInsercion) throw errorInsercion;
 
-    console.log(JSON.stringify({
+    avisar({
       etapa:         'creacion_postulaciones',
       estado:        'ok',
       nuevas:        postulacionesCreadas.length,
       existentes:    idsVacantes.length - postulacionesCreadas.length,
       candidato_id:  candidatoId,
       postulaciones: postulacionesCreadas,
-    }));
+    });
   } catch (error) {
-    console.log(JSON.stringify({ etapa: 'creacion_postulaciones', estado: 'error', mensaje: error.message, candidato_id: candidatoId, vacantes: idsVacantes }));
+    avisar({ etapa: 'creacion_postulaciones', estado: 'error', mensaje: error.message, candidato_id: candidatoId, vacantes: idsVacantes });
   }
 }
 
@@ -264,21 +265,21 @@ async function handler(req, res) {
   const preguntasOpcional = Array.isArray(cuerpo?.preguntas_opcional) ? cuerpo.preguntas_opcional : [];
 
   if (!telefono || typeof telefono !== 'string') {
-    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing telefono field' }));
+    avisar({ etapa: 'validacion', estado: 'error', mensaje: 'missing telefono field' });
     return res.status(400).json({ error: 'missing telefono field' });
   }
 
   if (!domicilio || typeof domicilio !== 'string') {
-    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing domicilio field' }));
+    avisar({ etapa: 'validacion', estado: 'error', mensaje: 'missing domicilio field' });
     return res.status(400).json({ error: 'missing domicilio field' });
   }
 
   if (!experiencia || typeof experiencia !== 'string') {
-    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing experiencia field' }));
+    avisar({ etapa: 'validacion', estado: 'error', mensaje: 'missing experiencia field' });
     return res.status(400).json({ error: 'missing experiencia field' });
   }
 
-  console.log(JSON.stringify({ etapa: 'inicio', telefono, domicilio, chars: experiencia.length, preguntas_opcional: preguntasOpcional.length, id_vacante: Number.isInteger(idVacante) ? idVacante : null }));
+  avisar({ etapa: 'inicio', chars: experiencia.length, preguntas_opcional: preguntasOpcional.length, id_vacante: Number.isInteger(idVacante) ? idVacante : null });
 
   const supabase = crearSupabase();
 
@@ -289,16 +290,16 @@ async function handler(req, res) {
     .maybeSingle();
 
   if (errorCandidato) {
-    console.log(JSON.stringify({ etapa: 'busqueda_candidato', estado: 'error', mensaje: errorCandidato.message, telefono }));
+    avisar({ etapa: 'busqueda_candidato', estado: 'error', mensaje: errorCandidato.message });
     return res.status(500).json({ error: errorCandidato.message });
   }
 
   if (!candidato) {
-    console.log(JSON.stringify({ etapa: 'busqueda_candidato', estado: 'error', codigo: 404, mensaje: 'candidato no encontrado', telefono }));
+    avisar({ etapa: 'busqueda_candidato', estado: 'omitido', codigo: 404, motivo: 'candidato_no_encontrado' });
     return res.status(200).json({ id_team_tailor: [], uso_ia: false });
   }
 
-  console.log(JSON.stringify({ etapa: 'busqueda_candidato', estado: 'ok', candidato_id: candidato.id }));
+  avisar({ etapa: 'busqueda_candidato', estado: 'ok', candidato_id: candidato.id });
 
   let estadoDetectado = null;
   let ciudadDetectada = null;
@@ -306,22 +307,22 @@ async function handler(req, res) {
 
   try {
     ({ estado: estadoDetectado, ciudad: ciudadDetectada } = await detectarUbicacionPorLlm(domicilio));
-    console.log(JSON.stringify({ etapa: 'normalizacion_domicilio', estado: 'ok', origen: origenDomicilio, estado_detectado: estadoDetectado, ciudad_detectada: ciudadDetectada }));
+    avisar({ etapa: 'normalizacion_domicilio', estado: 'ok', origen: origenDomicilio, con_estado: Boolean(estadoDetectado), con_ciudad: Boolean(ciudadDetectada) });
   } catch (error) {
     origenDomicilio = 'error';
-    console.log(JSON.stringify({ etapa: 'normalizacion_domicilio', estado: 'error', mensaje: error.message }));
+    avisar({ etapa: 'normalizacion_domicilio', estado: 'error', mensaje: error.message });
   }
 
   let habilidadesDisponibles = [];
   try {
     habilidadesDisponibles = await obtenerHabilidadesUnicas(supabase);
   } catch (error) {
-    console.log(JSON.stringify({ etapa: 'habilidades_disponibles', estado: 'error', mensaje: error.message }));
+    avisar({ etapa: 'habilidades_disponibles', estado: 'error', mensaje: error.message });
     return res.status(500).json({ error: error.message });
   }
 
   if (habilidadesDisponibles.length === 0) {
-    console.log(JSON.stringify({ etapa: 'completado', estado: 'sin_habilidades_catalogo' }));
+    avisar({ etapa: 'completado', estado: 'sin_habilidades_catalogo' });
     return res.status(200).json({ id_team_tailor: [], uso_ia: false });
   }
 
@@ -329,16 +330,16 @@ async function handler(req, res) {
   try {
     habilidadesDetectadas = await detectarHabilidadesPorLlm(experiencia, habilidadesDisponibles);
   } catch (error) {
-    console.log(JSON.stringify({ etapa: 'llm', estado: 'error', mensaje: error.message }));
+    avisar({ etapa: 'llm', estado: 'error', mensaje: error.message });
     return res.status(500).json({ error: error.message });
   }
 
-  console.log(JSON.stringify({ etapa: 'deteccion', estado: 'ok', habilidades: habilidadesDetectadas }));
+  avisar({ etapa: 'deteccion', estado: 'ok', habilidades: habilidadesDetectadas.length });
 
   const usoIa = true;
 
   if (habilidadesDetectadas.length === 0) {
-    console.log(JSON.stringify({ etapa: 'completado', estado: 'sin_habilidades' }));
+    avisar({ etapa: 'completado', estado: 'sin_habilidades' });
     return res.status(200).json({ id_team_tailor: [], uso_ia: usoIa });
   }
 
@@ -391,10 +392,10 @@ async function handler(req, res) {
         habilidadesDetectadas.some(habilidad => vacante.habilidades?.includes(habilidad))
     );
 
-    console.log(JSON.stringify({ etapa: 'coincidencias_iniciales', estado: 'ok', coincidencias: vacantesCoincidentes.length }));
+    avisar({ etapa: 'coincidencias_iniciales', estado: 'ok', coincidencias: vacantesCoincidentes.length });
 
     if (vacantesCoincidentes.length === 0) {
-      console.log(JSON.stringify({ etapa: 'completado', estado: 'sin_coincidencias' }));
+      avisar({ etapa: 'completado', estado: 'sin_coincidencias' });
       return res.status(200).json({ id_team_tailor: [], uso_ia: usoIa });
     }
 
@@ -402,7 +403,7 @@ async function handler(req, res) {
     const datosCandidato = { nombre, domicilio: domicilioNormalizado ?? domicilio, experiencia, preguntasOpcional };
     const vacantesVerificadas = await verificarRecomendaciones(datosCandidato, vacantesCoincidentes);
 
-    console.log(JSON.stringify({ etapa: 'verificacion_match', estado: 'ok', antes: vacantesCoincidentes.length, despues: vacantesVerificadas.length }));
+    avisar({ etapa: 'verificacion_match', estado: 'ok', antes: vacantesCoincidentes.length, despues: vacantesVerificadas.length });
 
     const idsCoincidentes = vacantesVerificadas
       .map(vacante => parseInt(vacante.id_team_tailor, 10))
@@ -412,11 +413,11 @@ async function handler(req, res) {
 
     await crearPostulaciones(supabase, candidato.id, vacantesVerificadas, datosCandidato);
 
-    console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', coincidencias: idsUnicos.length }));
+    avisar({ etapa: 'completado', estado: 'ok', coincidencias: idsUnicos.length });
     return res.status(200).json({ id_team_tailor: idsUnicos, uso_ia: usoIa });
 
   } catch (error) {
-    console.log(JSON.stringify({ etapa: 'consulta_vacantes', estado: 'error', mensaje: error.message }));
+    avisar({ etapa: 'consulta_vacantes', estado: 'error', mensaje: error.message });
     return res.status(500).json({ error: error.message });
   }
 }

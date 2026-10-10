@@ -14,7 +14,8 @@ import {
   obtenerAnalisisEstructurado,
   reconstruirAnalisisPrevio,
 } from '../lib/informes/modelo.js';
-import { crearRegistro } from '../lib/registro.js';
+import { avisar, crearRegistro } from '../lib/registro.js';
+import { conRegistro } from '../lib/registro_de_endpoint.js';
 import { RECLUTADORES_OPERATIVA, clienteDeNombre } from '../lib/teamtailor_vacantes.js';
 import { normalizarTelefonoMx } from '../lib/telefono.js';
 
@@ -87,7 +88,7 @@ async function obtenerPreguntasRespuestasEvaluacion(supabase, postulacionId) {
       ...(data.respuestas_preguntas_personalizadas ?? {}),
     };
   } catch (error) {
-    console.log(JSON.stringify({ etapa: 'obtener_preguntas_evaluacion', estado: 'error', mensaje: error.message, postulacion_id: postulacionId }));
+    avisar({ etapa: 'obtener_preguntas_evaluacion', estado: 'error', mensaje: error.message, postulacion_id: postulacionId });
     return {};
   }
 }
@@ -130,7 +131,7 @@ const contarPor = lista => lista.reduce((cuenta, clave) => ({ ...cuenta, [clave]
 // Solo refresca el enlace del CV: el de TeamTailor caduca y el consumidor lo vuelve a pedir.
 async function responderCurriculum(res, postulacionId) {
   if (!postulacionId) {
-    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing postulacion' }));
+    avisar({ etapa: 'validacion', estado: 'error', mensaje: 'missing postulacion' });
     return res.status(400).json({ error: "El campo 'postulacion' es requerido" });
   }
 
@@ -140,23 +141,29 @@ async function responderCurriculum(res, postulacionId) {
     if (!urlCurriculum)
       return res.status(422).json({ error: 'El candidato no tiene CV' });
 
-    console.log(JSON.stringify({ etapa: 'refrescar_cv', estado: 'ok', postulacion_id: postulacionId }));
+    avisar({ etapa: 'refrescar_cv', estado: 'ok', postulacion_id: postulacionId });
     return res.status(200).json({ curriculum: urlCurriculum });
   } catch (error) {
-    console.log(JSON.stringify({ etapa: 'error', estado: 'error', postulacion_id: postulacionId, mensaje: error.message }));
+    avisar({ etapa: 'error', estado: 'error', postulacion_id: postulacionId, mensaje: error.message });
     return res.status(500).json({ error: error.message });
   }
 }
+
+const curriculumRegistrado = conRegistro({
+  origen: 'informes', operacion: 'curriculum', actor: 'herramientas', tipoReferencia: 'postulacion',
+  referencia: req => req.body?.postulacion,
+  resumen: ({ codigo }) => (codigo === 422 ? { estado: 'omitido', motivo: 'sin_cv' } : {}),
+}, (req, res) => responderCurriculum(res, req.body?.postulacion));
 
 export default async function handler(req, res) {
   if (rechazarSolicitud(req, res, { clave: process.env.INFORMES_API_KEY })) return;
 
   const { postulacion: postulacionId, vacante: vacanteId, comentarios, respuesta_anterior: respuestaAnterior, imagen: mejorarFoto, cv: soloCurriculum } = req.body ?? {};
 
-  if (soloCurriculum) return responderCurriculum(res, postulacionId);
+  if (soloCurriculum) return curriculumRegistrado(req, res);
 
   if (!postulacionId || !vacanteId) {
-    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing postulacion or vacante' }));
+    avisar({ etapa: 'validacion', estado: 'error', mensaje: 'missing postulacion or vacante' });
     return res.status(400).json({ error: "Los campos 'postulacion' y 'vacante' son requeridos" });
   }
 
@@ -194,7 +201,7 @@ export default async function handler(req, res) {
 
       bitacora.foto = 'original';
       if (!urlFoto) {
-        console.log(JSON.stringify({ etapa: 'validacion', estado: 'sin_foto', mensaje: 'candidato sin foto de perfil, asignando foto genérica', postulacion_id: postulacionId }));
+        avisar({ etapa: 'validacion', estado: 'sin_foto', mensaje: 'candidato sin foto de perfil, asignando foto genérica', postulacion_id: postulacionId });
         urlFoto = await asignarFotoGenerica(nombreCompleto, candidatoId, llamadas);
         bitacora.foto = 'generica';
       }
@@ -209,7 +216,7 @@ export default async function handler(req, res) {
       try {
         datosReclutador = await ttObtener(`/jobs/${vacanteId}/user`, true);
       } catch (e) {
-        console.log(JSON.stringify({ etapa: 'reclutador_vacante', estado: 'sin_reclutador', vacante_id: vacanteId, mensaje: e.message }));
+        avisar({ etapa: 'reclutador_vacante', estado: 'sin_reclutador', vacante_id: vacanteId, mensaje: e.message });
       }
       const nombreReclutador = extraerNombreReclutador(datosReclutador);
       const idReclutador   = datosReclutador?.data?.id ?? null;
@@ -230,7 +237,7 @@ export default async function handler(req, res) {
         const nombreEtapa = extraerNombreEtapa(datosPostulacion);
         enEtapaInbox = (nombreEtapa ?? '').trim().toLowerCase() === 'inbox';
       } catch (e) {
-        console.log(JSON.stringify({ etapa: 'obtener_etapa_postulacion', estado: 'error', mensaje: e.message, postulacion_id: postulacionId }));
+        avisar({ etapa: 'obtener_etapa_postulacion', estado: 'error', mensaje: e.message, postulacion_id: postulacionId });
       }
       bitacora.inbox = enEtapaInbox;
 
@@ -257,14 +264,14 @@ export default async function handler(req, res) {
         caracteres:     bloqueCrudo.length,
       };
 
-      console.log(JSON.stringify({
+      avisar({
         etapa: 'preguntas_respuestas', postulacion_id: postulacionId,
         formulario_teamtailor: Object.keys(respuestasFormulario).length,
         evaluacion_supabase:   Object.keys(preguntasRespuestasEvaluacion).length,
         total_clasificadas:    Object.keys(clasificacionPorIndice).length,
         total_pares:           paresPreguntaRespuesta.length,
-        bloque_crudo:          bloqueCrudo,
-      }));
+        caracteres:            bloqueCrudo.length,
+      });
 
       // El CV solo se usa como fuente de información cuando el candidato tiene pocas respuestas
       // (menos de 5): en ese caso hay poco material de la entrevista para corroborar, así que se
@@ -276,12 +283,12 @@ export default async function handler(req, res) {
       const usaCurriculumComoFuente   = enEtapaInbox || paresPreguntaRespuesta.length < RESPUESTAS_MINIMAS_SIN_CV;
       let urlCurriculumAnalisis = null;
 
-      console.log(JSON.stringify({
+      avisar({
         etapa: 'decision_fuente_cv', postulacion_id: postulacionId,
         total_pares: paresPreguntaRespuesta.length, umbral_respuestas_minimas: RESPUESTAS_MINIMAS_SIN_CV,
         usa_cv_como_fuente: usaCurriculumComoFuente, tiene_cv_disponible: !!urlCurriculum, en_etapa_inbox: enEtapaInbox,
         metodo: usaCurriculumComoFuente ? 'cv_como_fuente_secundaria' : 'previo_a_adjuncion_de_cv',
-      }));
+      });
 
       if (usaCurriculumComoFuente && urlCurriculum) {
         // Se refresca el CV justo antes de mandarlo a OpenRouter: la URL firmada de TeamTailor
@@ -291,12 +298,12 @@ export default async function handler(req, res) {
           const candidatoParaAnalisis = await ttObtener(`/job-applications/${postulacionId}/candidate`, true);
           urlCurriculumAnalisis = candidatoParaAnalisis.data?.attributes?.resume ?? urlCurriculum;
         } catch (e) {
-          console.log(JSON.stringify({ etapa: 'refrescar_cv_analisis', estado: 'error', mensaje: e.message, postulacion_id: postulacionId }));
+          avisar({ etapa: 'refrescar_cv_analisis', estado: 'error', mensaje: e.message, postulacion_id: postulacionId });
         }
       }
       bitacora.con_cv = Boolean(urlCurriculumAnalisis);
 
-      console.log(JSON.stringify({ etapa: 'analisis_ia', candidato: nombreCompleto, vacante: nombreInterno, tipo: esOperativo ? 'operativo' : 'estandar', con_cv: !!urlCurriculumAnalisis }));
+      avisar({ etapa: 'analisis_ia', postulacion_id: postulacionId, tipo: esOperativo ? 'operativo' : 'estandar', con_cv: !!urlCurriculumAnalisis });
       const analisisDelModelo = await obtenerAnalisisEstructurado(bloqueCrudo, nombreCompleto, nombreInterno, comentarios, respuestaAnterior, urlCurriculumAnalisis, { ...MODOS[tipoInforme], llamadas });
       const analisis = comentarios && respuestaAnterior && typeof respuestaAnterior === 'object'
         ? completarConInformeAnterior(analisisDelModelo, respuestaAnterior)
@@ -304,12 +311,12 @@ export default async function handler(req, res) {
 
       let fotoFinal = urlFoto;
       if (mejorarFoto) {
-        console.log(JSON.stringify({ etapa: 'retoque_foto', candidato: nombreCompleto, postulacion_id: postulacionId }));
+        avisar({ etapa: 'retoque_foto', postulacion_id: postulacionId });
         try {
           fotoFinal = await retocarFoto(urlFoto, candidatoId, llamadas);
           bitacora.foto = 'retocada';
         } catch (error) {
-          console.log(JSON.stringify({ etapa: 'retoque_foto', estado: 'error', mensaje: error.message, postulacion_id: postulacionId }));
+          avisar({ etapa: 'retoque_foto', estado: 'error', mensaje: error.message, postulacion_id: postulacionId });
           fotoFinal = urlFoto;
           bitacora.retoque_fallido = true;
         }
@@ -326,10 +333,10 @@ export default async function handler(req, res) {
         const candidatoFresco = await ttObtener(`/job-applications/${postulacionId}/candidate`, true);
         urlCurriculumFinal = candidatoFresco.data?.attributes?.resume ?? urlCurriculum;
       } catch (e) {
-        console.log(JSON.stringify({ etapa: 'refrescar_cv', estado: 'error', mensaje: e.message, postulacion_id: postulacionId }));
+        avisar({ etapa: 'refrescar_cv', estado: 'error', mensaje: e.message, postulacion_id: postulacionId });
       }
 
-      console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', candidato: nombreCompleto, postulacion_id: postulacionId, en_etapa_inbox: enEtapaInbox }));
+      avisar({ etapa: 'completado', estado: 'ok', postulacion_id: postulacionId, en_etapa_inbox: enEtapaInbox });
 
       const informe = {
         tipo:        tipoInforme,
@@ -357,7 +364,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ ...informe, ...(urlCurriculumFinal ? { curriculum: urlCurriculumFinal } : {}) });
 
     } catch (error) {
-      console.log(JSON.stringify({ etapa: 'error', estado: 'error', postulacion_id: postulacionId, mensaje: error.message }));
+      avisar({ etapa: 'error', estado: 'error', postulacion_id: postulacionId, mensaje: error.message });
       await operacion.cerrar('error', { ...bitacora, error });
       return res.status(500).json({ error: error.message });
     }

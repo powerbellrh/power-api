@@ -2,6 +2,7 @@ import { rechazarCron } from '../lib/http.js';
 import { crearSupabase } from '../lib/supabase.js';
 import { conRegistro } from '../lib/registro_de_endpoint.js';
 import { enviarNotificacionAgendaManyChat } from '../lib/notificacion_agenda.js';
+import { avisar } from '../lib/registro.js';
 
 const TAMANO_LOTE = 10;
 const RETENCION_DIAS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -10,7 +11,7 @@ const RETENCION_DIAS_MS = 7 * 24 * 60 * 60 * 1000;
 // enviadas, canceladas o pendientes) para no acumular basura en la tabla.
 async function limpiarNotificacionesViejas(supabase) {
   const limite = new Date(Date.now() - RETENCION_DIAS_MS).toISOString();
-  console.log(JSON.stringify({ etapa: 'notificaciones_limpieza', estado: 'iniciando', limite }));
+  avisar({ etapa: 'notificaciones_limpieza', estado: 'iniciando', limite });
 
   const { data: eliminadas, error } = await supabase
     .from('notificaciones')
@@ -19,14 +20,14 @@ async function limpiarNotificacionesViejas(supabase) {
     .select('id');
 
   if (error) {
-    console.log(JSON.stringify({ etapa: 'notificaciones_limpieza', estado: 'error', mensaje: error.message }));
+    avisar({ etapa: 'notificaciones_limpieza', estado: 'error', mensaje: error.message });
     return;
   }
-  console.log(JSON.stringify({ etapa: 'notificaciones_limpieza', estado: 'ok', cantidad: eliminadas?.length ?? 0 }));
+  avisar({ etapa: 'notificaciones_limpieza', estado: 'ok', cantidad: eliminadas?.length ?? 0 });
 }
 
 async function handler(req, res) {
-  console.log(JSON.stringify({ etapa: 'notificaciones_invocado', ahora: new Date().toISOString() }));
+  avisar({ etapa: 'notificaciones_invocado', ahora: new Date().toISOString() });
 
   if (rechazarCron(req, res)) return;
 
@@ -42,14 +43,14 @@ async function handler(req, res) {
     .limit(TAMANO_LOTE);
 
   if (errorConsulta) {
-    console.log(JSON.stringify({ etapa: 'consulta_pendientes', estado: 'error', mensaje: errorConsulta.message }));
+    avisar({ etapa: 'consulta_pendientes', estado: 'error', mensaje: errorConsulta.message });
     return res.status(500).json({ status: 'error', message: 'Database query failed', detail: errorConsulta.message });
   }
 
-  console.log(JSON.stringify({ etapa: 'consulta_pendientes', estado: 'ok', cantidad: pendientes?.length ?? 0, ids: (pendientes ?? []).map(p => p.id) }));
+  avisar({ etapa: 'consulta_pendientes', estado: 'ok', cantidad: pendientes?.length ?? 0 });
 
   if (!pendientes || pendientes.length === 0) {
-    console.log(JSON.stringify({ etapa: 'notificaciones_cola_vacia' }));
+    avisar({ etapa: 'notificaciones_cola_vacia' });
     return res.status(200).json({ status: 'success', message: 'Queue is empty' });
   }
 
@@ -57,15 +58,13 @@ async function handler(req, res) {
   const fallidos    = [];
 
   for (const notificacion of pendientes) {
-    console.log(JSON.stringify({ etapa: 'agenda_notificacion_enviando', id: notificacion.id, candidato_id: notificacion.candidato_id }));
+    avisar({ etapa: 'agenda_notificacion_enviando', id: notificacion.id, candidato_id: notificacion.candidato_id });
 
     let fallo = null;
-    let stack = null;
     try {
       await enviarNotificacionAgendaManyChat(notificacion.payload, notificacion.candidato_id);
     } catch (e) {
       fallo = e.message;
-      stack = e.stack;
     }
 
     // Un solo intento: si ManyChat falla, ninguna llamada posterior para esa
@@ -78,14 +77,14 @@ async function handler(req, res) {
 
     if (fallo) {
       fallidos.push({ id: notificacion.id, error: fallo });
-      console.log(JSON.stringify({ etapa: 'agenda_notificacion_enviada', estado: 'error', id: notificacion.id, candidato_id: notificacion.candidato_id, mensaje: fallo, stack }));
+      avisar({ etapa: 'agenda_notificacion_enviada', estado: 'error', id: notificacion.id, candidato_id: notificacion.candidato_id, mensaje: fallo });
     } else {
       procesados.push(notificacion.id);
-      console.log(JSON.stringify({ etapa: 'agenda_notificacion_enviada', estado: 'ok', id: notificacion.id, candidato_id: notificacion.candidato_id }));
+      avisar({ etapa: 'agenda_notificacion_enviada', estado: 'ok', id: notificacion.id, candidato_id: notificacion.candidato_id });
     }
   }
 
-  console.log(JSON.stringify({ etapa: 'completado', encontrados: pendientes.length, enviados: procesados.length, fallidos: fallidos.length }));
+  avisar({ etapa: 'completado', encontrados: pendientes.length, enviados: procesados.length, fallidos: fallidos.length });
 
   await limpiarNotificacionesViejas(supabase);
 

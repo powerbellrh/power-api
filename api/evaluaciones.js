@@ -3,11 +3,13 @@ import { waitUntil } from '@vercel/functions';
 import { EVALUACION_MAX_INTENTOS } from '../lib/config.js';
 import { procesarEvaluacion, procesarReevaluacion } from '../lib/evaluaciones/proceso.js';
 import { rechazarSolicitud } from '../lib/http.js';
+import { avisar } from '../lib/registro.js';
+import { conRegistro } from '../lib/registro_de_endpoint.js';
 
 // Endpoint que llama /cola con una postulación pendiente: { postulacion: id } para evaluarla o { reevaluacion: id }
 // para reevaluarla. Contesta de inmediato y el trabajo sigue en segundo plano (lib/evaluaciones/proceso.js).
 
-const aviso = datos => console.log(JSON.stringify(datos));
+const aviso = avisar;
 
 async function leerPostulacion(supabase, postulacionId) {
   const { data, error } = await supabase.from('evaluaciones').select('*').eq('postulacion_id', postulacionId).single();
@@ -80,7 +82,7 @@ async function manejarEvaluacion(req, res, supabase) {
   return res.status(202).json({ status: 'processing', postulacion_id: postulacionId, intento: intentoActual });
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (rechazarSolicitud(req, res)) return;
 
   const supabase = crearSupabase();
@@ -88,3 +90,11 @@ export default async function handler(req, res) {
   if ('reevaluacion' in (req.body ?? {})) return manejarReevaluacion(req, res, supabase);
   return manejarEvaluacion(req, res, supabase);
 }
+
+// De la solicitud solo queda fila cuando se rechaza antes de empezar (no existe la postulación, le falta la vacante):
+// lo que sí arranca deja su propia fila al evaluarse (lib/evaluaciones/proceso.js).
+export default conRegistro({
+  origen: 'evaluaciones', operacion: 'solicitud', actor: 'cron', tipoReferencia: 'postulacion',
+  referencia: req => req.body?.postulacion ?? req.body?.reevaluacion,
+  guardarSi: () => false,
+}, handler);

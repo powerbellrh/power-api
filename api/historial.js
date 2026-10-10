@@ -6,6 +6,7 @@ import { limpiarTelefono, normalizarTelefonoMx } from '../lib/telefono.js';
 import { registrarEnAgenda } from '../lib/backfill_agenda.js';
 import { crearPowerId, crearFelicitacion } from '../lib/imagenes/candidato.js';
 import { TEAMTAILOR_USER_ID } from '../lib/config.js';
+import { avisar } from '../lib/registro.js';
 
 // Tiempo que se espera antes de disparar el flujo de WhatsApp de "Enviar agenda"
 // (se guarda en `notificaciones` y la envía después un cron, no este handler).
@@ -69,7 +70,7 @@ async function manejarEnviadoACliente(data, candidato) {
   const reclutador = obtenerCampoPersonalizado(candidato, 'reclutador');
 
   if (!esCampoValido(fecha) || !esCampoValido(hora) || !esCampoValido(reclutador)) {
-    console.log(JSON.stringify({ etapa: 'enviado_a_cliente', estado: 'saltado', razon: 'campos_faltantes', candidato_id: candidato.id }));
+    avisar({ etapa: 'enviado_a_cliente', estado: 'saltado', razon: 'campos_faltantes', candidato_id: candidato.id });
     return;
   }
 
@@ -82,7 +83,7 @@ async function manejarEnviadoACliente(data, candidato) {
     const jobResp = await ttObtener(`/jobs/${data.job_id}`);
     nombreInternoVacante = jobResp.data.attributes['internal-name'] || '';
   } catch (e) {
-    console.log(JSON.stringify({ etapa: 'obtener_vacante', estado: 'error', mensaje: e.message }));
+    avisar({ etapa: 'obtener_vacante', estado: 'error', mensaje: e.message });
   }
 
   let fotografia = candidato.picture?.url || '';
@@ -92,7 +93,7 @@ async function manejarEnviadoACliente(data, candidato) {
     candidatoTT = candResp.data.attributes;
     if (!fotografia) fotografia = candidatoTT.picture || '';
   } catch (e) {
-    console.log(JSON.stringify({ etapa: 'obtener_candidato', estado: 'error', mensaje: e.message }));
+    avisar({ etapa: 'obtener_candidato', estado: 'error', mensaje: e.message });
   }
 
   const nombreCandidato = [candidato.first_name, candidato.last_name].filter(Boolean).join(' ') || candidato.phone || 'Unknown';
@@ -108,9 +109,9 @@ async function manejarEnviadoACliente(data, candidato) {
       telefono:   candidato.phone || '',
       citado:     construirCitado(fecha, hora),
     });
-    console.log(JSON.stringify({ etapa: 'powerid_generado', estado: 'ok', candidato_id: candidato.id, url: powerIDUrl }));
+    avisar({ etapa: 'powerid_generado', estado: 'ok', candidato_id: candidato.id, url: powerIDUrl });
   } catch (e) {
-    console.log(JSON.stringify({ etapa: 'powerid_generado', estado: 'error', candidato_id: candidato.id, mensaje: e.message }));
+    avisar({ etapa: 'powerid_generado', estado: 'error', candidato_id: candidato.id, mensaje: e.message });
   }
 
   // Registro en la tabla `agenda` (con backfill de vacante/candidato/postulación
@@ -130,9 +131,9 @@ async function manejarHired(candidato) {
       candidato: parseInt(candidato.id) || candidato.id,
       nombre:    candidato.first_name || '',
     });
-    console.log(JSON.stringify({ etapa: 'certificado_generado', estado: 'ok', candidato_id: candidato.id, url }));
+    avisar({ etapa: 'certificado_generado', estado: 'ok', candidato_id: candidato.id, url });
   } catch (e) {
-    console.log(JSON.stringify({ etapa: 'certificado_generado', estado: 'error', candidato_id: candidato.id, mensaje: e.message }));
+    avisar({ etapa: 'certificado_generado', estado: 'error', candidato_id: candidato.id, mensaje: e.message });
   }
 }
 
@@ -155,9 +156,9 @@ async function crearNotaTeamTailor(candidatoId, postulacionId, texto, etapaLog) 
         },
       },
     });
-    console.log(JSON.stringify({ etapa: etapaLog, estado: 'ok', candidato_id: candidatoId }));
+    avisar({ etapa: etapaLog, estado: 'ok', candidato_id: candidatoId });
   } catch (e) {
-    console.log(JSON.stringify({ etapa: etapaLog, estado: 'error', candidato_id: candidatoId, mensaje: e.message }));
+    avisar({ etapa: etapaLog, estado: 'error', candidato_id: candidatoId, mensaje: e.message });
   }
 }
 
@@ -201,10 +202,10 @@ async function agendarNotificacionWhatsApp(supabase, candidato, data, payload) {
   }], { onConflict: 'postulacion_id' });
 
   if (error) {
-    console.log(JSON.stringify({ etapa: 'agenda_notificacion_agendada', estado: 'error', candidato_id: candidato.id, mensaje: error.message }));
+    avisar({ etapa: 'agenda_notificacion_agendada', estado: 'error', candidato_id: candidato.id, mensaje: error.message });
     return;
   }
-  console.log(JSON.stringify({ etapa: 'agenda_notificacion_agendada', estado: 'ok', candidato_id: candidato.id, programado_para: programadoPara }));
+  avisar({ etapa: 'agenda_notificacion_agendada', estado: 'ok', candidato_id: candidato.id, programado_para: programadoPara });
 
   await crearNotaTeamTailor(
     candidato.id,
@@ -218,7 +219,7 @@ async function manejarEnviarAgenda(supabase, candidato, data) {
   // Sin correo no se puede agendar (el flujo de ManyChat depende del campo de
   // correo del candidato), así que se salta la etapa por completo.
   if (!candidato.email) {
-    console.log(JSON.stringify({ etapa: 'agenda_whatsapp', estado: 'saltado', razon: 'sin_correo', candidato_id: candidato.id }));
+    avisar({ etapa: 'agenda_whatsapp', estado: 'saltado', razon: 'sin_correo', candidato_id: candidato.id });
     return;
   }
 
@@ -228,7 +229,7 @@ async function manejarEnviarAgenda(supabase, candidato, data) {
   const telefonoLimpio = limpiarTelefono(candidato.phone);
   const telefono       = telefonoLimpio ? normalizarTelefonoMx(telefonoLimpio) : '';
   if (!telefono) {
-    console.log(JSON.stringify({ etapa: 'agenda_whatsapp', estado: 'saltado', razon: 'sin_telefono', candidato_id: candidato.id }));
+    avisar({ etapa: 'agenda_whatsapp', estado: 'saltado', razon: 'sin_telefono', candidato_id: candidato.id });
   }
 
   const nombreCandidato = [candidato.first_name, candidato.last_name].filter(Boolean).join(' ') || candidato.phone || 'Unknown';
@@ -246,7 +247,7 @@ async function manejarEnviarAgenda(supabase, candidato, data) {
     nombreReclutadora   = reclutador?.attributes?.name  || '';
     whatsappReclutadora = reclutador?.attributes?.phone || '';
   } catch (e) {
-    console.log(JSON.stringify({ etapa: 'agenda_obtener_vacante', estado: 'error', mensaje: e.message }));
+    avisar({ etapa: 'agenda_obtener_vacante', estado: 'error', mensaje: e.message });
   }
 
   // El payload se resuelve por completo ahora (teléfono, nombres, vacante) y se
@@ -279,12 +280,12 @@ async function cancelarNotificacionesPendientes(supabase, postulacionId) {
     .select('id,candidato_id');
 
   if (error) {
-    console.log(JSON.stringify({ etapa: 'agenda_notificacion_cancelada', estado: 'error', postulacion_id: postulacionId, mensaje: error.message }));
+    avisar({ etapa: 'agenda_notificacion_cancelada', estado: 'error', postulacion_id: postulacionId, mensaje: error.message });
     return;
   }
   if (!canceladas?.length) return;
 
-  console.log(JSON.stringify({ etapa: 'agenda_notificacion_cancelada', estado: 'ok', postulacion_id: postulacionId, cantidad: canceladas.length }));
+  avisar({ etapa: 'agenda_notificacion_cancelada', estado: 'ok', postulacion_id: postulacionId, cantidad: canceladas.length });
 
   await crearNotaTeamTailor(canceladas[0].candidato_id, postulacionId, '❌ Notificaciones canceladas', 'agenda_nota_cancelada');
 }
@@ -301,12 +302,11 @@ async function handler(req, res) {
   const candidato = data.candidate || {};
   const eventName = data.event_name;
 
-  // Log de inspección: cuerpo completo del webhook tal como llega de TeamTailor,
-  // para poder revisar qué información manda en cada evento/etapa.
-  console.log(JSON.stringify({ etapa: 'webhook_recibido', body: data }));
+  // Del webhook solo se anota qué evento es y de qué postulación: su cuerpo trae los datos del candidato.
+  avisar({ etapa: 'webhook_recibido', evento: eventName ?? null, postulacion_id: data.id ?? null });
 
   if (eventName !== 'job_application.update') {
-    console.log(JSON.stringify({ etapa: 'evento', estado: 'ignorado', evento: eventName ?? null }));
+    avisar({ etapa: 'evento', estado: 'ignorado', evento: eventName ?? null });
     return res.status(200).json({ status: 'ignored', reason: 'unhandled_event' });
   }
 
@@ -320,14 +320,14 @@ async function handler(req, res) {
   }
 
   if (data.rejected_at) {
-    console.log(JSON.stringify({ etapa: 'evento', estado: 'ignorado', razon: 'rechazado', rejected_at: data.rejected_at }));
+    avisar({ etapa: 'evento', estado: 'ignorado', razon: 'rechazado', rejected_at: data.rejected_at });
     return res.status(200).json({ status: 'ignored', reason: 'rejected' });
   }
 
-  console.log(JSON.stringify({ etapa: 'inicio', evento: eventName, stage, candidato_id: candidato.id ?? null }));
+  avisar({ etapa: 'inicio', evento: eventName, stage, candidato_id: candidato.id ?? null });
 
   if (stage !== 'enviado a cliente' && stage !== 'hired' && stage !== 'enviar agenda') {
-    console.log(JSON.stringify({ etapa: 'evento', estado: 'ignorado', razon: 'stage_no_manejado', stage }));
+    avisar({ etapa: 'evento', estado: 'ignorado', razon: 'stage_no_manejado', stage });
     return res.status(200).json({ status: 'ignored', reason: 'unhandled_stage' });
   }
 
@@ -339,10 +339,10 @@ async function handler(req, res) {
     } else {
       await manejarHired(candidato);
     }
-    console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', stage, candidato_id: candidato.id ?? null }));
+    avisar({ etapa: 'completado', estado: 'ok', stage, candidato_id: candidato.id ?? null });
     return res.status(200).json({ status: 'success' });
   } catch (error) {
-    console.log(JSON.stringify({ etapa: 'completado', estado: 'error', stage, candidato_id: candidato.id ?? null, mensaje: error.message }));
+    avisar({ etapa: 'completado', estado: 'error', stage, candidato_id: candidato.id ?? null, mensaje: error.message });
     return res.status(500).json({ status: 'error', message: error.message });
   }
 }

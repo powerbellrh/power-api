@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { crearExtractores } from '../lib/chatbot/extractores.js';
 import { FLUJOS } from '../lib/chatbot/manychat.js';
 import { procesarConversacion } from '../lib/chatbot/orquestador.js';
-import { anotarCosto, crearRegistro, filtrarDetalle, limpiarError, registrar } from '../lib/registro.js';
+import { anotarCosto, avisar, crearRegistro, filtrarDetalle, limpiarError, registrar } from '../lib/registro.js';
 import { crearEntornoConversaciones } from './entorno_conversaciones.js';
 import { MEDIODIA } from './pasos_ayudas.js';
 import { crearSupabaseFalso } from './supabase_falso.js';
@@ -23,12 +23,15 @@ const registroDePrueba = (opciones = {}) => {
   return { registro, lineas };
 };
 
-test('cada evento se imprime con el contexto; solo los fallos se juntan, y sin el contexto', () => {
-  const { registro, lineas } = registroDePrueba();
-  registro.log('conversaciones', { estado: 'recibido' });
+test('cada evento se imprime filtrado (sin datos de nadie); solo los fallos se juntan', () => {
+  const { registro, lineas } = registroDePrueba({ contexto: { idSuscriptor: 4242, flujo: 'mensaje', mensajeCandidato: 'dato personal' } });
+  registro.log('conversaciones', { estado: 'recibido', texto: 'Me llamo Ana López', telefono: 5213312345678 });
   registro.log('manychat_envio', { estado: 'error', error: 'x'.repeat(900) });
 
-  assert.deepEqual(lineas.map(linea => [linea.etapa, linea.estado, linea.mensajeCandidato]), [['conversaciones', 'recibido', 'dato personal'], ['manychat_envio', 'error', 'dato personal']]);
+  // En la consola queda quién y en qué flujo, nunca lo que escribió ni un teléfono (aunque venga como número).
+  assert.deepEqual(lineas[0], { etapa: 'conversaciones', idSuscriptor: 4242, flujo: 'mensaje', estado: 'recibido' });
+  assert.deepEqual([lineas[1].etapa, lineas[1].estado, lineas[1].error.length], ['manychat_envio', 'error', 300]);
+  assert.equal(/dato personal|Ana|5213312345678/.test(JSON.stringify(lineas)), false);
   assert.equal(registro.pendientes.length, 1);
   const [evento] = registro.pendientes;
   assert.deepEqual({ origen: evento.origen, operacion: evento.operacion, estado: evento.estado, referencia: evento.referencia }, { origen: 'conversaciones', operacion: 'manychat_envio', estado: 'error', referencia: '4242' });
@@ -60,6 +63,33 @@ test('guardar inserta los fallos en `registros` y, si la tabla falla, no lanza',
   registro.log('modelo', { estado: 'error' });
   await registro.guardar({ from: () => ({ insert: async () => ({ error: { message: 'relation "registros" does not exist' } }) }) });
   assert.equal(lineas.at(-1).estado, 'sin_guardar');
+});
+
+// ── La consola ───────────────────────────────────────────────────────────────
+
+const capturarConsola = async funcion => {
+  const original = console.log, lineas = [];
+  console.log = linea => lineas.push(JSON.parse(linea));
+  try { await funcion(); } finally { console.log = original; }
+  return lineas;
+};
+
+test('`avisar` fuera de una solicitud imprime la línea filtrada: ni nombres, ni teléfonos, ni cuerpos completos', async () => {
+  const lineas = await capturarConsola(() => avisar({
+    etapa: 'inicio', estado: 'ok', postulacion_id: 99887766, candidato: 'Ana López', telefono: '3312345678', domicilio: 'Av. Siempre Viva 742',
+    edad: 31, body: { candidate: { id: 4321, first_name: 'Ana', phone: '3312345678' } }, mensaje: 'no se pudo avisar a ana@correo.com (33 1234 5678)',
+  }));
+  assert.deepEqual(lineas, [{ etapa: 'inicio', estado: 'ok', postulacion_id: 99887766, body: { candidate: { id: 4321 } }, mensaje: 'no se pudo avisar a [correo] ([número])' }]);
+});
+
+test('`avisar` dentro de una solicitud es un evento del registro: un fallo se guarda con su texto en `error`', async () => {
+  const { registro, lineas } = registroDePrueba();
+  await registro.ejecutar(async () => {
+    avisar({ etapa: 'teamtailor', estado: 'ok', candidato_id: 4321 });
+    avisar({ etapa: 'teamtailor', estado: 'error', mensaje: 'TeamTailor PATCH /candidates/4321 → 500', candidato: 'Ana López' });
+  });
+  assert.deepEqual(lineas.map(linea => [linea.etapa, linea.estado]), [['teamtailor', 'ok'], ['teamtailor', 'error']]);
+  assert.deepEqual(registro.pendientes.map(f => [f.operacion, f.estado, f.error, f.detalle]), [['teamtailor', 'error', 'TeamTailor PATCH /candidates/4321 → 500', {}]]);
 });
 
 // ── Privacidad: qué puede quedar guardado ────────────────────────────────────

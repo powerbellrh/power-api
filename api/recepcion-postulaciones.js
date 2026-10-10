@@ -1,6 +1,7 @@
 import { crearSupabase } from '../lib/supabase.js';
 import { conRegistro } from '../lib/registro_de_endpoint.js';
 import { limpiarTelefono, pareceNumeroTelefono } from '../lib/telefono.js';
+import { avisar } from '../lib/registro.js';
 
 // ============================================================================
 // HANDLER PRINCIPAL
@@ -12,18 +13,18 @@ async function handler(req, res) {
   const { id: postulacionId, job_id: vacanteId, candidate: candidato } = req.body ?? {};
 
   if (!postulacionId || !candidato) {
-    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing postulacion id or candidate data' }));
+    avisar({ etapa: 'validacion', estado: 'error', mensaje: 'missing postulacion id or candidate data' });
     return res.status(400).json({ error: 'Missing postulacion id or candidate data' });
   }
 
   const nombreCompleto = `${candidato.first_name || ''} ${candidato.last_name || ''}`.trim();
   const telefonoLimpio = limpiarTelefono(candidato.phone || '');
 
-  console.log(JSON.stringify({ etapa: 'inicio', postulacion_id: postulacionId, vacante_id: vacanteId, candidato: nombreCompleto }));
+  avisar({ etapa: 'inicio', postulacion_id: postulacionId, vacante_id: vacanteId });
 
   // PASO 1: Validar que el nombre no sea en realidad un número de teléfono
   if (pareceNumeroTelefono(nombreCompleto)) {
-    console.log(JSON.stringify({ etapa: 'validacion', estado: 'rechazado', razon: 'nombre_es_telefono', candidato: nombreCompleto }));
+    avisar({ etapa: 'validacion', estado: 'omitido', razon: 'nombre_es_telefono' });
     return res.status(200).json({ status: 'rejected', message: 'Invalid candidate name (appears to be phone number)' });
   }
 
@@ -42,11 +43,11 @@ async function handler(req, res) {
   }]);
 
   if (errorInsercion) {
-    console.log(JSON.stringify({ etapa: 'guardar_postulacion', estado: 'error', mensaje: errorInsercion.message }));
+    avisar({ etapa: 'guardar_postulacion', estado: 'error', mensaje: errorInsercion.message });
     return res.status(500).json({ status: 'error', message: 'Failed to save to database' });
   }
 
-  console.log(JSON.stringify({ etapa: 'encolado', estado: 'ok', candidato: nombreCompleto, vacante_id: vacanteId, postulacion_id: postulacionId }));
+  avisar({ etapa: 'encolado', estado: 'ok', vacante_id: vacanteId, postulacion_id: postulacionId });
 
   return res.status(200).json({ status: 'success', message: 'Application queued for evaluation' });
 }

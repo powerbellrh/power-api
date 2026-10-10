@@ -5,6 +5,7 @@ import { leerPrompt }               from '../lib/prompts.js';
 import { rechazarSolicitud } from '../lib/http.js';
 import { conRegistro } from '../lib/registro_de_endpoint.js';
 import { MODELOS } from '../lib/modelos.js';
+import { avisar } from '../lib/registro.js';
 
 const PROMPT_CONCLUSIONES           = leerPrompt('estudios/conclusiones_ia');
 const PROMPT_CONCLUSIONES_GLASSDOOR = leerPrompt('estudios/conclusiones_ia_glassdoor');
@@ -142,7 +143,7 @@ async function filtrarConIA(vacantes, busqueda) {
       try {
         return await evaluarVacante(v, busqueda);
       } catch (err) {
-        console.error('[filtrado_ia] error:', err?.message ?? err);
+        avisar({ etapa: 'filtrado_ia', estado: 'error', mensaje: err?.message ?? String(err) });
         return null;
       }
     })
@@ -196,7 +197,7 @@ async function extraerSalariosConIA(vacantes) {
       try {
         return await extraerSalarioDeVacante(v);
       } catch (err) {
-        console.error('[extraccion_salario_ia] error:', err?.message ?? err);
+        avisar({ etapa: 'extraccion_salario_ia', estado: 'error', mensaje: err?.message ?? String(err) });
         return null;
       }
     })
@@ -277,14 +278,14 @@ async function manejarGlassdoor(vacante, ubicacion, url, muestra, res) {
       )).json();
 
   if (!Array.isArray(datosCrudos) || datosCrudos.length === 0) {
-    console.log(JSON.stringify({ etapa: 'apify_glassdoor', estado: 'error', detalle: JSON.stringify(datosCrudos).slice(0, 200) }));
+    avisar({ etapa: 'apify_glassdoor', estado: 'error', mensaje: JSON.stringify(datosCrudos).slice(0, 200) });
     return res.status(500).json({ error: 'Apify Glassdoor falló', detalle: datosCrudos });
   }
 
   const resultados = datosCrudos.flatMap(page => page?.aggregateSalaryResponse?.results ?? []);
-  console.log(JSON.stringify({ etapa: 'debug_apify_glassdoor', datosCrudos_length: datosCrudos.length, resultados_length: resultados.length, resultCount_p0: datosCrudos[0]?.aggregateSalaryResponse?.resultCount ?? null }));
+  avisar({ etapa: 'debug_apify_glassdoor', datosCrudos_length: datosCrudos.length, resultados_length: resultados.length, resultCount_p0: datosCrudos[0]?.aggregateSalaryResponse?.resultCount ?? null });
   if (resultados.length === 0) {
-    console.log(JSON.stringify({ etapa: 'glassdoor', estado: 'sin_resultados' }));
+    avisar({ etapa: 'glassdoor', estado: 'sin_resultados' });
     return res.status(500).json({ error: 'Glassdoor no devolvió resultados salariales' });
   }
 
@@ -312,7 +313,7 @@ async function manejarGlassdoor(vacante, ubicacion, url, muestra, res) {
   const { aprobadas, n_rechazadas_ia, metricas: m_fil } = await filtrarConIA(entradas, vacante);
   const aprobadasSet = new Set(aprobadas);
 
-  console.log(JSON.stringify({ etapa: 'filtrado_ia', rechazadas: n_rechazadas_ia, costo_usd: costo(m_fil.tokens_input + m_fil.cache_creados + m_fil.cache_leidos, m_fil.tokens_output) }));
+  avisar({ etapa: 'filtrado_ia', rechazadas: n_rechazadas_ia, costo_usd: costo(m_fil.tokens_input + m_fil.cache_creados + m_fil.cache_leidos, m_fil.tokens_output) });
 
   const salarios     = aprobadas.map(e => e.salario_mensual).sort((a, b) => a - b);
   const estadisticos = {
@@ -364,8 +365,8 @@ async function manejarGlassdoor(vacante, ubicacion, url, muestra, res) {
   const costo_apify = +((resultados.length / 1000) * 5).toFixed(6);
   const costo_total = +(costo_ia + costo_apify).toFixed(6);
 
-  console.log(JSON.stringify({ etapa: 'conclusiones_ia', costo_usd: costo(ti_c, to_c) }));
-  console.log(JSON.stringify({ etapa: 'resumen_glassdoor', registros_apify: resultados.length, validos: aprobadas.length, rechazadas_ia: n_rechazadas_ia, costo_ia_usd: costo_ia, costo_apify_usd: costo_apify, costo_total_usd: costo_total }));
+  avisar({ etapa: 'conclusiones_ia', costo_usd: costo(ti_c, to_c) });
+  avisar({ etapa: 'resumen_glassdoor', registros_apify: resultados.length, validos: aprobadas.length, rechazadas_ia: n_rechazadas_ia, costo_ia_usd: costo_ia, costo_apify_usd: costo_apify, costo_total_usd: costo_total });
 
   const respuesta = { status: 200, body: {
     conclusiones: {
@@ -382,7 +383,7 @@ async function manejarGlassdoor(vacante, ubicacion, url, muestra, res) {
       ...entradas.filter(e => !aprobadasSet.has(e)).map(e        => ({ ...e, validez: 'invalida', razon_invalidez: 'rechazada_ia' })),
     ],
   } };
-  console.log(JSON.stringify({ etapa: 'completado_glassdoor', estado: 'ok', validos: aprobadas.length, rechazadas_ia: n_rechazadas_ia, costo_usd: costo_total }));
+  avisar({ etapa: 'completado_glassdoor', estado: 'ok', validos: aprobadas.length, rechazadas_ia: n_rechazadas_ia, costo_usd: costo_total });
   return res.status(respuesta.status).json(respuesta.body);
 }
 
@@ -393,15 +394,15 @@ async function handler(req, res) {
 
   const { vacante, ubicacion, fuente, muestra, url } = req.body;
   if (!vacante || !ubicacion || !fuente) {
-    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing vacante, ubicacion or fuente' }));
+    avisar({ etapa: 'validacion', estado: 'error', mensaje: 'missing vacante, ubicacion or fuente' });
     return res.status(400).json({ error: "Los campos 'vacante', 'ubicacion' y 'fuente' son requeridos" });
   }
   if (fuente !== 'indeed' && fuente !== 'glassdoor') {
-    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: `fuente inválida: ${fuente}` }));
+    avisar({ etapa: 'validacion', estado: 'error', mensaje: `fuente inválida: ${fuente}` });
     return res.status(400).json({ error: "El campo 'fuente' debe ser 'indeed' o 'glassdoor'" });
   }
   if (fuente === 'glassdoor' && !url) {
-    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing url for fuente glassdoor' }));
+    avisar({ etapa: 'validacion', estado: 'error', mensaje: 'missing url for fuente glassdoor' });
     return res.status(400).json({ error: "El campo 'url' es requerido cuando 'fuente' es 'glassdoor'" });
   }
 
@@ -419,7 +420,7 @@ async function handler(req, res) {
       )).json();
 
   if (!Array.isArray(vacantes)) {
-    console.log(JSON.stringify({ etapa: 'apify', estado: 'error', detalle: JSON.stringify(vacantes).slice(0, 200) }));
+    avisar({ etapa: 'apify', estado: 'error', mensaje: JSON.stringify(vacantes).slice(0, 200) });
     return res.status(500).json({ error: 'Apify falló', detalle: vacantes });
   }
 
@@ -431,7 +432,7 @@ async function handler(req, res) {
   const { recuperadas, noRecuperadas, metricas: m_sal } =
     await extraerSalariosConIA(resto.filter(v => v.salario_mensual === null));
 
-  console.log(JSON.stringify({ etapa: 'extraccion_salario_ia', recuperadas: m_sal.n_recuperadas, costo_usd: costo(m_sal.tokens_input + m_sal.cache_creados + m_sal.cache_leidos, m_sal.tokens_output) }));
+  avisar({ etapa: 'extraccion_salario_ia', recuperadas: m_sal.n_recuperadas, costo_usd: costo(m_sal.tokens_input + m_sal.cache_creados + m_sal.cache_leidos, m_sal.tokens_output) });
 
   const sinSalario      = noRecuperadas;
   const bajoMinimo      = [...resto.filter(v => v.salario_mensual !== null && !v.salario_valido), ...recuperadas.filter(v => !v.salario_valido)];
@@ -441,7 +442,7 @@ async function handler(req, res) {
   const { aprobadas, n_rechazadas_ia, metricas: m_fil } =
     await filtrarConIA(vacantesValidas, vacante);
 
-  console.log(JSON.stringify({ etapa: 'filtrado_ia', rechazadas: n_rechazadas_ia, costo_usd: costo(m_fil.tokens_input + m_fil.cache_creados + m_fil.cache_leidos, m_fil.tokens_output) }));
+  avisar({ etapa: 'filtrado_ia', rechazadas: n_rechazadas_ia, costo_usd: costo(m_fil.tokens_input + m_fil.cache_creados + m_fil.cache_leidos, m_fil.tokens_output) });
 
   // Top prestaciones entre vacantes aprobadas
   const prestacionesCount = {};
@@ -518,8 +519,8 @@ async function handler(req, res) {
   const costo_total = +(costo_ia + costo_apify).toFixed(6);
   const costo_por_vacante = vacantes.length > 0 ? +(costo_total / vacantes.length).toFixed(6) : 0;
 
-  console.log(JSON.stringify({ etapa: 'conclusiones_ia', costo_usd: costo(ti_c, to_c) }));
-  console.log(JSON.stringify({ etapa: 'resumen', vacantes_apify: vacantes.length, validas: aprobadas.length, costo_ia_usd: costo_ia, costo_apify_usd: costo_apify, costo_total_usd: costo_total, costo_por_vacante_usd: costo_por_vacante }));
+  avisar({ etapa: 'conclusiones_ia', costo_usd: costo(ti_c, to_c) });
+  avisar({ etapa: 'resumen', vacantes_apify: vacantes.length, validas: aprobadas.length, costo_ia_usd: costo_ia, costo_apify_usd: costo_apify, costo_total_usd: costo_total, costo_por_vacante_usd: costo_por_vacante });
 
   const depurar      = ({ salario_valido, descripcion_original, prestaciones_original, frecuencia_original, valor_original, estructura_salario, ubicacion_vacante, fecha_publicacion, ...v }) => ({
     ...v,
@@ -548,7 +549,7 @@ async function handler(req, res) {
       ...medioTiempo.map(v                                       => ({ ...depurar(v), validez: 'invalida', razon_invalidez: 'medio_tiempo' })),
     ],
   } };
-  console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', validas: aprobadas.length, costo_usd: costo_total }));
+  avisar({ etapa: 'completado', estado: 'ok', validas: aprobadas.length, costo_usd: costo_total });
   return res.status(respuesta.status).json(respuesta.body);
 }
 

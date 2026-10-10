@@ -2,6 +2,7 @@ import { ttActualizar, ttCrear, mcCrear } from '../lib/clientes_api.js';
 import { AD_TEAMTAILOR_QUESTION_EXPERIENCIA_ID as TT_PREGUNTA_EXPERIENCIA_ID, MANYCHAT_FIELD_EXPERIENCIA_ID } from '../lib/config.js';
 import { rechazarSolicitud } from '../lib/http.js';
 import { conRegistro } from '../lib/registro_de_endpoint.js';
+import { avisar } from '../lib/registro.js';
 
 const EXTENSIONES_IMAGEN    = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'];
 const EXTENSIONES_DOCUMENTO = ['doc', 'docx', 'document'];
@@ -22,19 +23,19 @@ async function handler(req, res) {
   const { candidato: candidatoId, experiencia: experienciaUrl, manychat: idSuscriptor } = req.body ?? {};
 
   if (!candidatoId || !experienciaUrl || !idSuscriptor) {
-    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: 'missing candidato, experiencia or manychat' }));
+    avisar({ etapa: 'validacion', estado: 'error', mensaje: 'missing candidato, experiencia or manychat' });
     return res.status(400).json({ error: 'Missing candidato, experiencia or manychat' });
   }
 
   const extension = obtenerExtension(experienciaUrl);
-  console.log(JSON.stringify({ etapa: 'inicio', candidatoId, idSuscriptor, extension }));
+  avisar({ etapa: 'inicio', candidatoId, idSuscriptor, extension });
 
   const esPdf      = extension === 'pdf';
   const esImagen   = EXTENSIONES_IMAGEN.includes(extension);
   const esDocumento = EXTENSIONES_DOCUMENTO.includes(extension);
 
   if (!esPdf && !esImagen && !esDocumento) {
-    console.log(JSON.stringify({ etapa: 'validacion', estado: 'error', mensaje: `unsupported file type: .${extension}` }));
+    avisar({ etapa: 'validacion', estado: 'error', mensaje: `unsupported file type: .${extension}` });
     return res.status(400).json({ error: `Unsupported file type: .${extension}` });
   }
 
@@ -43,7 +44,7 @@ async function handler(req, res) {
       await ttActualizar(`/candidates/${candidatoId}`, {
         data: { id: candidatoId.toString(), type: 'candidates', attributes: { resume: experienciaUrl } },
       });
-      console.log(JSON.stringify({ etapa: 'teamtailor', estado: 'ok', accion: 'resume_actualizado', candidatoId }));
+      avisar({ etapa: 'teamtailor', estado: 'ok', accion: 'resume_actualizado', candidatoId });
     } else {
       const respuesta = await ttCrear('/answers', {
         data: {
@@ -55,10 +56,10 @@ async function handler(req, res) {
           },
         },
       });
-      console.log(JSON.stringify({ etapa: 'teamtailor', estado: 'ok', accion: 'answer_creada', respuestaId: respuesta.data?.id }));
+      avisar({ etapa: 'teamtailor', estado: 'ok', accion: 'answer_creada', respuestaId: respuesta.data?.id });
     }
   } catch (e) {
-    console.log(JSON.stringify({ etapa: 'teamtailor', estado: 'error', mensaje: e.message }));
+    avisar({ etapa: 'teamtailor', estado: 'error', mensaje: e.message });
     return res.status(502).json({ error: 'Error updating TeamTailor' });
   }
 
@@ -67,12 +68,12 @@ async function handler(req, res) {
       subscriber_id: idSuscriptor,
       fields: [{ field_id: MANYCHAT_FIELD_EXPERIENCIA_ID, field_value: true }],
     });
-    console.log(JSON.stringify({ etapa: 'manychat', estado: 'ok' }));
+    avisar({ etapa: 'manychat', estado: 'ok' });
   } catch (e) {
-    console.log(JSON.stringify({ etapa: 'manychat', estado: 'error', mensaje: e.message }));
+    avisar({ etapa: 'manychat', estado: 'error', mensaje: e.message });
   }
 
-  console.log(JSON.stringify({ etapa: 'completado', estado: 'ok', candidatoId }));
+  avisar({ etapa: 'completado', estado: 'ok', candidatoId });
   return res.status(200).json({ ok: true });
 }
 

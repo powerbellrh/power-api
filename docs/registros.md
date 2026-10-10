@@ -59,7 +59,9 @@ Lo aplica `filtrarDetalle` a todo lo que se guarda; lo que no pasa se descarta s
   `modelo`, `proveedor`, `motor`, `actividad`, `herramienta`, `etapa`, `paso`, `flujo`, `motivo`, `razon`, `reglas`,
   `tipo`, `cierre`, `decision`, `accion`, `filtro`, `clave`, `campo`, `campos`, `categoria`, `cambio`, `intenciones`,
   `material`, `operacion`, `origen`, `problemas_de`, `periodo`, `agrupar_por`, `grafica`, `efectos`, `cliente`,
-  `foto`, `recurso`, `fuente`.
+  `foto`, `recurso`, `fuente`, `estado`, `evento`, `stage`, `metodo`, `extension`.
+- **Cifras personales:** un número bajo `telefono`, `phone`, `celular`, `whatsapp`, `edad`, `sueldo` o `salario` (o
+  una clave que termine en `_telefono` / `_phone`) no pasa.
 - **`pedido`:** hasta 160 caracteres. Es la frase con la que un modelo describe, sin datos de nadie, lo que pidió
   una reclutadora (`lib/descripcion_de_texto.js` le quita cifras, nombres conocidos y mayúsculas a media frase).
 - Listas de hasta 60 elementos y objetos de hasta 4 niveles, con las mismas reglas.
@@ -69,6 +71,22 @@ como número.** Sí se guarda la calificación de la evaluación (decisión toma
 
 Para agregar una clave de texto nueva: tiene que describir la operación, no a una persona, y tener pocos valores
 posibles. Se agrega a `CLAVES_DE_TEXTO` en `lib/registro.js` y a la lista de arriba.
+
+## La consola (los registros de Vercel)
+
+Lo que se imprime en la consola queda en los registros de Vercel, fuera de nuestro control: **pasa por el mismo
+filtro que la tabla**. Ahí tampoco va nada de un candidato ni lo que escribió una reclutadora.
+
+- **Nunca `console.log` directo.** Se usa `avisar({ etapa, estado, ...cifras })` de `lib/registro.js` (o el `log`
+  del registro, que hace lo mismo). Imprime solo lo que deja pasar `filtrarDetalle`, más `mensaje` y `error`
+  limpios de teléfonos y correos y recortados a 300 caracteres.
+- Dentro de una solicitud con registro, un `avisar` con estado `error`, `reintento` o `rechazado` además **se guarda
+  como fila** (su `mensaje` va a la columna `error`). Así lo que antes solo se veía en Vercel queda en la tabla.
+- **No se anotan cuerpos completos** (el webhook de TeamTailor, la respuesta de un modelo, un informe): se anota su
+  forma (cuántos, de qué tamaño, qué evento) y los identificadores.
+- En `mensaje` y `error` solo va texto del sistema (el error de una API, una validación), nunca texto de una persona.
+- Un teléfono, una edad o un sueldo no pasan ni como número (claves `telefono`, `edad`, `sueldo`, `salario`...).
+- Excepción: `api/cola.js` imprime por su cuenta, y solo identificadores de postulación, conteos y errores de red.
 
 ## Catálogo: qué fila deja cada cosa
 
@@ -80,10 +98,12 @@ posibles. Se agrega a `CLAVES_DE_TEXTO` en `lib/registro.js` y a la lista de arr
 | `cola` | `corrida` | Solo cuando procesó algo o falló | `cola` / `proceso` | `cron` | `encontrados`, `enviados`, `fallidos`, `evaluaciones`, `reevaluaciones`. **Cuántas, nunca cuáles** |
 | `evaluaciones` | `evaluacion` | Abierta al empezar, se cierra al terminar | postulación | `cron` | `tipo` (AD/OP), `vacante_id`, `del_chatbot`, `modelo`, `proveedor`, `motor`, `con_cv`, `con_imagen`, `tokens_entrada`, `tokens_salida`, `calificacion`, `estrellas`, `preguntas`, `whatsapp_enviado`; si falló: `etapa`, `se_reintentara`, `no_procesable` |
 | `evaluaciones` | `reevaluacion` | Igual que la anterior | postulación | `cron` | Lo mismo más `calificacion_anterior` |
+| `evaluaciones` | `solicitud` | Solo cuando /evaluaciones rechaza la solicitud antes de empezar (no existe, sin vacante) | postulación | `cron` | `codigo` |
 | `evaluaciones` | `whatsapp` | Hija: preguntas de seguimiento | (hereda) | (hereda) | `preguntas`, `motivo` (`origen_chatbot`, `calificacion_baja`, `sin_preguntas`, `sin_telefono`, `manychat`) |
 | `evaluaciones` | `motor_pdf` | Hija, `reintento`: un motor de PDF falló y se probó otro | (hereda) | (hereda) | `motor` |
 | `informes` | `informe` | Abierta al empezar | postulación | id de la reclutadora (o `herramientas`) | `tipo`, `vacante_id`, `cliente`, `foto`, `inbox`, `con_cv`, `llamadas[]`, `material{}`, `forma{}`, `cumplimiento{}` |
 | `informes` | `correccion` | Igual; `intento` = ronda + 1 | postulación | igual | Lo mismo más `ronda`, `comentario_largo`, `minutos_desde_anterior`, `cambios[]` (`campo`, `cambio`, `parecido`), `descripcion{}` (`categoria`, `para_sistemas`, `pedido`) |
+| `informes` | `curriculum` | Cuando solo se pide refrescar el enlace del CV | postulación | `herramientas` | `codigo`; sin CV: `omitido` con `motivo: 'sin_cv'` |
 | `reclutador` | `turno` | Abierta por cada mensaje de una reclutadora al agente | contacto | id de la reclutadora (o `reclutador`) | `mensaje_largo`, `vueltas`, `herramientas`, `accion`, `graficas`, `descripcion{}` |
 | `reclutador` | `herramienta` | Hija, una por herramienta usada | (hereda) | (hereda) | `herramienta`, `reutilizada`, `sin_resultado` y solo estos argumentos: `id`, `filtro`, `tipo`, `recurso`, `periodo`, `agrupar_por`, `con_etapas`, `solo_mias`, `incluir_rechazados` |
 | `reclutador` | `vacante_creada` | Hija | (hereda) | (hereda) | `vacante_id`, `tipo`, `cliente` |
@@ -100,8 +120,9 @@ posibles. Se agrega a `CLAVES_DE_TEXTO` en `lib/registro.js` y a la lista de arr
 | `privacidad` | `eliminacion` | Solo cuando de verdad se borraron datos (o falló) | `privacidad` / `proceso`. **Nunca el id del candidato** | `teamtailor` | `eliminados{}`: cuántas filas de cada tabla |
 
 Además, cualquier módulo puede dejar un fallo suelto (`error`, `reintento`, `rechazado`) con el nombre del paso
-que falló como `operacion` (`manychat_envio`, `respuesta_teamtailor`, `imagen_vacante`, `agente_reclutador`...).
-Queda como hija si hay una operación abierta.
+que falló como `operacion` (`manychat_envio`, `respuesta_teamtailor`, `imagen_vacante`, `agente_reclutador`,
+`validacion`, `teamtailor`...). Queda como hija si hay una operación abierta; si no, como fila propia con la misma
+referencia. Por eso una solicitud que falla puede dejar dos filas: la del paso que falló y la de la operación.
 
 ## Privacidad: qué se borra
 
