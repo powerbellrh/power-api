@@ -36,6 +36,7 @@ test('una solicitud que sale bien deja una fila con su referencia, sus cifras y 
     { origen: 'prueba', operacion: 'operacion', estado: 'ok', referencia: '4321', tipo: 'candidato', actor: 'manychat', costo: 0.002, error: null, detalle: { coincidencias: 3, codigo: 200 } },
   );
   assert.ok(fila.segundos >= 0);
+  assert.ok(fila.terminado && Date.parse(fila.creado) <= Date.parse(fila.terminado), 'trae cuándo empezó y cuándo terminó');
 });
 
 test('un 400 o más queda como error con su mensaje; si el handler lanza, se contesta 500 y también queda', async () => {

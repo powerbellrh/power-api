@@ -13,7 +13,7 @@ const UMBRAL_ATASCO_MS = 6 * 60 * 1000;
 // casi siempre está vacía). Nunca lanza ni cambia la respuesta.
 async function registrarCorrida(supabase, estado, { error = null, ...detalle }) {
   try {
-    await supabase.from('registros').insert({ origen: 'cola', operacion: 'corrida', estado, actor: 'cron', error: limpiarError(error), detalle });
+    await supabase.from('registros').insert({ origen: 'cola', operacion: 'corrida', estado, actor: 'cron', terminado: new Date().toISOString(), error: limpiarError(error), detalle });
   } catch (_) {}
 }
 

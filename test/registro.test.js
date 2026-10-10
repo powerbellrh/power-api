@@ -33,6 +33,7 @@ test('cada evento se imprime con el contexto; solo los fallos se juntan, y sin e
   const [evento] = registro.pendientes;
   assert.deepEqual({ origen: evento.origen, operacion: evento.operacion, estado: evento.estado, referencia: evento.referencia }, { origen: 'conversaciones', operacion: 'manychat_envio', estado: 'error', referencia: '4242' });
   assert.equal(evento.error.length, 300, 'el error va en su columna, recortado');
+  assert.ok(evento.creado && evento.terminado === evento.creado, 'un evento suelto empieza y termina en el mismo momento');
   assert.equal(JSON.stringify(evento).includes('dato personal'), false);
 });
 
