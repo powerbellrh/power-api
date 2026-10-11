@@ -191,6 +191,8 @@ test('el nombre del archivo, como build_pdf_filename', () => {
   const octubre = new Date('2026-10-11T18:00:00Z');
   assert.equal(nombreDelArchivo(INFORME, 1, octubre), 'Peninsula - Informe Ana López Pérez. Almacenista. Oct26 - Laura Pérez.pdf');
   assert.equal(nombreDelArchivo({ ...INFORME, reclutador: undefined, simple: { ...INFORME.simple, CLIENTE: '-' } }, 3, octubre), 'Informe Ana López Pérez. Almacenista. Oct26 v3.pdf');
+  const separados = { ...INFORME, simple: { ...INFORME.simple, NOMBRE: 'ANA LÓPEZ PÉREZ'.normalize('NFD') } };
+  assert.equal(nombreDelArchivo(separados, 1, octubre), 'Peninsula - Informe Ana López Pérez. Almacenista. Oct26 - Laura Pérez.pdf', 'los acentos quedan como una sola letra');
 });
 
 test('el PDF se dibuja y el CV va al final; un CV que no es PDF se deja fuera', async () => {

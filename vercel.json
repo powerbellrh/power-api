@@ -8,6 +8,7 @@
     { "source": "/notificaciones",  "destination": "/api/notificaciones"  },
     { "source": "/experiencia",     "destination": "/api/experiencia"     },
     { "source": "/informes",        "destination": "/api/informes"        },
+    { "source": "/informes/descarga", "destination": "/api/descarga-informe" },
     { "source": "/emparejamiento",  "destination": "/api/emparejamiento"  },
     { "source": "/conversaciones",  "destination": "/api/conversaciones"  },
     { "source": "/privacidad",      "destination": "/api/privacidad"      }
@@ -17,6 +18,9 @@
       "maxDuration": 300
     },
     "api/informes.js": {
+      "maxDuration": 300
+    },
+    "api/descarga-informe.js": {
       "maxDuration": 300
     },
     "api/evaluaciones.js": {
