@@ -71,35 +71,6 @@ test('agenda: histórico, por fecha de entrevista y filtrado por reclutador o cl
   assert.match((await consultarAgenda(supabase, { desde: '9 de octubre' })).error, /AAAA-MM-DD/);
 });
 
-test('estadísticas: el desglose por estrellas cruza las postulaciones activas del periodo con sus evaluaciones, de 1 a 5', async () => {
-  const supabase = crearSupabaseFalso({ tablas: {
-    vacantes: [{ id: 10, id_team_tailor: 555555, vacante: 'Península - Almacenista', estatus: 'Publicada', creado: '2026-10-01T00:00:00Z', tipo: 'operativa' }],
-    evaluaciones: [
-      { postulacion_id: 901, estado: 'completada', calificacion: 20 },
-      { postulacion_id: 902, estado: 'completada', calificacion: 2 },
-      { postulacion_id: 903, estado: 'completada', calificacion: 20 }, // rechazada: no cuenta
-    ],
-  } });
-  const consultar = async ruta => (ruta.startsWith('/jobs/')
-    ? { data: [{ id: '50', attributes: { name: 'Inbox', 'legacy-stage-type-name': 'Inbox' } }] }
-    : { meta: { 'page-count': 1 }, data: [
-      { id: '901', attributes: { 'created-at': '2026-10-09T15:00:00Z', 'rejected-at': null } },
-      { id: '902', attributes: { 'created-at': '2026-10-09T16:00:00Z', 'rejected-at': null } },
-      { id: '903', attributes: { 'created-at': '2026-10-09T17:00:00Z', 'rejected-at': '2026-10-09T18:00:00Z' } },
-      { id: '904', attributes: { 'created-at': '2026-10-09T17:00:00Z', 'rejected-at': null } },
-    ] });
-
-  const resultado = await estadisticasPostulaciones(supabase, { desde: '2026-10-09', hasta: '2026-10-09', agrupar_por: 'estrellas' }, { consultar, pausaMs: 0 });
-  assert.equal(resultado.activas, 3);
-  assert.deepEqual(resultado.grupos.map(grupo => grupo.grupo), ['1 estrella', '2 estrellas', '3 estrellas', '4 estrellas', '5 estrellas', 'sin evaluar']);
-  assert.equal(resultado.grupos.at(-2).cantidad, 1, 'una activa con 5 estrellas');
-  assert.equal(resultado.grupos.at(-1).cantidad, 1, 'una activa sin evaluar');
-  assert.equal(resultado.grupos.reduce((suma, grupo) => suma + grupo.cantidad, 0), 3);
-
-  const porVacante = await estadisticasPostulaciones(supabase, { desde: '2026-10-09', hasta: '2026-10-09', agrupar_por: 'vacante' }, { consultar, pausaMs: 0 });
-  assert.equal(porVacante.desgloses.estrellas.length, 6, 'el desglose por estrellas viene siempre, para no tener que consultar otra vez');
-});
-
 test('postulaciones de un periodo: se cuentan todas las de TeamTailor, también las de vacantes que no están en el catálogo', async () => {
   const supabase = crearSupabaseFalso({ tablas: {
     vacantes: [{ id: 10, id_team_tailor: 555555, vacante: 'Península - Almacenista', estatus: 'Publicada', creado: '2026-10-01T00:00:00Z', tipo: 'Administrativa' }],

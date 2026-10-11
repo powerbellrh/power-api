@@ -30,7 +30,13 @@ class Consulta {
     this.filtros.push(f => regex.test(String(f[columna] ?? '')));
     return this;
   }
-  gte(columna, valor)      { this.filtros.push(f => Date.parse(f[columna]) >= Date.parse(valor)); return this; } // solo se usa con fechas
+  ilike(columna, patron) {
+    const literal = parte => parte.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex   = new RegExp(`^${patron.split('%').map(literal).join('.*')}$`, 'i');
+    this.filtros.push(f => regex.test(String(f[columna] ?? '')));
+    return this;
+  }
+  gte(columna, valor)    { this.filtros.push(f => Date.parse(f[columna]) >= Date.parse(valor)); return this; } // solo se usa con fechas
   lte(columna, valor)      { this.filtros.push(f => Date.parse(f[columna]) <= Date.parse(valor)); return this; }
   order(columna, { ascending = true } = {}) { this.orden = { columna, ascending }; return this; }
   limit(cantidad)          { this.limite = cantidad; return this; }

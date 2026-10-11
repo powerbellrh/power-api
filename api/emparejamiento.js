@@ -123,21 +123,51 @@ export async function detectarUbicacionPorLlm(texto) {
   };
 }
 
+// Cuántas letras hay que cambiar, quitar o poner para pasar de un texto al otro (distancia de Levenshtein).
+function distanciaDeEdicion(a, b) {
+  let anterior = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const actual = [i];
+    for (let j = 1; j <= b.length; j++) {
+      actual[j] = Math.min(anterior[j] + 1, actual[j - 1] + 1, anterior[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    anterior = actual;
+  }
+  return anterior[b.length];
+}
+
+// Los tramos de palabras seguidas de `nombre` que tienen tantas palabras como `buscada`
+// ("san pedro tlaquepaque" con una palabra: "san", "pedro", "tlaquepaque").
+function tramos(nombre, buscada) {
+  const palabras = nombre.split(/\s+/);
+  const largo = buscada.split(/\s+/).length;
+  return Array.from({ length: Math.max(palabras.length - largo + 1, 0) }, (_, i) => palabras.slice(i, i + largo).join(' '));
+}
+
 export async function buscarUbicacion(supabase, estado, ciudad) {
   if (!ciudad) return null;
 
-  // TODO: reemplazar la comparación exacta por búsqueda difusa (pg_trgm) para tolerar
-  // variaciones de escritura entre lo que infiere el LLM y el catálogo de ubicaciones.
   let consulta = supabase.from('ubicaciones').select('id, ciudad, estado');
   if (estado) consulta = consulta.ilike('estado', estado);
 
   const { data: ubicaciones, error } = await consulta;
   if (error) throw error;
 
-  const ciudadNormalizada = normalizarTexto(ciudad);
-  const encontrada = (ubicaciones ?? []).find(u => normalizarTexto(u.ciudad) === ciudadNormalizada);
+  const lista    = ubicaciones ?? [];
+  const nombre   = ubicacion => normalizarTexto(ubicacion.ciudad);
+  const buscada  = normalizarTexto(ciudad);
+  const exacta   = lista.find(ubicacion => nombre(ubicacion) === buscada);
+  if (exacta || !estado) return exacta ?? null;
 
-  return encontrada ?? null;
+  // Sin coincidencia exacta se busca dentro del estado, y solo vale si hay UNA candidata. El catálogo usa los nombres
+  // oficiales de los municipios: el 11-oct-2026 "Ciudad Juárez", "Tlaquepaque" y "Tlanepantla" (mal escrito en
+  // TeamTailor) no encontraban "Juárez", "San Pedro Tlaquepaque" ni "Tlalnepantla de Baz", y la vacante se quedaba
+  // sin ubicación en cada sincronización.
+  const unica = candidatas => (candidatas.length === 1 ? candidatas[0] : null);
+  const corta = buscada.replace(/^(ciudad|cd\.?)\s+/, '');
+  return unica(lista.filter(ubicacion => nombre(ubicacion) === corta))
+    ?? unica(lista.filter(ubicacion => tramos(nombre(ubicacion), corta).includes(corta)))
+    ?? (corta.length >= 6 ? unica(lista.filter(ubicacion => tramos(nombre(ubicacion), corta).some(tramo => distanciaDeEdicion(tramo, corta) <= 2))) : null);
 }
 
 export async function detectarHabilidadesPorLlm(texto, habilidadesDisponibles) {

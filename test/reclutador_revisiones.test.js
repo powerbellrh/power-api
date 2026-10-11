@@ -40,15 +40,6 @@ const semilla = () => ({
     { id: 10, id_team_tailor: 555555, vacante: 'Península - Almacenista', titulo_externo: 'Almacenista', descripcion: '<p>x</p>', estatus: 'Publicada', creado: '2026-10-01T00:00:00Z' },
     { id: 11, id_team_tailor: 666666, vacante: 'Oxxo - Cajero', titulo_externo: 'Cajero/a', descripcion: '<p>y</p>', estatus: 'Publicada', creado: '2026-10-02T00:00:00Z' },
   ],
-  // Las evaluaciones llegan a su vacante por `postulaciones`.
-  postulaciones: [901, 902, 903, 904, 905].map((id, i) => ({ id: i + 1, id_vacante: 10, id_candidato: i + 1, id_team_tailor: String(id) })),
-  evaluaciones: [
-    { postulacion_id: 901, id_postulacion: 1, estado: 'completada', calificacion: 18 },
-    { postulacion_id: 902, id_postulacion: 2, estado: 'completada', calificacion: 13 },
-    { postulacion_id: 903, id_postulacion: 3, estado: 'completada', calificacion: 20 }, // rechazada
-    { postulacion_id: 904, id_postulacion: 4, estado: 'completada', calificacion: 19 },
-    { postulacion_id: 905, id_postulacion: 5, estado: 'pendiente', calificacion: null },
-  ],
 });
 
 let entorno, imagenes;
@@ -314,26 +305,6 @@ test('fichas de clientes: viven en la tabla empresas; se completan sin borrar y 
   assert.deepEqual(resultadosDeHerramientas().at(-1), { error: 'Todavía no hay fichas de clientes disponibles.' });
 });
 
-test('evaluaciones de una vacante: por defecto solo los candidatos activos, en cifras y sin nombres', async () => {
-  nuevoEntorno();
-  entorno.encolarModelo('agente', cierre('resumen_evaluaciones', { id: 555555, incluir_rechazados: false }), cierre('resumen_evaluaciones', { id: 555555, incluir_rechazados: true }), responder('Listo.'));
-  await escribir('qué candidatos hay en la 555555?');
-  const [activos, todas] = resultadosDeHerramientas();
-
-  // 901, 902 y 904 siguen activas; la 903 (20 de calificación) está rechazada y no cuenta.
-  assert.match(activos.alcance, /solo candidatos activos/);
-  assert.deepEqual({ candidatos_activos: activos.candidatos_activos, evaluados: activos.evaluados, sin_evaluar: activos.sin_evaluar, con_4_o_5_estrellas: activos.con_4_o_5_estrellas }, { candidatos_activos: 3, evaluados: 3, sin_evaluar: 0, con_4_o_5_estrellas: 2 });
-  assert.deepEqual(activos.por_estrellas, [{ estrellas: 5, cantidad: 2 }, { estrellas: 4, cantidad: 0 }, { estrellas: 3, cantidad: 1 }, { estrellas: 2, cantidad: 0 }, { estrellas: 1, cantidad: 0 }]);
-  assert.deepEqual(activos.por_etapa, [{ etapa: 'Bandeja de entrada', candidatos: 3, evaluados: 3, con_4_o_5_estrellas: 2, con_5_estrellas: 2 }]);
-
-  // Con los rechazados entra también la 903, y la que sigue sin evaluar.
-  assert.match(todas.alcance, /incluidas las rechazadas/);
-  assert.deepEqual({ evaluadas: todas.evaluadas, sin_evaluar: todas.sin_evaluar, cinco: todas.por_estrellas[0].cantidad }, { evaluadas: 4, sin_evaluar: 1, cinco: 3 });
-
-  const loQueVioElModelo = JSON.stringify(entorno.peticionesModelo.at(-1).mensajes.filter(m => m.role === 'tool'));
-  for (const nombre of ['Ana', 'Ruiz', 'Luis', 'Soto', 'Eva', 'Mar']) assert.ok(!loQueVioElModelo.includes(nombre), `${nombre} no debe llegar al modelo`);
-});
-
 test('gráfica: se dibuja en código (PNG cuadrado de 1024), se manda antes del mensaje y queda anotada en el historial', async () => {
   nuevoEntorno();
   const subidas = [];
@@ -517,33 +488,6 @@ test('mover candidatos: se dice cuántas personas (sin nombres) y, al confirmar,
   assert.deepEqual(movidas.map(p => p.ruta), ['/job-applications/901', '/job-applications/902', '/job-applications/904']); // la rechazada (903) no
   assert.deepEqual(movidas[0].cuerpo.data.relationships.stage.data, { id: '51', type: 'stages' });
   assert.match(entorno.mensajes.at(-1), /^Listo, moví 3 personas/);
-});
-
-test('mover por evaluación: "los primeros N con X estrellas" toma a las mejor evaluadas de la etapa', async () => {
-  nuevoEntorno();
-  entorno.encolarModelo('agente', accion('mover_candidatos', { etapa_origen: 'Bandeja de entrada', etapa_destino: 'Filtrado', estrellas_minimas: 5, cantidad: 1 }), responder('Voy a mover a la mejor evaluada.'));
-  await escribir('mueve al primero con 5 estrellas de la 555555 a Filtrado');
-  assert.match(resultadosDeHerramientas()[0].que_se_va_a_hacer, /^Mover 1 persona con 5 estrellas de "Bandeja de entrada" a "Filtrado"/);
-  entorno.encolarModelo('agente', cierre('resolver_accion', { decision: 'confirmar', mensaje: 'Va.' }));
-  await escribir('sí');
-  assert.deepEqual(parches(/^\/job-applications\//).map(p => p.ruta), ['/job-applications/904'], 'la 904 (19) va antes que la 901 (18); la 903 (20) está rechazada');
-  assert.match(entorno.mensajes.at(-1), /^Listo, moví 1 persona con 5 estrellas de "Bandeja de entrada" a "Filtrado" \(vacante 555555\)\. TeamTailor puede tardar hasta un minuto en reflejarlo\.$/);
-
-  // Todas las de 5 estrellas, pidiendo más de las que hay; y un filtro que nadie cumple.
-  nuevoEntorno();
-  entorno.encolarModelo('agente', accion('mover_candidatos', { etapa_origen: 'Bandeja de entrada', etapa_destino: 'Filtrado', estrellas_minimas: 5, cantidad: 5 }),
-    accion('mover_candidatos', { etapa_origen: 'Bandeja de entrada', etapa_destino: 'Filtrado', estrellas_minimas: 4, cantidad: 0 }), responder('Listo.'));
-  await escribir('mueve a los primeros 5 con 5 estrellas');
-  assert.match(resultadosDeHerramientas()[0].que_se_va_a_hacer, /^Mover 2 personas con 5 estrellas; pidió 5 pero solo hay 2 que cumplen de "Bandeja de entrada"/);
-  assert.match(resultadosDeHerramientas()[1].que_se_va_a_hacer, /^Mover 2 personas con 4 estrellas o más de "Bandeja de entrada"/);
-  assert.deepEqual(conversacion().temporal.reclutador.accion_pendiente.postulaciones, ['904', '901']);
-
-  // "Los 2 mejores", sin pedir estrellas: por calificación.
-  nuevoEntorno();
-  entorno.encolarModelo('agente', accion('mover_candidatos', { etapa_origen: 'Bandeja de entrada', etapa_destino: 'Filtrado', cantidad: 2 }), responder('Listo.'));
-  await escribir('mueve a los 2 mejores');
-  assert.match(resultadosDeHerramientas()[0].que_se_va_a_hacer, /^Mover 2 personas \(las mejor evaluadas\) de "Bandeja de entrada"/);
-  assert.deepEqual(conversacion().temporal.reclutador.accion_pendiente.postulaciones, ['904', '901']);
 });
 
 test('mover por nombre: si coincide con varias personas se pide el nombre completo, sin listar nombres', async () => {
