@@ -67,7 +67,7 @@ test('"un momento": si el turno completo tarda, se avisa una sola vez y antes de
   });
 
   await turno(80, 20);
-  assert.deepEqual(entorno.mensajes, ['Un momento, estoy trabajando en ello.', 'Hola, Laura.']);
+  assert.deepEqual(entorno.mensajes, ['Dame un momento, por favor: ya estoy trabajando en ello.', 'Hola, Laura.']);
 
   // Un turno rápido no avisa, ni después de haber contestado.
   await turno(0, 40);

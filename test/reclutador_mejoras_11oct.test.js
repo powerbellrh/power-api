@@ -187,6 +187,10 @@ test('agenda: las horas de las entrevistas de un día salen por reclutador, sin 
     { reclutador: 'Paulina Hernández', entrevistas: [{ dia: '2026-10-12', hora: '09:00', cliente: 'TDI' }, { dia: '2026-10-12', hora: '10:30', cliente: 'TDI' }] },
     { reclutador: 'Edgar Miranda', entrevistas: [{ dia: '2026-10-12', hora: '15:00', cliente: 'TDI' }] },
   ]);
+  // La presentación la arma el código: cada persona en un renglón y sus horas en el de abajo; lo repetido, junto.
+  assert.equal(delDia.presentacion_de_horarios, ['*Entrevistas del lunes 12 de octubre* · 3', '• *Paulina Hernández* (2)', '   9:00 · 10:30', '• *Edgar Miranda* (1)', '   15:00'].join('\n'));
+  const dePaulina = await consultarAgenda(supabase, { fecha: 'entrevista', desde: '2026-10-12', hasta: '2026-10-12', agrupar_por: 'reclutador', reclutador: 'paulina', cliente: 'tdi' });
+  assert.equal(dePaulina.presentacion_de_horarios, ['*Entrevistas del lunes 12 de octubre* · 2 · TDI · Paulina Hernández', '• 9:00 · TDI', '• 10:30 · TDI'].join('\n'), 'de una sola persona, una hora por renglón con su cliente');
   assert.equal(/López|Soto|Eva Paz|llega tarde/.test(JSON.stringify(delDia)), false);
   assert.equal(delDia.cobertura, undefined);
 

@@ -102,7 +102,7 @@ test('criterios discriminatorios: no se guardan, se le avisa y no se publican en
   assert.equal(borrador().contexto, 'Busca perfil con experiencia.');
   assert.doesNotMatch(borrador().descripcion, /Mujer joven/);
   // Antes de generar la imagen se le avisa que va a tardar.
-  assert.match(todo(), /^Un momento, estoy trabajando en ello\.\n\nOjo: no puedo registrar criterios por sexo, edad/);
+  assert.match(todo(), /^Dame un momento, por favor: ya estoy trabajando en ello\.\n\nOjo: no puedo registrar criterios por sexo, edad/);
 });
 
 test('el nombre del cliente en el anuncio se corrige con un reintento, y si el modelo insiste se quita en código', async () => {
@@ -449,7 +449,7 @@ test('mientras el agente sigue preguntando datos no se manda el anuncio ni se ge
   nuevoEntorno();
   entorno.encolarModelo('agente', vacanteNueva({ mensaje: 'Ya tengo el puesto. ¿Qué horario tiene?' }));
   await escribir('Oxxo cajero en Guadalajara');
-  assert.deepEqual(entorno.mensajes.filter(m => m !== 'Un momento, estoy trabajando en ello.').filter(m => !/^Ojo:/.test(m)), ['Ya tengo el puesto. ¿Qué horario tiene?']);
+  assert.deepEqual(entorno.mensajes.filter(m => m !== 'Dame un momento, por favor: ya estoy trabajando en ello.').filter(m => !/^Ojo:/.test(m)), ['Ya tengo el puesto. ¿Qué horario tiene?']);
   assert.equal(imagenes.generadas.length, 0);
 
   // Cuando ya presenta el resumen, llegan la imagen y el anuncio.
@@ -572,7 +572,7 @@ test('si TeamTailor falla al ejecutar la acción, se le dice y no queda pendient
   entorno.fallarTeamTailorSi = (metodo, ruta) => metodo === 'PATCH' && ruta === '/jobs/555555';
   entorno.encolarModelo('agente', cierre('resolver_accion', { decision: 'confirmar', mensaje: 'Va.' }));
   await escribir('sí');
-  assert.match(entorno.mensajes.at(-1), /^No pude hacerlo en TeamTailor y no se hizo ningún cambio/);
+  assert.match(entorno.mensajes.at(-1), /^Una disculpa, no pude hacerlo en TeamTailor y no se hizo ningún cambio/);
   assert.equal(conversacion().temporal.reclutador.accion_pendiente, undefined);
 });
 

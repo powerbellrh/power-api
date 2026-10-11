@@ -307,7 +307,7 @@ test('si el modelo falla, el reclutador recibe un aviso y su mensaje queda en el
   nuevoEntorno(); // sin respuestas simuladas: OpenRouter contesta 500
   const resultado = await escribir('hola');
   assert.equal(resultado.error, 'agente');
-  assert.match(entorno.mensajes[0], /^Tuve un problema/);
+  assert.match(entorno.mensajes[0], /^Una disculpa, tuve un problema/);
   assert.match(conversacion().historial, /reclutador: hola/);
 });
 
