@@ -110,8 +110,9 @@ filtro que la tabla**. Ahí tampoco va nada de un candidato ni lo que escribió 
 | `reclutador` | `revision_vacante` | Hija, `reintento`: la revisión del anuncio encontró problemas y se le pidió al modelo corregirlos | (hereda) | (hereda) | `cantidad` |
 | `reclutador` | `vacante_creada` | Hija | (hereda) | (hereda) | `vacante_id`, `tipo`, `cliente` |
 | `reclutador` | `accion` | Hija: editar, cerrar o mover candidatos | (hereda) | (hereda) | `tipo`, `id`, `personas`, `acciones` |
-| `reclutador` | `retroalimentacion` | Hija: comentario para sistemas | (hereda) | (hereda) | `largo`, `categoria`, `pedido`. **Nunca el comentario** |
-| `reclutador` | `contexto_reiniciado`, `contexto_compactado` | Hijas | (hereda) | (hereda) | Solo cifras (líneas, caracteres, probabilidad) |
+| `reclutador` | `retroalimentacion` | Hija: comentario para sistemas | (hereda) | (hereda) | `largo`, `categoria`, `pedido`. **Nunca el comentario**. Una sola por mensaje |
+| `reclutador` | `contexto_reiniciado`, `contexto_compactado` | Hijas | (hereda) | (hereda) | Solo cifras (líneas, caracteres, probabilidad) y, en el reinicio, `motivo`: `inactividad` (más de 2 h sin escribir, con `minutos_sin_escribir`) u `operacion_nueva` |
+| `reclutador` | `ubicacion_del_cliente` | Hija: faltaba la ciudad y se usó la única donde el cliente tiene vacantes, sin preguntarla | (hereda) | (hereda) | — |
 | `conversaciones` | `modelo`, `guardrail` y otros | Chatbot de candidatos: **solo fallos**, no una fila por mensaje | contacto | `manychat` | `herramienta`, `paso`, `reglas`, `clave` |
 | `historial` | `cambio_de_etapa` | Solo las etapas que se atienden (o fallan) | postulación | `teamtailor` | `etapa`, `vacante_id`, `codigo` |
 | `notificaciones` | `envio_de_agenda` | Solo cuando mandó algo o falló | `notificaciones` / `proceso` | `cron` | `encontradas`, `enviadas`, `fallidas`, `codigo` |

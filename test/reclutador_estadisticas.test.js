@@ -55,6 +55,10 @@ const resultados = () => entorno.peticionesModelo.at(-1).mensajes.filter(m => m.
 const continuidad = nueva => ({ continuidad: { type: 'choice', probabilities: { continua: 1 - nueva, nueva } } });
 const estado = () => entorno.supabase.tablas.conversaciones.find(c => c.telefono === TELEFONO).temporal.reclutador ?? {};
 
+// Los historiales de estas pruebas son del 9-oct a las 10:00: para la memoria, "ahora" es cinco minutos después
+// (con más de dos horas sin escribir el contexto se reinicia solo; ver reclutador_mejoras_11oct.test.js).
+const POCO_DESPUES = Date.parse('2026-10-09 10:05:00');
+
 test('estadísticas de postulaciones: solo totales y grupos, ningún dato personal llega al modelo', async () => {
   nuevoEntorno();
   entorno.encolarModelo('agente', consulta({ agrupar_por: 'estado' }), responder('Hay 6 postulaciones.'));
@@ -253,7 +257,7 @@ test('compactación automática: lo viejo se resume y solo quedan los últimos m
   const resumidas = [];
   const resumir = async ({ resumenPrevio, lineas: porResumir }) => { resumidas.push(...porResumir); return `${resumenPrevio} resumen`.trim(); };
 
-  const primera = await prepararMemoria({ historial, mensaje: 'hola', hayEstado: false, resumir, log: () => {} });
+  const primera = await prepararMemoria({ historial, mensaje: 'hola', hayEstado: false, ahora: POCO_DESPUES, resumir, log: () => {} });
   assert.equal(primera.cambio, true);
   assert.equal(resumidas.length, MUCHAS - LINEAS_CONSERVADAS);
   assert.equal(primera.contexto.resumen, 'resumen');
@@ -261,9 +265,9 @@ test('compactación automática: lo viejo se resume y solo quedan los últimos m
   assert.ok(primera.contexto.lineas[0].endsWith(`mensaje ${MUCHAS - LINEAS_CONSERVADAS}`));
 
   // Sin pasar el límite no vuelve a resumir; si el resumen falla, el contexto queda como estaba.
-  const igual = await prepararMemoria({ historial, memoria: primera.memoria, mensaje: 'hola', hayEstado: false, resumir, log: () => {} });
+  const igual = await prepararMemoria({ historial, memoria: primera.memoria, mensaje: 'hola', hayEstado: false, ahora: POCO_DESPUES, resumir, log: () => {} });
   assert.equal(igual.cambio, false);
-  const fallo = await prepararMemoria({ historial, mensaje: 'hola', hayEstado: false, resumir: async () => { throw new Error('sin modelo'); }, log: () => {} });
+  const fallo = await prepararMemoria({ historial, mensaje: 'hola', hayEstado: false, ahora: POCO_DESPUES, resumir: async () => { throw new Error('sin modelo'); }, log: () => {} });
   assert.equal(fallo.cambio, false);
 });
 
@@ -276,7 +280,7 @@ test('con una vacante a medias o una acción por confirmar no se le pregunta a j
   assert.equal(conEstado.cambio, false);
   assert.equal(preguntas, 0);
 
-  const libre = await prepararMemoria({ historial, mensaje: 'otra cosa', hayEstado: false, continuidad: continuidadFalsa, log: () => {} });
+  const libre = await prepararMemoria({ historial, mensaje: 'otra cosa', hayEstado: false, ahora: POCO_DESPUES, continuidad: continuidadFalsa, log: () => {} });
   assert.equal(libre.cambio, true);
   assert.deepEqual(libre.contexto.lineas, []);
 });
@@ -331,8 +335,8 @@ test('el reinicio y la compactación del contexto se mandan a guardar solo con c
   const log = (etapa, datos) => eventos.push({ etapa, ...datos });
   const historial = Array.from({ length: MUCHAS }, (_, i) => `[2026-10-09 10:00:00] ${i % 2 ? 'agente' : 'reclutador'}: mensaje secreto ${i}`).join('\n');
 
-  await prepararMemoria({ historial, mensaje: 'hola', hayEstado: false, resumir: async () => 'resumen corto', log });
-  await prepararMemoria({ historial, mensaje: 'otra cosa', hayEstado: false, continuidad: async () => ({ nueva: 0.97, continua: 0.03 }), log });
+  await prepararMemoria({ historial, mensaje: 'hola', hayEstado: false, ahora: POCO_DESPUES, resumir: async () => 'resumen corto', log });
+  await prepararMemoria({ historial, mensaje: 'otra cosa', hayEstado: false, ahora: POCO_DESPUES, continuidad: async () => ({ nueva: 0.97, continua: 0.03 }), log });
 
   assert.deepEqual(eventos.map(evento => [evento.etapa, evento.estado, evento.guardar]), [['contexto_compactado', 'ok', true], ['contexto_reiniciado', 'ok', true]]);
   assert.deepEqual({ resumidas: eventos[0].lineas_resumidas, conservadas: eventos[0].lineas_conservadas, resumen: eventos[0].caracteres_del_resumen }, { resumidas: MUCHAS - LINEAS_CONSERVADAS, conservadas: LINEAS_CONSERVADAS, resumen: 13 });

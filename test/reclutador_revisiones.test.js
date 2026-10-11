@@ -631,6 +631,34 @@ test('"publícala y archívala": se publica y en el mismo mensaje queda listo el
   assert.match(entorno.mensajes.at(-1), /^Listo, cerré \*Oxxo - Cajero\*/);
 });
 
+test('si el cliente solo tiene vacantes en una ciudad, no se le pregunta: el sistema se la da al agente y la vacante sale completa', async () => {
+  nuevoEntorno({ tablas: {
+    ubicaciones: [{ id: 1, ciudad: 'Guadalajara', estado: 'Jalisco' }],
+    ubicaciones_seleccionadas: [{ id: 1, id_vacante: 11, id_ubicacion: 1 }], // la vacante 11 es "Oxxo - Cajero"
+  } });
+  entorno.encolarModelo('agente',
+    vacanteNueva({ nombre_interno: 'Oxxo - Gerente', titulo: 'Gerente', ubicacion: '', mensaje: '¿En qué ciudad quedan las oficinas?' }),
+    vacanteNueva({ nombre_interno: 'Oxxo - Gerente', titulo: 'Gerente', ubicacion: 'Guadalajara, Jalisco' }));
+  await escribir('Gerente para Oxxo en las oficinas centrales');
+
+  assert.equal(llamadasAlAgente(), 2, 'una vuelta más, con la corrección');
+  assert.match(entorno.peticionesModelo.at(-1).usuario, /CORRIGE: Oxxo solo tiene vacantes en "Guadalajara, Jalisco": pon esa ubicación en "ubicacion" SIN preguntarle la ciudad/);
+  assert.equal(borrador().ubicacion, 'Guadalajara, Jalisco');
+  assert.doesNotMatch(todo(), /En qué ciudad/);
+  assert.ok(entorno.registros.some(registro => registro.etapa === 'ubicacion_del_cliente' && registro.guardar === true));
+});
+
+test('si ella ya dio la ciudad, o el cliente tiene vacantes en varias, no se corrige nada', async () => {
+  nuevoEntorno({ tablas: {
+    ubicaciones: [{ id: 1, ciudad: 'Guadalajara', estado: 'Jalisco' }, { id: 2, ciudad: 'Monterrey', estado: 'Nuevo León' }],
+    ubicaciones_seleccionadas: [{ id: 1, id_vacante: 11, id_ubicacion: 1 }, { id: 2, id_vacante: 10, id_ubicacion: 2 }],
+  } });
+  entorno.encolarModelo('agente', vacanteNueva({ nombre_interno: 'Oxxo - Gerente', titulo: 'Gerente', ubicacion: 'Monterrey, Nuevo León' }));
+  await escribir('Gerente para Oxxo en Monterrey');
+  assert.equal(llamadasAlAgente(), 1);
+  assert.equal(borrador().ubicacion, 'Monterrey, Nuevo León');
+});
+
 test('sin pedir el cierre, publicar no deja ninguna acción pendiente', async () => {
   nuevoEntorno();
   entorno.encolarModelo('agente', vacanteNueva(), vacanteNueva({ confirmado: true, descripcion_modificada: false, contexto_modificado: false }));

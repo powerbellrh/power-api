@@ -97,7 +97,7 @@ test('estadísticas: de qué vacantes son las contratadas y las rechazadas', asy
   assert.deepEqual(resultado.rechazadas_por_vacante, [{ grupo: 'Península - Almacenista', cantidad: 1 }]);
 });
 
-test('agenda: quien no captura sus citas aparece como sin registro, y preguntar por esa persona no da "0 enviados"', async () => {
+test('agenda: preguntar por quien no captura sus citas no da "0 enviados"; en un total del equipo no viaja esa aclaración', async () => {
   const ahora = new Date().toISOString();
   const supabase = crearSupabaseFalso({ tablas: {
     usuarios: [{ id: 'u1', nombre: 'Paulina Hernández' }, { id: 'u2', nombre: 'Laura Carrillo' }],
@@ -107,10 +107,10 @@ test('agenda: quien no captura sus citas aparece como sin registro, y preguntar 
   const hoy = ahora.slice(0, 10);
 
   const todos = await consultarAgenda(supabase, { fecha: 'enviados', desde: '', hasta: '', agrupar_por: 'reclutador', reclutador: '', cliente: '' });
-  assert.deepEqual(todos.cobertura.registran_sus_citas, ['Paulina Hernández']);
-  assert.deepEqual(todos.cobertura.sin_citas_registradas, ['Laura Carrillo']);
+  assert.equal(todos.cobertura, undefined, 'sin preguntar por alguien, el agente no recibe con qué armar la nota');
   assert.equal(todos.aviso, undefined);
 
   const deLaura = await consultarAgenda(supabase, { fecha: 'enviados', desde: hoy, hasta: hoy, agrupar_por: 'reclutador', reclutador: 'laura', cliente: '' });
   assert.match(deLaura.aviso, /no captura sus citas en la agenda/);
+  assert.deepEqual(deLaura.cobertura.sin_citas_registradas, ['Laura Carrillo']);
 });
