@@ -5,7 +5,7 @@ import { limpiarTelefono, normalizarTelefonoMx } from '../lib/telefono.js';
 import { MANYCHAT_TAG_ID_BAJA, TEAMTAILOR_TAG_BAJA, AGENDA_MANYCHAT_FIELD_CANDIDATO_TEAMTAILOR_ID } from '../lib/config.js';
 import { avisar } from '../lib/registro.js';
 
-const BUCKETS_CANDIDATO = ['powerID', 'felicitaciones'];
+const BUCKETS_CANDIDATO = ['powerID', 'felicitaciones', 'informes'];
 
 // Webhook de TeamTailor (candidato actualizado o eliminado). No se confía en el cuerpo: solo se
 // toma el id del candidato y se verifica contra la API de TeamTailor que realmente tenga el tag

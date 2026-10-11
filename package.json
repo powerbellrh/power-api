@@ -6,6 +6,7 @@
     "@supabase/supabase-js": "^2.49.8",
     "@vercel/functions": "^3.7.1",
     "canvas": "^3.2.0",
+    "pdf-lib": "^1.17.1",
     "pdfkit": "^0.19.1"
   },
   "scripts": {

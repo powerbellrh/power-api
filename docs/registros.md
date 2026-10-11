@@ -101,7 +101,7 @@ filtro que la tabla**. Ahí tampoco va nada de un candidato ni lo que escribió 
 | `evaluaciones` | `solicitud` | Solo cuando /evaluaciones rechaza la solicitud antes de empezar (no existe, sin vacante) | postulación | `cron` | `codigo` |
 | `evaluaciones` | `whatsapp` | Hija: preguntas de seguimiento | (hereda) | (hereda) | `preguntas`, `motivo` (`origen_chatbot`, `calificacion_baja`, `sin_preguntas`, `sin_telefono`, `manychat`) |
 | `evaluaciones` | `motor_pdf` | Hija, `reintento`: un motor de PDF falló y se probó otro | (hereda) | (hereda) | `motor` |
-| `informes` | `informe` | Abierta al empezar | postulación | id de la reclutadora (o `herramientas`) | `tipo`, `vacante_id`, `cliente`, `foto`, `inbox`, `con_cv`, `llamadas[]`, `material{}`, `forma{}`, `cumplimiento{}` |
+| `informes` | `informe` | Abierta al empezar | postulación | Desde PowerInforme: id de la reclutadora dueña de la vacante (o `herramientas`). Desde el agente: id de quien lo pidió por el chat (o `reclutador`) | `canal` (`herramientas` o `agente`), `tipo`, `vacante_id`, `cliente`, `foto`, `inbox`, `con_cv`, `llamadas[]`, `material{}`, `forma{}`, `cumplimiento{}` |
 | `informes` | `correccion` | Igual; `intento` = ronda + 1 | postulación | igual | Lo mismo más `ronda`, `comentario_largo`, `minutos_desde_anterior`, `cambios[]` (`campo`, `cambio`, `parecido`), `descripcion{}` (`categoria`, `para_sistemas`, `pedido`) |
 | `informes` | `curriculum` | Cuando solo se pide refrescar el enlace del CV | postulación | `herramientas` | `codigo`; sin CV: `omitido` con `motivo: 'sin_cv'` |
 | `reclutador` | `turno` | Abierta por cada mensaje de una reclutadora al agente | contacto | id de la reclutadora (o `reclutador`) | `mensaje_largo`, `vueltas`, `herramientas`, `accion`, `graficas`, `descripcion{}`, `llamadas_al_modelo`, `proveedores{}`, `cortes_de_tiempo` |
@@ -110,6 +110,7 @@ filtro que la tabla**. Ahí tampoco va nada de un candidato ni lo que escribió 
 | `reclutador` | `revision_vacante` | Hija, `reintento`: la revisión del anuncio encontró problemas y se le pidió al modelo corregirlos | (hereda) | (hereda) | `cantidad` |
 | `reclutador` | `vacante_creada` | Hija | (hereda) | (hereda) | `vacante_id`, `tipo`, `cliente` |
 | `reclutador` | `accion` | Hija: editar, cerrar o mover candidatos | (hereda) | (hereda) | `tipo`, `id`, `personas`, `acciones` |
+| `reclutador` | `informe_entregado` | Hija: el informe en PDF de un candidato (pegó su enlace) o su corrección, ya mandado. El informe en sí deja su fila `informes` aparte | (hereda) | (hereda) | `postulacion_id`, `vacante_id`, `version`, `con_foto`, `con_cv` (el CV quedó al final del PDF), `tenia_cv` |
 | `reclutador` | `retroalimentacion` | Hija: comentario para sistemas | (hereda) | (hereda) | `largo`, `categoria`, `pedido`. **Nunca el comentario**. Una sola por mensaje |
 | `reclutador` | `contexto_reiniciado`, `contexto_compactado` | Hijas | (hereda) | (hereda) | Solo cifras (líneas, caracteres, probabilidad) y, en el reinicio, `motivo`: `inactividad` (más de 2 h sin escribir, con `minutos_sin_escribir`) u `operacion_nueva` |
 | `reclutador` | `ubicacion_del_cliente` | Hija: faltaba la ciudad y se usó la única donde el cliente tiene vacantes, sin preguntarla | (hereda) | (hereda) | — |
