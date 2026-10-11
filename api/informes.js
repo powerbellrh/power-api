@@ -2,6 +2,7 @@ import { crearSupabase } from '../lib/supabase.js';
 import { ttObtener } from '../lib/clientes_api.js';
 import { esperarDescripcion } from '../lib/descripcion_de_texto.js';
 import { analizarRespuestas } from '../lib/evaluacion_postulacion.js';
+import { respuestasDePostulacion } from '../lib/evaluaciones/datos.js';
 import { rechazarSolicitud } from '../lib/http.js';
 import { cambiosDeLaCorreccion, cumplimientoDeReglas, describirCorreccion, formaDelInforme, rondaDe } from '../lib/informes/bitacora.js';
 import { INTENCIONES_ADMINISTRATIVO, INTENCIONES_OPERATIVO } from '../lib/informes/esquema.js';
@@ -69,23 +70,20 @@ function limpiarValor(valor, fallback = '-') {
   return texto && !['None', 'null', 'NA', 'N/A'].includes(texto) ? texto : fallback;
 }
 
-// Trae las preguntas y respuestas que ya recopiló el endpoint de evaluaciones
-// (formulario de TeamTailor tal como lo vio la IA, más las respuestas a las
-// preguntas personalizadas enviadas por WhatsApp), como pares {pregunta, respuesta}
-// listos para clasificar por intención junto con el resto de las respuestas.
+// Trae las preguntas y respuestas que ya están en Supabase (lo que contestó en el
+// chatbot o en el formulario de TeamTailor, ver respuestasDePostulacion, más las
+// respuestas a las preguntas personalizadas enviadas por WhatsApp), como pares
+// {pregunta, respuesta} listos para clasificar por intención junto con el resto.
 async function obtenerPreguntasRespuestasEvaluacion(supabase, postulacionId) {
   try {
-    const { data, error } = await supabase
-      .from('evaluaciones')
-      .select('candidato_respuestas, respuestas_preguntas_personalizadas')
-      .eq('postulacion_id', postulacionId)
-      .single();
-
-    if (error || !data) return {};
+    const { data: postulacion } = await supabase
+      .from('postulaciones').select('id').eq('id_team_tailor', String(postulacionId)).maybeSingle();
+    const { data: evaluacion } = await supabase
+      .from('evaluaciones').select('respuestas_preguntas_personalizadas').eq('postulacion_id', postulacionId).maybeSingle();
 
     return {
-      ...(data.candidato_respuestas ?? {}),
-      ...(data.respuestas_preguntas_personalizadas ?? {}),
+      ...(postulacion ? await respuestasDePostulacion(supabase, postulacion.id) : {}),
+      ...(evaluacion?.respuestas_preguntas_personalizadas ?? {}),
     };
   } catch (error) {
     avisar({ etapa: 'obtener_preguntas_evaluacion', estado: 'error', mensaje: error.message, postulacion_id: postulacionId });

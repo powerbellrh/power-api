@@ -94,7 +94,7 @@ filtro que la tabla**. Ahí tampoco va nada de un candidato ni lo que escribió 
 
 | `origen` | `operacion` | Fila | `ref` | `actor` | `detalle` |
 |---|---|---|---|---|---|
-| `recepcion` | `postulacion_recibida` | Una por postulación que manda TeamTailor | postulación | `teamtailor` | `vacante_id`, `codigo`; si se descartó: `motivo` |
+| `recepcion` | `postulacion_recibida` | Una por postulación que manda TeamTailor | postulación | `teamtailor` | `vacante_id`, `codigo`; si se descartó: `motivo` (`nombre_es_telefono`, `sin_telefono`) |
 | `cola` | `corrida` | Solo cuando procesó algo o falló | `cola` / `proceso` | `cron` | `encontrados`, `enviados`, `fallidos`, `evaluaciones`, `reevaluaciones`. **Cuántas, nunca cuáles** |
 | `evaluaciones` | `evaluacion` | Abierta al empezar, se cierra al terminar | postulación | `cron` | `tipo` (AD/OP), `vacante_id`, `del_chatbot`, `modelo`, `proveedor`, `motor`, `con_cv`, `con_imagen`, `tokens_entrada`, `tokens_salida`, `calificacion`, `estrellas`, `preguntas`, `whatsapp_enviado`; si falló: `etapa`, `se_reintentara`, `no_procesable` |
 | `evaluaciones` | `reevaluacion` | Igual que la anterior | postulación | `cron` | Lo mismo más `calificacion_anterior` |

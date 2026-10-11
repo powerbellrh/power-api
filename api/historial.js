@@ -290,6 +290,16 @@ async function cancelarNotificacionesPendientes(supabase, postulacionId) {
   await crearNotaTeamTailor(canceladas[0].candidato_id, postulacionId, '❌ Notificaciones canceladas', 'agenda_nota_cancelada');
 }
 
+// `postulaciones.estatus` sigue a TeamTailor: cada job_application.update trae `rejected_at`
+// (vacío si está activa, también cuando se deshace un rechazo). Una postulación que no está en
+// Supabase no se toca. Nunca lanza: el resto del webhook sigue aunque esto falle.
+export async function actualizarEstatusPostulacion(supabase, data) {
+  if (!data.id) return;
+  const estatus = data.rejected_at ? 'rechazada' : 'activa';
+  const { error } = await supabase.from('postulaciones').update({ estatus }).eq('id_team_tailor', String(data.id)).neq('estatus', estatus);
+  if (error) avisar({ etapa: 'estatus_postulacion', estado: 'error', postulacion_id: data.id, mensaje: error.message });
+}
+
 // ****************************************************************************
 // HANDLER PRINCIPAL (webhook de TeamTailor, sin auth — ver recepcion-postulaciones.js)
 // ****************************************************************************
@@ -312,6 +322,8 @@ async function handler(req, res) {
 
   const stage = (data.stage_name || '').toLowerCase().trim();
   const supabaseNotificaciones = crearSupabase();
+
+  await actualizarEstatusPostulacion(supabaseNotificaciones, data);
 
   // Si la postulación fue rechazada o ya no está en "enviar agenda" (se movió a
   // otra etapa), se cancela cualquier notificación de WhatsApp aún no enviada.

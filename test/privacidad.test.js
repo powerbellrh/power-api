@@ -11,7 +11,8 @@ test('al eliminar a un candidato también se borran sus conversaciones y se etiq
     tablas: {
       candidatos:     [{ id: 1, nombre: 'Ana', telefono: '5213312345678', id_team_tailor: '4321' }],
       postulaciones:  [{ id: 1, id_vacante: 10, id_candidato: 1, id_team_tailor: '9000' }],
-      evaluaciones:   [{ postulacion_id: 9000, candidato_telefono: '5213312345678' }],
+      evaluaciones:   [{ postulacion_id: 9000, id_postulacion: 1 }],
+      respuestas:     [{ id: 1, id_postulacion: 1, pregunta: '¿Cuál es tu edad?', respuesta: '31' }, { id: 2, id_postulacion: 2, respuesta: 'otra persona' }],
       registros: [
         { id: 1, origen: 'evaluaciones',   tipo_referencia: 'postulacion', referencia: '9000' },
         { id: 2, origen: 'evaluaciones',   tipo_referencia: 'postulacion', referencia: '9000', id_padre: 1 },
@@ -34,6 +35,7 @@ test('al eliminar a un candidato también se borran sus conversaciones y se etiq
   assert.equal(entorno.supabase.tablas.candidatos.length, 0);
   assert.equal(entorno.supabase.tablas.postulaciones.length, 0);
   assert.equal(entorno.supabase.tablas.evaluaciones.length, 0);
+  assert.deepEqual(entorno.supabase.tablas.respuestas.map(r => r.id), [2], 'sus respuestas se borran; las de otros no');
   assert.deepEqual(entorno.etiquetas.map(e => e.subscriber_id), [4242]);
   assert.deepEqual(entorno.supabase.tablas.registros.map(fila => fila.id), [3, 5, 6], 'de la bitácora solo se borran las filas de sus postulaciones y de su contacto');
   assert.equal(eliminados.registros, 3);

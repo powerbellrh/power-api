@@ -31,17 +31,17 @@ export default async function handler(req, res) {
 
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-  // Recupera: (a) nunca agendadas, o (b) agendadas pero atascadas (la función murió por
-  // timeout antes de llegar al catch, así que evaluacion_agendada quedó en true para siempre).
+  // Recupera: (a) pendientes, o (b) en proceso pero atascadas (la función murió por timeout
+  // antes de llegar al catch, así que se quedaron en 'en_proceso' para siempre).
   // Ambas respetan EVALUACION_MAX_INTENTOS para no reintentar indefinidamente un fallo persistente.
   const limiteAtasco = new Date(Date.now() - UMBRAL_ATASCO_MS).toISOString();
   const { data: pendientesEvaluacion, error: errorConsultaEvaluacion } = await supabase
     .from('evaluaciones')
     .select('postulacion_id')
-    .eq('evaluacion_completada', false)
-    .or(`intentos.lt.${EVALUACION_MAX_INTENTOS},intentos.is.null`)
-    .or(`evaluacion_agendada.eq.false,evaluacion_fecha.lt.${limiteAtasco}`)
-    .order('evaluacion_fecha', { ascending: true })
+    .not('id_postulacion', 'is', null) // una fila suelta (sin postulación) no se puede evaluar
+    .lt('intentos', EVALUACION_MAX_INTENTOS)
+    .or(`estado.eq.pendiente,and(estado.eq.en_proceso,actualizado.lt.${limiteAtasco})`)
+    .order('actualizado', { ascending: true })
     .limit(TAMANO_LOTE);
 
   if (errorConsultaEvaluacion) {
@@ -53,9 +53,9 @@ export default async function handler(req, res) {
   const { data: pendientesReevaluacion, error: errorConsultaReevaluacion } = await supabase
     .from('evaluaciones')
     .select('postulacion_id')
+    .not('id_postulacion', 'is', null)
     .eq('reevaluacion_solicitada', true)
-    .eq('reevaluacion_agendada', false)
-    .eq('reevaluacion_completada', false)
+    .is('reevaluacion', null)
     .limit(TAMANO_LOTE);
 
   if (errorConsultaReevaluacion) {

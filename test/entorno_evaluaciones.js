@@ -1,3 +1,4 @@
+import { leerEvaluacion } from '../lib/evaluaciones/datos.js';
 import { crearSupabaseFalso } from './supabase_falso.js';
 
 // Entorno simulado para probar /evaluaciones sin red: Supabase en memoria y un `fetch` falso para TeamTailor,
@@ -6,6 +7,7 @@ import { crearSupabaseFalso } from './supabase_falso.js';
 export const POSTULACION = 99887766;
 export const VACANTE     = 777001;
 export const CANDIDATO   = '4321';
+export const ID_POSTULACION = 1; // la de Supabase
 
 const respuestaHttp = (cuerpo, estado = 200) => ({
   ok: estado < 400, status: estado,
@@ -19,14 +21,24 @@ export const RESULTADO_BAJO = `Análisis del perfil.\n\nCalificación global: No
 export const RESULTADO_OP   = `#✅ APTO#\n\nCumple con lo que pide la vacante.\n\n#PREGUNTAS#\n${PREGUNTAS}\n#PREGUNTAS#`;
 
 export const filaPendiente = (extra = {}) => ({
-  postulacion_id: POSTULACION, candidato_nombre: 'Ana López', candidato_telefono: '3312345678', vacante_id: VACANTE, vacante_tipo: 'AD',
-  evaluacion_agendada: true, evaluacion_completada: false, intentos: 1, ...extra,
+  postulacion_id: POSTULACION, id_postulacion: ID_POSTULACION, tipo: 'AD', estado: 'en_proceso', intentos: 1, ...extra,
+});
+
+// Lo que ya está repartido en Supabase: la vacante (con su ubicación), el candidato y la postulación.
+const tablasBase = () => ({
+  vacantes: [{ id: 10, id_team_tailor: VACANTE, vacante: 'Cliente Uno - Analista de datos', titulo_externo: 'Analista de datos', descripcion: '<p>Analiza <b>datos</b></p>', contexto: 'Buscan a alguien\ncon SQL' }],
+  ubicaciones: [{ id: 5, ciudad: 'Guadalajara', estado: 'Jalisco' }],
+  ubicaciones_seleccionadas: [{ id_ubicacion: 5, id_vacante: 10 }],
+  candidatos: [{ id: 20, nombre: 'Ana López', telefono: '5213312345678', edad: null, domicilio: null, id_team_tailor: CANDIDATO }],
+  postulaciones: [{ id: ID_POSTULACION, id_vacante: 10, id_candidato: 20, id_team_tailor: String(POSTULACION), experiencia_laboral: null }],
+  respuestas: [],
 });
 
 // `curriculum`: URL del CV del candidato ('' = sin CV). `respuestas`: sus respuestas del formulario, { titulo: texto }.
 // `modelo`: lo que contesta OpenRouter en cada llamada, en orden; un texto es el resultado y un Error es un fallo.
-export function crearEntornoEvaluaciones({ fila = filaPendiente(), curriculum = 'https://archivos.teamtailor.test/cv.pdf', respuestas = { '¿Cuál es tu edad?': '31' }, modelo = [RESULTADO_AD], relacionConUsuario = true, manychat = {} } = {}) {
-  const supabase = crearSupabaseFalso({ tablas: { evaluaciones: fila ? [fila] : [] }, autoincrementales: ['registros'] });
+// `tablas`: cambia o agrega tablas de Supabase (las del chatbot, por ejemplo).
+export function crearEntornoEvaluaciones({ fila = filaPendiente(), curriculum = 'https://archivos.teamtailor.test/cv.pdf', respuestas = { '¿Cuál es tu edad?': '31' }, modelo = [RESULTADO_AD], relacionConUsuario = true, manychat = {}, tablas = {} } = {}) {
+  const supabase = crearSupabaseFalso({ tablas: { ...tablasBase(), ...tablas, evaluaciones: fila ? [fila] : [] }, autoincrementales: ['registros', 'respuestas'] });
   const llamadasTT = [];        // { metodo, ruta, cuerpo }
   const llamadasManyChat = [];  // { ruta, cuerpo }
   const peticionesModelo = [];
@@ -83,6 +95,9 @@ export function crearEntornoEvaluaciones({ fila = filaPendiente(), curriculum = 
   return {
     supabase, llamadasTT, llamadasManyChat, peticionesModelo,
     fila: () => supabase.tablas.evaluaciones.find(f => f.postulacion_id === POSTULACION),
+    // Lo que recibe el proceso: la fila con la vacante y el candidato, como la lee /evaluaciones.
+    leer: async () => (await leerEvaluacion(supabase, POSTULACION)).evaluacion,
+    rutasTT: () => llamadasTT.filter(l => l.metodo === 'GET').map(l => l.ruta.split('?')[0]),
     notas: () => llamadasTT.filter(l => l.metodo === 'POST' && l.ruta === '/notes').map(l => ({ nota: l.cuerpo.data.attributes.note, estrellas: l.cuerpo.data.attributes.rating ?? null, usuario: l.cuerpo.data.relationships.user.data.id })),
     fotos: () => llamadasTT.filter(l => l.metodo === 'PATCH').map(l => l.cuerpo.data.attributes.picture),
     restaurar: () => { globalThis.fetch = fetchOriginal; },

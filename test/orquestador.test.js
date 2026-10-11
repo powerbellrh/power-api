@@ -113,11 +113,13 @@ test('postulación completa: se guarda en Supabase, se sincroniza con TeamTailor
   assert.equal(tipos('POST', /^\/files$/).length, 1, 'el PDF de la conversación');
 
   // Evaluación
+  // En `evaluaciones` solo la postulación en la cola: el candidato y la vacante se quedan en sus tablas.
   const [evaluacion] = entorno.supabase.tablas.evaluaciones;
   assert.deepEqual(
-    { id: evaluacion.postulacion_id, vacante: evaluacion.vacante_id, tipo: evaluacion.vacante_tipo, origen: evaluacion.origen, manychat: evaluacion.candidato_manychat, nombre: evaluacion.candidato_nombre },
-    { id: 9000, vacante: 555555, tipo: 'OP', origen: 'chatbot', manychat: CONTACTO, nombre: 'Ana López' },
+    { id: evaluacion.postulacion_id, postulacion: evaluacion.id_postulacion, tipo: evaluacion.tipo, estado: evaluacion.estado },
+    { id: 9000, postulacion: postulacion.id, tipo: 'OP', estado: 'pendiente' },
   );
+  assert.equal(/Ana|López|3312345678/.test(JSON.stringify(evaluacion)), false);
   assert.equal(evaluacion.reevaluacion_solicitada, true);
   assert.equal(Object.keys(evaluacion.respuestas_preguntas_personalizadas).length, 5);
 

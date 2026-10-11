@@ -38,7 +38,7 @@
       "maxDuration": 60
     },
     "api/recepcion-postulaciones.js": {
-      "maxDuration": 30
+      "maxDuration": 60
     },
     "api/historial.js": {
       "maxDuration": 30

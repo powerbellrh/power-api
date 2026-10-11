@@ -162,7 +162,8 @@ export async function eliminarDatosCandidato(supabase, idTT, candidatoTT) {
   const eliminados = {};
   eliminados.agenda          = await eliminarFilas(supabase, 'agenda',         'id_postulacion',     idsPostulacion);
   eliminados.evaluaciones    = await eliminarFilas(supabase, 'evaluaciones',   'postulacion_id',     idsPostulacionTT);
-  eliminados.evaluaciones   += await eliminarFilas(supabase, 'evaluaciones',   'candidato_telefono', listaTelefonos);
+  eliminados.evaluaciones   += await eliminarFilas(supabase, 'evaluaciones',   'id_postulacion',     idsPostulacion);
+  eliminados.respuestas      = await eliminarFilas(supabase, 'respuestas',     'id_postulacion',     idsPostulacion);
   eliminados.registros       = await eliminarRegistros(supabase, 'postulacion', idsPostulacionTT);
   eliminados.registros      += await eliminarRegistros(supabase, 'contacto',    idsSuscriptor);
   eliminados.registros      += await eliminarRegistros(supabase, 'candidato',   [idTT]);

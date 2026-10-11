@@ -40,12 +40,14 @@ const semilla = () => ({
     { id: 10, id_team_tailor: 555555, vacante: 'Península - Almacenista', titulo_externo: 'Almacenista', descripcion: '<p>x</p>', estatus: 'Publicada', creado: '2026-10-01T00:00:00Z' },
     { id: 11, id_team_tailor: 666666, vacante: 'Oxxo - Cajero', titulo_externo: 'Cajero/a', descripcion: '<p>y</p>', estatus: 'Publicada', creado: '2026-10-02T00:00:00Z' },
   ],
+  // Las evaluaciones llegan a su vacante por `postulaciones`.
+  postulaciones: [901, 902, 903, 904, 905].map((id, i) => ({ id: i + 1, id_vacante: 10, id_candidato: i + 1, id_team_tailor: String(id) })),
   evaluaciones: [
-    { postulacion_id: 901, candidato_nombre: 'Ana Ruiz', vacante_id: 555555, evaluacion_completada: true, evaluacion_calificacion: 18 },
-    { postulacion_id: 902, candidato_nombre: 'Luis Soto', vacante_id: 555555, evaluacion_completada: true, evaluacion_calificacion: 13 },
-    { postulacion_id: 903, candidato_nombre: 'Eva Paz', vacante_id: 555555, evaluacion_completada: true, evaluacion_calificacion: 20 }, // rechazada
-    { postulacion_id: 904, candidato_nombre: 'Mar Ruiz', vacante_id: 555555, evaluacion_completada: true, evaluacion_calificacion: 19 },
-    { postulacion_id: 905, candidato_nombre: 'Sin Evaluar', vacante_id: 555555, evaluacion_completada: false, evaluacion_calificacion: null },
+    { postulacion_id: 901, id_postulacion: 1, estado: 'completada', calificacion: 18 },
+    { postulacion_id: 902, id_postulacion: 2, estado: 'completada', calificacion: 13 },
+    { postulacion_id: 903, id_postulacion: 3, estado: 'completada', calificacion: 20 }, // rechazada
+    { postulacion_id: 904, id_postulacion: 4, estado: 'completada', calificacion: 19 },
+    { postulacion_id: 905, id_postulacion: 5, estado: 'pendiente', calificacion: null },
   ],
 });
 

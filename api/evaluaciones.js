@@ -1,6 +1,7 @@
 import { crearSupabase } from '../lib/supabase.js';
 import { waitUntil } from '@vercel/functions';
 import { EVALUACION_MAX_INTENTOS } from '../lib/config.js';
+import { leerEvaluacion } from '../lib/evaluaciones/datos.js';
 import { procesarEvaluacion, procesarReevaluacion } from '../lib/evaluaciones/proceso.js';
 import { rechazarSolicitud } from '../lib/http.js';
 import { avisar } from '../lib/registro.js';
@@ -12,13 +13,16 @@ import { conRegistro } from '../lib/registro_de_endpoint.js';
 const aviso = avisar;
 
 async function leerPostulacion(supabase, postulacionId) {
-  const { data, error } = await supabase.from('evaluaciones').select('*').eq('postulacion_id', postulacionId).single();
-  return { postulacion: data, error };
+  const { evaluacion, error } = await leerEvaluacion(supabase, postulacionId);
+  return { postulacion: evaluacion, error };
 }
 
+const ahora = () => new Date().toISOString();
+
 // Disparo de cola: procesa la reevaluación pendiente respetando el rate limit de TeamTailor.
-// reevaluacion_solicitada y respuestas_preguntas_personalizadas los escribe ManyChat/TeamTailor
-// directamente en Supabase — este endpoint nunca los recibe por HTTP, solo los lee.
+// reevaluacion_solicitada y respuestas_preguntas_personalizadas los escribe el flujo de ManyChat (y el chatbot)
+// directamente en Supabase — este endpoint nunca los recibe por HTTP, solo los lee. Pendiente = solicitada y
+// con `reevaluacion` vacía; al tomarla queda 'en_proceso'.
 async function manejarReevaluacion(req, res, supabase) {
   const { reevaluacion: postulacionId } = req.body ?? {};
   if (!postulacionId) {
@@ -32,13 +36,13 @@ async function manejarReevaluacion(req, res, supabase) {
     return res.status(404).json({ error: 'Postulacion not found', detail: error?.message });
   }
 
-  const debeProcesar = postulacion.reevaluacion_solicitada && !postulacion.reevaluacion_agendada && !postulacion.reevaluacion_completada;
+  const debeProcesar = postulacion.reevaluacion_solicitada && postulacion.reevaluacion == null;
   if (!debeProcesar) {
-    aviso({ etapa: 'reevaluacion_saltada', postulacion_id: postulacionId, solicitada: postulacion.reevaluacion_solicitada, ya_agendada: postulacion.reevaluacion_agendada, ya_completada: postulacion.reevaluacion_completada });
+    aviso({ etapa: 'reevaluacion_saltada', postulacion_id: postulacionId, solicitada: postulacion.reevaluacion_solicitada, reevaluacion: postulacion.reevaluacion });
     return res.status(200).json({ status: 'skipped', postulacion_id: postulacionId });
   }
 
-  await supabase.from('evaluaciones').update({ reevaluacion_agendada: true }).eq('postulacion_id', postulacionId);
+  await supabase.from('evaluaciones').update({ reevaluacion: 'en_proceso', actualizado: ahora() }).eq('postulacion_id', postulacionId);
   waitUntil(procesarReevaluacion(postulacionId, postulacion, supabase));
 
   return res.status(202).json({ status: 'processing', postulacion_id: postulacionId });
@@ -69,14 +73,10 @@ async function manejarEvaluacion(req, res, supabase) {
   }
 
   // Marcar como en proceso, registrar el intento y disparar el trabajo en segundo plano.
-  // evaluacion_fecha se actualiza aquí para que /cola pueda detectar intentos atascados
+  // `actualizado` se pone aquí para que /cola pueda detectar intentos atascados
   // (la función murió por maxDuration sin llegar al catch) comparando contra el momento de inicio.
   const intentoActual = intentosPrevios + 1;
-  await supabase.from('evaluaciones').update({
-    evaluacion_agendada: true,
-    intentos:            intentoActual,
-    evaluacion_fecha:    new Date().toISOString(),
-  }).eq('postulacion_id', postulacionId);
+  await supabase.from('evaluaciones').update({ estado: 'en_proceso', intentos: intentoActual, actualizado: ahora() }).eq('postulacion_id', postulacionId);
   waitUntil(procesarEvaluacion(postulacionId, { ...postulacion, intentos: intentoActual }, supabase));
 
   return res.status(202).json({ status: 'processing', postulacion_id: postulacionId, intento: intentoActual });

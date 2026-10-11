@@ -1,51 +1,44 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { procesarEvaluacion, procesarReevaluacion } from '../lib/evaluaciones/proceso.js';
-import { CANDIDATO, POSTULACION, RESULTADO_AD, RESULTADO_BAJO, RESULTADO_OP, crearEntornoEvaluaciones, filaPendiente } from './entorno_evaluaciones.js';
+import { CANDIDATO, ID_POSTULACION, POSTULACION, RESULTADO_AD, RESULTADO_BAJO, RESULTADO_OP, crearEntornoEvaluaciones, filaPendiente } from './entorno_evaluaciones.js';
 
-// Lo que hace /evaluaciones con una postulación: qué guarda en `evaluaciones`, qué deja en TeamTailor (foto y notas)
-// y qué manda por ManyChat. Las esperas entre peticiones a TeamTailor se quitan (`conRetraso: false`).
+// Lo que hace /evaluaciones con una postulación: qué guarda en `evaluaciones` (solo estado y calificación) y en
+// `respuestas`, qué deja en TeamTailor (foto y notas) y qué manda por ManyChat. Las esperas entre peticiones a
+// TeamTailor se quitan (`conRetraso: false`).
 
 let entorno;
 afterEach(() => entorno?.restaurar());
 
 const SIN_ESPERAS = { conRetraso: false };
-const evaluar    = () => procesarEvaluacion(POSTULACION, entorno.fila(), entorno.supabase, SIN_ESPERAS);
-const reevaluar  = () => procesarReevaluacion(POSTULACION, entorno.fila(), entorno.supabase, SIN_ESPERAS);
+const evaluar    = async () => procesarEvaluacion(POSTULACION, await entorno.leer(), entorno.supabase, SIN_ESPERAS);
+const reevaluar  = async () => procesarReevaluacion(POSTULACION, await entorno.leer(), entorno.supabase, SIN_ESPERAS);
 const rutasManyChat = () => entorno.llamadasManyChat.map(l => l.ruta);
+const COLUMNAS_EVALUACIONES = ['postulacion_id', 'id_postulacion', 'tipo', 'estado', 'intentos', 'calificacion', 'calificacion_inicial', 'reevaluacion_solicitada', 'reevaluacion', 'respuestas_preguntas_personalizadas', 'creado', 'actualizado'];
 
-test('evaluación administrativa: guarda el resultado, pone foto y nota en TeamTailor y manda las 9 preguntas por WhatsApp', async () => {
+test('evaluación administrativa: guarda la calificación, pone foto y nota en TeamTailor y manda las 9 preguntas por WhatsApp', async () => {
   entorno = crearEntornoEvaluaciones();
   await evaluar();
 
   const fila = entorno.fila();
-  assert.deepEqual(
-    { completada: fila.evaluacion_completada, calificacion: fila.evaluacion_calificacion, resultado: fila.evaluacion_resultado, pensamiento: fila.evaluacion_pensamiento, modelo: fila.evaluacion_modelo, entrada: fila.tokens_input, salida: fila.tokens_output },
-    { completada: true, calificacion: 16, resultado: RESULTADO_AD, pensamiento: 'razonamiento', modelo: 'z-ai/glm-5.3-flash', entrada: 1200, salida: 300 },
-  );
-  assert.deepEqual(
-    { nombre: fila.vacante_nombre, descripcion: fila.vacante_descripcion, ubicacion: fila.vacante_ubicacion, contexto: fila.vacante_contexto, respuestas: fila.candidato_respuestas },
-    { nombre: 'Analista de datos', descripcion: 'Analiza datos', ubicacion: 'Guadalajara', contexto: 'Buscan a alguien con SQL', respuestas: { '¿Cuál es tu edad?': '31' } },
-  );
-  assert.equal(Object.keys(fila.evaluacion_preguntas).join(), 'pregunta_1,pregunta_2,pregunta_3,pregunta_4,pregunta_5,pregunta_6,pregunta_7,pregunta_8,pregunta_9');
-  assert.match(fila.evaluacion_preguntas.pregunta_9, /logro número 9/);
-  // El prompt ya no se guarda (ni aparte ni dentro de la petición): queda cuál fue. El modelo sí lo recibe completo.
-  assert.equal(fila.evaluacion_prompt, undefined);
-  const guardada = JSON.parse(fila.evaluacion_peticion);
-  assert.equal(guardada.model, 'z-ai/glm-5.3-flash');
-  assert.deepEqual(guardada.messages[0], { role: 'system', content: '(prompts/evaluaciones/evaluacion_administrativa.txt)' });
-  assert.match(guardada.messages[1].content[0].text, /\*\*Nombre:\*\* Analista de datos/);
-  assert.ok(entorno.peticionesModelo[0].messages[0].content.length > 1000);
-  assert.ok(fila.evaluacion_fecha);
+  assert.deepEqual({ estado: fila.estado, calificacion: fila.calificacion, inicial: fila.calificacion_inicial }, { estado: 'completada', calificacion: 16, inicial: 16 });
+  assert.ok(fila.actualizado);
+  assert.deepEqual(Object.keys(fila).filter(columna => !COLUMNAS_EVALUACIONES.includes(columna)), [], 'en `evaluaciones` no queda nada más: ni el candidato, ni la vacante, ni el texto del modelo');
+
+  // La vacante sale de Supabase: a TeamTailor solo se le pide el candidato (por el CV) y sus respuestas del formulario.
+  assert.deepEqual(entorno.rutasTT(), [`/job-applications/${POSTULACION}/candidate`, `/candidates/${CANDIDATO}/answers`]);
+  // Las respuestas del formulario quedan en `respuestas`, con el texto de la pregunta.
+  assert.deepEqual(entorno.supabase.tablas.respuestas.map(r => [r.id_postulacion, r.pregunta, r.respuesta, r.id_pregunta_seleccionada ?? null]), [[ID_POSTULACION, '¿Cuál es tu edad?', '31', null]]);
 
   // La petición lleva el CV como archivo con el motor de OCR, y los bloques de la vacante y del candidato.
   const [peticion] = entorno.peticionesModelo;
   assert.deepEqual(peticion.plugins, [{ id: 'file-parser', pdf: { engine: 'mistral-ocr' } }]);
   const [bloqueVacante, bloqueCandidato, adjunto] = peticion.messages[1].content;
-  assert.match(bloqueVacante.text, /\*\*Nombre:\*\* Analista de datos[\s\S]*Guadalajara[\s\S]*Buscan a alguien con SQL/);
+  assert.match(bloqueVacante.text, /\*\*Nombre:\*\* Analista de datos[\s\S]*Analiza datos[\s\S]*Guadalajara, Jalisco[\s\S]*Buscan a alguien con SQL/);
   assert.match(bloqueCandidato.text, /\*\*Nombre:\*\* Ana López[\s\S]*¿Cuál es tu edad\?\*\*\n31/);
   assert.deepEqual(adjunto, { type: 'file', file: { filename: 'curriculum.pdf', file_data: 'https://archivos.teamtailor.test/cv.pdf' } });
   assert.equal(peticion.messages[0].content.includes('{{fecha_actual}}'), false);
+  assert.ok(peticion.messages[0].content.length > 1000);
 
   assert.deepEqual(entorno.fotos(), ['https://nihtmbtirvhgumfbavvc.supabase.co/storage/v1/object/public/iconos/Altamente%20compatible.png']);
   const [nota, ...otras] = entorno.notas();
@@ -60,20 +53,37 @@ test('evaluación administrativa: guarda el resultado, pone foto y nota en TeamT
   assert.deepEqual(campos.slice(0, 3), [{ field_id: 12975347, field_value: 'Analista de datos' }, { field_id: 12918496, field_value: CANDIDATO }, { field_id: 14533357, field_value: POSTULACION }]);
   assert.deepEqual(campos.slice(3).map(c => c.field_id), [13349290, 13349291, 13349293, 13349294, 13349295, 14894400, 14894402, 14894404, 14894406]);
   assert.deepEqual(entorno.llamadasManyChat[2].cuerpo, { subscriber_id: 888, flow_ns: 'content20250922221605_634333' });
-  assert.deepEqual({ enviado: fila.whatsapp_enviado, error: fila.whatsapp_error }, { enviado: true, error: null });
+});
+
+test('repetir la evaluación no duplica las respuestas del formulario', async () => {
+  entorno = crearEntornoEvaluaciones({ modelo: [RESULTADO_AD, RESULTADO_AD] });
+  await evaluar();
+  await evaluar();
+  assert.equal(entorno.supabase.tablas.respuestas.length, 1);
 });
 
 test('con calificación baja no se mandan las preguntas y queda una nota que lo dice', async () => {
   entorno = crearEntornoEvaluaciones({ modelo: [RESULTADO_BAJO] });
   await evaluar();
 
-  assert.equal(entorno.fila().evaluacion_calificacion, 6);
+  assert.equal(entorno.fila().calificacion, 6);
   assert.deepEqual(rutasManyChat(), []);
   assert.deepEqual(entorno.notas().map(n => [n.estrellas, n.nota.slice(0, 61)]), [
     [1, 'Primera evaluación: Cliente Uno - Analista de datos\n\nAnálisis'],
     [null, 'No se le envió mensaje de WhatsApp debido a una calificación '],
   ]);
-  assert.deepEqual({ enviado: entorno.fila().whatsapp_enviado, error: entorno.fila().whatsapp_error }, { enviado: false, error: 'calificación baja (6/20)' });
+});
+
+test('el umbral para las preguntas por WhatsApp es "Compatible" (12): con 11 no se mandan y con 12 sí', async () => {
+  entorno = crearEntornoEvaluaciones({ modelo: [RESULTADO_AD.replace('Altamente compatible - 16/20', 'Parcialmente compatible - 11/20')] });
+  await evaluar();
+  assert.deepEqual(rutasManyChat(), []);
+  assert.match(entorno.notas()[1].nota, /calificación baja \(11\/20\)/);
+  entorno.restaurar();
+
+  entorno = crearEntornoEvaluaciones({ modelo: [RESULTADO_AD.replace('Altamente compatible - 16/20', 'Compatible - 12/20')] });
+  await evaluar();
+  assert.deepEqual(rutasManyChat(), ['/fb/subscriber/createSubscriber', '/fb/subscriber/setCustomFields', '/fb/sending/sendFlow']);
 });
 
 test('administrativa sin CV: la fila se borra y no se llama al modelo', async () => {
@@ -85,66 +95,61 @@ test('administrativa sin CV: la fila se borra y no se llama al modelo', async ()
   assert.deepEqual(entorno.notas(), []);
 });
 
-test('operativa sin CV: se evalúa con la imagen de sus respuestas, APTO vale 20, sin foto y con 3 preguntas', async () => {
+test('operativa (del chatbot): lo que contestó sale de Supabase, APTO vale 20, sin foto y sin otro flujo de WhatsApp', async () => {
   entorno = crearEntornoEvaluaciones({
-    fila: filaPendiente({ vacante_tipo: 'OP' }), curriculum: '', modelo: [RESULTADO_OP],
-    respuestas: { '¿Cuál es tu edad?': '31', 'Historial laboral': 'https://archivos.test/historial.jpg' },
+    fila: filaPendiente({ tipo: 'OP' }), curriculum: '', modelo: [RESULTADO_OP],
+    tablas: {
+      candidatos:    [{ id: 20, nombre: 'Ana López', telefono: '5213312345678', edad: '31', domicilio: 'Col. Centro, Guadalajara', id_team_tailor: CANDIDATO }],
+      postulaciones: [{ id: ID_POSTULACION, id_vacante: 10, id_candidato: 20, id_team_tailor: String(POSTULACION), experiencia_laboral: 'Ayudante general 2 años' }],
+      respuestas:    [{ id: 1, id_postulacion: ID_POSTULACION, id_pregunta_seleccionada: 7, tipo: 'Booleano', respuesta: 'Sí' }],
+      preguntas_seleccionadas: [{ id: 7, id_pregunta: 3, id_vacante: 10 }],
+      preguntas:     [{ id: 3, leyenda: '¿Cuentas con transporte propio?', tipo: 'Booleano' }],
+    },
   });
   await evaluar();
 
+  assert.deepEqual(entorno.rutasTT(), [`/job-applications/${POSTULACION}/candidate`], 'las respuestas no se le piden a TeamTailor');
   const [peticion] = entorno.peticionesModelo;
   assert.equal(peticion.plugins, undefined);
-  assert.deepEqual(peticion.messages[1].content[2], { type: 'image_url', image_url: { url: 'https://archivos.test/historial.jpg' } });
-  assert.deepEqual(entorno.fila().candidato_respuestas, { '¿Cuál es tu edad?': '31' }, 'la respuesta que es una URL no se guarda');
-  assert.equal(entorno.fila().evaluacion_calificacion, 20);
+  assert.match(peticion.messages[1].content[1].text, /\*\*Edad\*\*\n31[\s\S]*\*\*Domicilio\*\*\nCol\. Centro, Guadalajara[\s\S]*\*\*Experiencia laboral\*\*\nAyudante general 2 años[\s\S]*\*\*¿Cuentas con transporte propio\?\*\*\nSí/);
+  assert.equal(entorno.supabase.tablas.respuestas.length, 1, 'no se copian otra vez');
+  assert.deepEqual({ estado: entorno.fila().estado, calificacion: entorno.fila().calificacion }, { estado: 'completada', calificacion: 20 });
   assert.deepEqual(entorno.fotos(), []);
   assert.deepEqual(entorno.notas().map(n => n.estrellas), [5]);
-  assert.equal(entorno.llamadasManyChat[1].cuerpo.fields.length, 3 + 3);
-});
-
-test('postulación que viene del chatbot: se evalúa igual pero no se le manda otro flujo de WhatsApp', async () => {
-  entorno = crearEntornoEvaluaciones({ fila: filaPendiente({ origen: 'chatbot' }) });
-  await evaluar();
-
-  assert.equal(entorno.fila().evaluacion_completada, true);
   assert.deepEqual(rutasManyChat(), []);
-  assert.equal(entorno.notas().length, 1);
-  assert.deepEqual({ enviado: entorno.fila().whatsapp_enviado, error: entorno.fila().whatsapp_error }, { enviado: false, error: null });
 });
 
 test('si el modelo no devuelve preguntas, se avisa en una nota y no se manda nada', async () => {
   entorno = crearEntornoEvaluaciones({ modelo: ['Calificación global: Compatible - 13/20'] });
   await evaluar();
 
-  assert.equal(entorno.fila().evaluacion_preguntas, undefined);
   assert.deepEqual(rutasManyChat(), []);
   assert.match(entorno.notas()[1].nota, /^❌ No se envió mensaje de WhatsApp: Claude no generó preguntas válidas\. Detalle: Questions section missing or extraction failed$/);
 });
 
-test('si ManyChat falla al mandar el flujo, queda en una nota y en la fila', async () => {
+test('si ManyChat falla al mandar el flujo, queda en una nota', async () => {
   entorno = crearEntornoEvaluaciones({ manychat: { '/fb/sending/sendFlow': new Error('subscriber not reachable') } });
   await evaluar();
 
-  assert.equal(entorno.fila().evaluacion_completada, true);
+  assert.equal(entorno.fila().estado, 'completada');
   assert.match(entorno.notas()[1].nota, /^❌ Fallo el envío de mensaje de WhatsApp \(error ManyChat\): ManyChat \/fb\/sending\/sendFlow → 400: subscriber not reachable$/);
-  assert.equal(entorno.fila().whatsapp_enviado, false);
 });
 
-test('si el modelo falla, la postulación queda lista para reintentarse y la nota dice el intento', async () => {
+test('si el modelo falla, la postulación queda pendiente para reintentarse y la nota dice el intento', async () => {
   entorno = crearEntornoEvaluaciones({ modelo: [new Error('proveedor caído'), new Error('proveedor caído')] });
   await evaluar();
 
   const fila = entorno.fila();
-  assert.deepEqual({ agendada: fila.evaluacion_agendada, completada: fila.evaluacion_completada, intentos: fila.intentos }, { agendada: false, completada: false, intentos: 1 });
-  assert.match(fila.evaluacion_error, /^\[modelo_ia\] OpenRouter 500: /);
+  assert.deepEqual({ estado: fila.estado, intentos: fila.intentos, calificacion: fila.calificacion }, { estado: 'pendiente', intentos: 1, calificacion: undefined });
   assert.equal(entorno.peticionesModelo.length, 2, 'con PDF se prueba un segundo motor antes de rendirse');
   assert.deepEqual(entorno.peticionesModelo.map(p => p.plugins[0].pdf.engine), ['mistral-ocr', 'cloudflare-ai']);
   assert.match(entorno.notas()[0].nota, /^❌ Error en evaluación automática \[modelo_ia\] \(intento 1\/3, se reintentará\): OpenRouter 500/);
 });
 
-test('en el último intento la nota pide revisión manual', async () => {
+test('en el último intento queda fallida y la nota pide revisión manual', async () => {
   entorno = crearEntornoEvaluaciones({ fila: filaPendiente({ intentos: 3 }), modelo: [new Error('x'), new Error('x')] });
   await evaluar();
+  assert.equal(entorno.fila().estado, 'fallida');
   assert.match(entorno.notas()[0].nota, /^❌ Error en evaluación automática \[modelo_ia\] \(se agotaron los 3 intentos, requiere revisión manual\)/);
 });
 
@@ -152,69 +157,68 @@ test('un CV que no se puede leer agota los intentos de una vez', async () => {
   entorno = crearEntornoEvaluaciones({ modelo: [new Error('Failed to parse document'), new Error('Failed to parse document')] });
   await evaluar();
 
-  assert.equal(entorno.fila().intentos, 3);
+  assert.deepEqual({ estado: entorno.fila().estado, intentos: entorno.fila().intentos }, { estado: 'fallida', intentos: 3 });
   assert.deepEqual(entorno.notas().map(n => n.nota), ['✖️ Candidato no procesable']);
+});
+
+test('una vacante que no está en la tabla `vacantes` es un error de la evaluación (no se le pide a TeamTailor)', async () => {
+  entorno = crearEntornoEvaluaciones({ tablas: { vacantes: [] } });
+  await evaluar();
+  assert.equal(entorno.fila().estado, 'pendiente');
+  assert.deepEqual(entorno.rutasTT(), []);
+  assert.match(entorno.supabase.tablas.registros[0].error, /no está en la tabla vacantes/);
 });
 
 // ── Reevaluación ─────────────────────────────────────────────────────────────
 
 const filaEvaluada = (extra = {}) => filaPendiente({
-  evaluacion_completada: true, evaluacion_calificacion: 12, evaluacion_resultado: 'Primera evaluación', evaluacion_modelo: 'otro/modelo',
-  vacante_nombre: 'Analista de datos', vacante_descripcion: 'Analiza datos', vacante_ubicacion: 'Guadalajara', vacante_contexto: 'Buscan a alguien con SQL',
-  candidato_respuestas: { '¿Cuál es tu edad?': '31' }, respuestas_preguntas_personalizadas: { '¿Qué herramientas usas?': 'SQL y Excel' },
-  reevaluacion_solicitada: true, reevaluacion_agendada: true, reevaluacion_completada: false, ...extra,
+  estado: 'completada', calificacion: 12, respuestas_preguntas_personalizadas: { '¿Qué herramientas usas?': 'SQL y Excel' },
+  reevaluacion_solicitada: true, reevaluacion: 'en_proceso', ...extra,
 });
+const respuestasGuardadas = [{ id: 1, id_postulacion: ID_POSTULACION, pregunta: '¿Cuál es tu edad?', tipo: 'Texto', respuesta: '31' }];
 
-test('reevaluación: usa las respuestas extra y la calificación anterior, y deja foto verificada y nota del otro usuario', async () => {
-  entorno = crearEntornoEvaluaciones({ fila: filaEvaluada(), modelo: [RESULTADO_AD] });
+test('reevaluación: usa lo guardado en Supabase y las respuestas extra, y deja foto verificada y nota del otro usuario', async () => {
+  entorno = crearEntornoEvaluaciones({ fila: filaEvaluada(), modelo: [RESULTADO_AD], tablas: { respuestas: respuestasGuardadas } });
   await reevaluar();
 
+  assert.deepEqual(entorno.rutasTT(), [`/job-applications/${POSTULACION}/candidate`], 'de TeamTailor solo el CV');
   const [peticion] = entorno.peticionesModelo;
-  assert.match(peticion.messages[1].content[1].text, /Respuestas a las preguntas personalizadas enviadas por WhatsApp:\*\*\n\n\*\*¿Qué herramientas usas\?\*\*\nSQL y Excel/);
+  assert.match(peticion.messages[1].content[0].text, /Analista de datos[\s\S]*Guadalajara, Jalisco[\s\S]*Buscan a alguien con SQL/);
+  assert.match(peticion.messages[1].content[1].text, /¿Cuál es tu edad\?\*\*\n31[\s\S]*Respuestas a las preguntas personalizadas enviadas por WhatsApp:\*\*\n\n\*\*¿Qué herramientas usas\?\*\*\nSQL y Excel/);
   assert.equal(/\{\{(fecha_actual|calificacion_original|titulo_vacante)\}\}/.test(peticion.messages[0].content), false);
   assert.match(peticion.messages[0].content, /Cliente Uno - Analista de datos/);
 
   const fila = entorno.fila();
-  assert.deepEqual(
-    { calificacion: fila.evaluacion_calificacion, resultado: fila.evaluacion_resultado, modelo: fila.evaluacion_modelo, completada: fila.reevaluacion_completada, entrada: fila.tokens_input },
-    { calificacion: 16, resultado: RESULTADO_AD, modelo: 'z-ai/glm-5.3-flash', completada: true, entrada: 1200 },
-  );
+  assert.deepEqual({ calificacion: fila.calificacion, reevaluacion: fila.reevaluacion, inicial: fila.calificacion_inicial }, { calificacion: 16, reevaluacion: 'completada', inicial: 12 });
   assert.deepEqual(entorno.fotos(), ['https://nihtmbtirvhgumfbavvc.supabase.co/storage/v1/object/public/iconos/Altamente%20compatible%20-%20Verificado.png']);
   assert.deepEqual(entorno.notas(), [{ nota: RESULTADO_AD, estrellas: 4, usuario: 27789 }]);
   assert.deepEqual(rutasManyChat(), []);
 });
 
-test('reevaluación que falla: se puede volver a pedir y la nota dice en qué etapa', async () => {
+test('reevaluación que falla: vuelve a la cola y la nota dice en qué etapa', async () => {
   entorno = crearEntornoEvaluaciones({ fila: filaEvaluada(), modelo: [new Error('proveedor caído'), new Error('proveedor caído')] });
   await reevaluar();
 
   const fila = entorno.fila();
-  assert.deepEqual({ agendada: fila.reevaluacion_agendada, completada: fila.reevaluacion_completada, calificacion: fila.evaluacion_calificacion }, { agendada: false, completada: false, calificacion: 12 });
-  assert.match(fila.evaluacion_error, /^\[reevaluacion:modelo_ia\] OpenRouter 500/);
+  assert.deepEqual({ reevaluacion: fila.reevaluacion, calificacion: fila.calificacion }, { reevaluacion: null, calificacion: 12 });
   assert.deepEqual(entorno.notas().map(n => [n.usuario, n.nota.slice(0, 55)]), [[27789, '❌ Error en reevaluación automática [modelo_ia]: OpenRou']]);
 });
 
-test('reevaluación con un CV que no se puede leer: se da por terminada', async () => {
+test('reevaluación con un CV que no se puede leer: queda fallida', async () => {
   entorno = crearEntornoEvaluaciones({ fila: filaEvaluada(), modelo: [new Error('Failed to parse document'), new Error('Failed to parse document')] });
   await reevaluar();
 
-  assert.equal(entorno.fila().reevaluacion_completada, true);
+  assert.equal(entorno.fila().reevaluacion, 'fallida');
   assert.deepEqual(entorno.notas().map(n => n.nota), ['✖️ Reevaluación no procesable']);
 });
 
-// ── Lo que queda de cada corrida: `registros` y las columnas de operación de `evaluaciones` ──
+// ── Lo que queda de cada corrida en `registros` ──────────────────────────────
 
 const registros = () => entorno.supabase.tablas.registros;
 
-test('una evaluación deja su corrida en `registros` (con costo e hija de WhatsApp) y llena las columnas de operación', async () => {
+test('una evaluación deja su corrida en `registros` (con costo e hija de WhatsApp)', async () => {
   entorno = crearEntornoEvaluaciones();
   await evaluar();
-
-  const fila = entorno.fila();
-  assert.deepEqual(
-    { costo: fila.costo_usd, inicial: fila.calificacion_inicial, cliente: fila.cliente, reclutador: fila.reclutador_id, preguntas: fila.preguntas_enviadas },
-    { costo: 0.004, inicial: 16, cliente: 'Cliente Uno', reclutador: '45146', preguntas: 9 },
-  );
 
   const [corrida, whatsapp] = registros();
   assert.deepEqual(
@@ -235,7 +239,6 @@ test('lo que no se manda por WhatsApp queda como omitido con su motivo', async (
   entorno = crearEntornoEvaluaciones({ modelo: [RESULTADO_BAJO] });
   await evaluar();
   assert.deepEqual(registros().filter(r => r.operacion === 'whatsapp').map(r => [r.estado, r.detalle.motivo, r.detalle.preguntas]), [['omitido', 'calificacion_baja', 0]]);
-  assert.equal(entorno.fila().preguntas_enviadas, 0);
 });
 
 test('una administrativa sin CV queda como corrida omitida', async () => {
@@ -251,21 +254,19 @@ test('un fallo queda en `registros` con la etapa, el motor que falló y si se va
   assert.deepEqual(registros().map(r => [r.operacion, r.estado, r.detalle.motor]), [['evaluacion', 'ok', 'cloudflare-ai'], ['motor_pdf', 'reintento', 'mistral-ocr'], ['whatsapp', 'ok', undefined]]);
   entorno.restaurar();
 
-  entorno = crearEntornoEvaluaciones({ fila: filaPendiente({ intentos: 2, costo_usd: 0.01 }), modelo: [new Error('caído'), new Error('caído')] });
+  entorno = crearEntornoEvaluaciones({ fila: filaPendiente({ intentos: 2 }), modelo: [new Error('caído'), new Error('caído')] });
   await evaluar();
   const corrida = registros().find(r => r.operacion === 'evaluacion');
   assert.deepEqual({ estado: corrida.estado, intento: corrida.intento, etapa: corrida.detalle.etapa, reintento: corrida.detalle.se_reintentara }, { estado: 'error', intento: 2, etapa: 'modelo_ia', reintento: true });
   assert.match(corrida.error, /^OpenRouter 500/);
-  assert.equal(entorno.fila().costo_usd, 0.01, 'sin costo nuevo, el acumulado no se toca');
 });
 
-test('la reevaluación conserva la primera calificación, suma su costo y deja su fecha y su corrida', async () => {
-  entorno = crearEntornoEvaluaciones({ fila: filaEvaluada({ calificacion_inicial: 12, costo_usd: 0.004 }), modelo: [RESULTADO_AD] });
+test('la reevaluación conserva la primera calificación y deja su corrida', async () => {
+  entorno = crearEntornoEvaluaciones({ fila: filaEvaluada({ calificacion_inicial: 12 }), modelo: [RESULTADO_AD] });
   await reevaluar();
 
   const fila = entorno.fila();
-  assert.deepEqual({ inicial: fila.calificacion_inicial, actual: fila.evaluacion_calificacion, costo: fila.costo_usd }, { inicial: 12, actual: 16, costo: 0.008 });
-  assert.ok(fila.reevaluacion_fecha);
+  assert.deepEqual({ inicial: fila.calificacion_inicial, actual: fila.calificacion }, { inicial: 12, actual: 16 });
   const [corrida] = registros();
   assert.deepEqual(
     { operacion: corrida.operacion, estado: corrida.estado, intento: corrida.intento, antes: corrida.detalle.calificacion_anterior, despues: corrida.detalle.calificacion, costo: corrida.costo_usd },
@@ -277,10 +278,4 @@ test('una postulación evaluada antes de existir la columna guarda su primera ca
   entorno = crearEntornoEvaluaciones({ fila: filaEvaluada(), modelo: [RESULTADO_AD] });
   await reevaluar();
   assert.equal(entorno.fila().calificacion_inicial, 12);
-});
-
-test('el reclutador de la vacante se toma del usuario incluido cuando TeamTailor no manda la relación', async () => {
-  entorno = crearEntornoEvaluaciones({ relacionConUsuario: false });
-  await evaluar();
-  assert.equal(entorno.fila().reclutador_id, '45146');
 });

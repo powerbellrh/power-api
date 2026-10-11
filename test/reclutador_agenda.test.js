@@ -75,9 +75,9 @@ test('estadísticas: el desglose por estrellas cruza las postulaciones activas d
   const supabase = crearSupabaseFalso({ tablas: {
     vacantes: [{ id: 10, id_team_tailor: 555555, vacante: 'Península - Almacenista', estatus: 'Publicada', creado: '2026-10-01T00:00:00Z', tipo: 'operativa' }],
     evaluaciones: [
-      { postulacion_id: 901, evaluacion_completada: true, evaluacion_calificacion: 20 },
-      { postulacion_id: 902, evaluacion_completada: true, evaluacion_calificacion: 2 },
-      { postulacion_id: 903, evaluacion_completada: true, evaluacion_calificacion: 20 }, // rechazada: no cuenta
+      { postulacion_id: 901, estado: 'completada', calificacion: 20 },
+      { postulacion_id: 902, estado: 'completada', calificacion: 2 },
+      { postulacion_id: 903, estado: 'completada', calificacion: 20 }, // rechazada: no cuenta
     ],
   } });
   const consultar = async ruta => (ruta.startsWith('/jobs/')
