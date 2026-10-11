@@ -80,7 +80,7 @@ test('revisarVacante junta todos los problemas y repararVacante los arregla en c
 });
 
 test('limpia el mensaje: sin emojis y sin prometer lo que no se envió', () => {
-  assert.equal(limpiarMensaje('Listo 😊. Arriba te llega el anuncio. ¿Confirmas?', { anuncioEnviado: false }), 'Listo . ¿Confirmas?');
+  assert.equal(limpiarMensaje('Listo 😊. Arriba te llega el anuncio. ¿Confirmas?', { anuncioEnviado: false }), 'Listo. ¿Confirmas?');
   assert.equal(limpiarMensaje('Arriba te llega el anuncio. ¿Confirmas?', { anuncioEnviado: true }), 'Arriba te llega el anuncio. ¿Confirmas?');
 });
 

@@ -206,6 +206,11 @@ test('al mensaje del agente se le quitan sus correcciones en voz alta y las prom
   assert.equal(limpiar('Anotado para el equipo de sistemas: ya no incluiré esa nota. En total son 27 entrevistas el lunes 12.'), 'Quedó registrado para el equipo de sistemas. En total son 27 entrevistas el lunes 12.');
   assert.equal(limpiar('Le pedí al equipo de sistemas que agregue las horas. En cuanto lo tengan, te las muestro. ¿Algo más del lunes 12?'), 'Le pedí al equipo de sistemas que agregue las horas. ¿Algo más del lunes 12?');
   assert.equal(limpiar('Disculpa, no volverá a pasar.'), 'Disculpa, no volverá a pasar.', 'si quitarla dejaría el mensaje vacío, se queda');
+  // Lo que mandó el modelo rápido el 11-oct-2026: emoticones y una pregunta mal armada que corrigió en el renglón de abajo.
+  assert.equal(limpiar(['Ahí va la gráfica del histórico de enviados por reclutador :)', 'El equipo acumula 2,482 enviados.', '¿Quiero decir, te ayudo con algo más? ;)', 'Sí perdón, ¿te ayudo con algo más?'].join(String.fromCharCode(10))),
+    ['Ahí va la gráfica del histórico de enviados por reclutador', 'El equipo acumula 2,482 enviados.', '¿Te ayudo con algo más?'].join(String.fromCharCode(10)));
+  assert.equal(limpiar('Con gusto sigo :) Dime algo y lo vemos ;)'), 'Con gusto sigo Dime algo y lo vemos');
+  assert.equal(limpiar('*Paulina* (8): 8:00, 10:30 y 13:00. Perdón por la demora.'), '*Paulina* (8): 8:00, 10:30 y 13:00. Perdón por la demora.', 'las horas y una disculpa normal no se tocan');
   const normal = 'Para el lunes 12 hay *27 entrevistas*:\n- *Paulina*: 8 (TDI 5, Crane 3)\n- *Edgar*: 3';
   assert.equal(limpiar(normal), normal);
 });
