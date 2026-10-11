@@ -224,6 +224,7 @@ test('una evaluación deja su corrida en `registros` (con costo e hija de WhatsA
   assert.deepEqual(corrida.detalle, {
     tipo: 'AD', vacante_id: 777001, del_chatbot: false, modelo: 'z-ai/glm-5.3-flash', proveedor: 'Proveedor Uno', motor: 'mistral-ocr', con_cv: true, con_imagen: false,
     tokens_entrada: 1200, tokens_salida: 300, calificacion: 16, estrellas: 4, preguntas: 9, whatsapp_enviado: true,
+    llamadas_al_modelo: 1, proveedores: { 'Proveedor Uno': 1 },
   });
   assert.ok(corrida.terminado && corrida.segundos >= 0);
   assert.deepEqual({ operacion: whatsapp.operacion, estado: whatsapp.estado, padre: whatsapp.id_padre, detalle: whatsapp.detalle }, { operacion: 'whatsapp', estado: 'ok', padre: corrida.id, detalle: { preguntas: 9 } });

@@ -611,6 +611,36 @@ test('un sueldo escrito "30 000" (miles con espacio) se respeta: el anuncio no q
   assert.match(borrador().descripcion, /Sueldo de \$30,000 MXN mensuales libres/);
 });
 
+test('"publícala y archívala": se publica y en el mismo mensaje queda listo el cierre; un "sí" la cierra', async () => {
+  nuevoEntorno();
+  entorno.encolarModelo('agente', vacanteNueva(), vacanteNueva({ confirmado: true, cerrar_al_publicar: true, descripcion_modificada: false, contexto_modificado: false }));
+  await escribir('Oxxo cajero en Guadalajara');
+  await escribir('publícala y archívala de inmediato, es una prueba');
+
+  const creada = entorno.llamadasTT_('POST', /^\/jobs$/);
+  assert.equal(creada.length, 1, 'se publicó una sola vez');
+  const pendiente = conversacion().temporal.reclutador.accion_pendiente;
+  assert.equal(pendiente.tipo, 'cerrar_vacante');
+  assert.match(pendiente.resumen, /^Cerrar "Oxxo - Cajero" \(ID \d+\)$/);
+  assert.match(entorno.mensajes.at(-1), /Vacante creada y publicada[\s\S]*Como pediste, ahora la cierro: dejará de recibir postulaciones\. ¿Confirmas\?$/);
+  assert.equal(parches(new RegExp(`^/jobs/${pendiente.id}$`)).length, 0, 'todavía no se cierra');
+
+  entorno.encolarModelo('agente', cierre('resolver_accion', { decision: 'confirmar', mensaje: 'Va.' }));
+  await escribir('sí');
+  assert.deepEqual(parches(new RegExp(`^/jobs/${pendiente.id}$`)).map(p => p.cuerpo.data.attributes), [{ status: 'archived' }]);
+  assert.match(entorno.mensajes.at(-1), /^Listo, cerré \*Oxxo - Cajero\*/);
+});
+
+test('sin pedir el cierre, publicar no deja ninguna acción pendiente', async () => {
+  nuevoEntorno();
+  entorno.encolarModelo('agente', vacanteNueva(), vacanteNueva({ confirmado: true, descripcion_modificada: false, contexto_modificado: false }));
+  await escribir('Oxxo cajero en Guadalajara');
+  await escribir('sí, súbela');
+  assert.equal(entorno.llamadasTT_('POST', /^\/jobs$/).length, 1);
+  assert.equal(conversacion().temporal.reclutador.accion_pendiente, undefined);
+  assert.doesNotMatch(entorno.mensajes.at(-1), /la cierro/);
+});
+
 test('cerrar dos vacantes en un mismo mensaje: quedan en una sola acción pendiente y un solo "sí" cierra las dos', async () => {
   nuevoEntorno({ vacantes: { 666666: vacanteTeamTailor({ titulo: 'Cajero' }) } });
   entorno.encolarModelo('agente', accion('cerrar_vacante'), accion('cerrar_vacante', { id: 666666 }), responder('Voy a cerrar las dos.'));

@@ -47,7 +47,7 @@ test('un turno del agente queda en `registros` con sus cifras, y sus herramienta
     { origen: 'reclutador', estado: 'ok', referencia: String(CONTACTO), tipo: 'contacto', actor: '46582', costo: 0.0002 },
   );
   assert.deepEqual(turno.detalle, {
-    mensaje_largo: 60, vueltas: 2, herramientas: 1, accion: 'responder', graficas: 0,
+    mensaje_largo: 60, vueltas: 2, herramientas: 1, accion: 'responder', graficas: 0, llamadas_al_modelo: 3, // dos del agente y la que describe el mensaje
     descripcion: { categoria: 'consulta_vacantes', para_sistemas: false, pedido: 'Consultar las vacantes abiertas de en' },
   });
   assert.ok(turno.terminado && turno.segundos >= 0);

@@ -104,8 +104,10 @@ filtro que la tabla**. Ahí tampoco va nada de un candidato ni lo que escribió 
 | `informes` | `informe` | Abierta al empezar | postulación | id de la reclutadora (o `herramientas`) | `tipo`, `vacante_id`, `cliente`, `foto`, `inbox`, `con_cv`, `llamadas[]`, `material{}`, `forma{}`, `cumplimiento{}` |
 | `informes` | `correccion` | Igual; `intento` = ronda + 1 | postulación | igual | Lo mismo más `ronda`, `comentario_largo`, `minutos_desde_anterior`, `cambios[]` (`campo`, `cambio`, `parecido`), `descripcion{}` (`categoria`, `para_sistemas`, `pedido`) |
 | `informes` | `curriculum` | Cuando solo se pide refrescar el enlace del CV | postulación | `herramientas` | `codigo`; sin CV: `omitido` con `motivo: 'sin_cv'` |
-| `reclutador` | `turno` | Abierta por cada mensaje de una reclutadora al agente | contacto | id de la reclutadora (o `reclutador`) | `mensaje_largo`, `vueltas`, `herramientas`, `accion`, `graficas`, `descripcion{}` |
+| `reclutador` | `turno` | Abierta por cada mensaje de una reclutadora al agente | contacto | id de la reclutadora (o `reclutador`) | `mensaje_largo`, `vueltas`, `herramientas`, `accion`, `graficas`, `descripcion{}`, `llamadas_al_modelo`, `proveedores{}`, `cortes_de_tiempo` |
 | `reclutador` | `herramienta` | Hija, una por herramienta usada | (hereda) | (hereda) | `herramienta`, `reutilizada`, `sin_resultado` y solo estos argumentos: `id`, `filtro`, `tipo`, `recurso`, `periodo`, `agrupar_por`, `con_etapas`, `solo_mias`, `incluir_rechazados` |
+| `reclutador` | `imagen_vacante` | Hija: cada imagen generada para un anuncio, con sus `segundos` y su `costo_usd` | (hereda) | (hereda) | `pedida` (la pidió ella o fue la primera) |
+| `reclutador` | `revision_vacante` | Hija, `reintento`: la revisión del anuncio encontró problemas y se le pidió al modelo corregirlos | (hereda) | (hereda) | `cantidad` |
 | `reclutador` | `vacante_creada` | Hija | (hereda) | (hereda) | `vacante_id`, `tipo`, `cliente` |
 | `reclutador` | `accion` | Hija: editar, cerrar o mover candidatos | (hereda) | (hereda) | `tipo`, `id`, `personas`, `acciones` |
 | `reclutador` | `retroalimentacion` | Hija: comentario para sistemas | (hereda) | (hereda) | `largo`, `categoria`, `pedido`. **Nunca el comentario** |
@@ -142,6 +144,9 @@ candidato de quien pide la baja. Por eso:
 - **Un hecho dentro de una operación:** `log(nombre, { estado, guardar: true, ...cifras })`; los fallos se guardan
   solos. Desde un módulo que no recibe el registro: `registrar(...)`, `contar(...)`, `abrirOperacion(...)`.
 - **La cola** (`api/cola.js`) inserta su fila a mano y con el mismo criterio; no se le agrega nada más.
+- **Llamadas a modelos:** toda operación abierta guarda sola `llamadas_al_modelo`, `proveedores` (cuántas contestó
+  cada uno) y `cortes_de_tiempo` (las que se cortaron por tardar y se repitieron); lo anota `lib/openrouter.js`.
+  Para el costo de un paso dentro de una operación: `costoAcumulado()` antes y después.
 
 Antes de dar por bueno un registro nuevo: escribir una fila de prueba, leerla y comprobar que no trae nada de una
 persona y que todas las columnas quedaron llenas.

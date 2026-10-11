@@ -41,13 +41,13 @@ test('pipeline de varias vacantes: los totales por etapa los suma el código, no
   ]);
 });
 
-test('las vacantes de una persona se revisan todas (hasta 40), no solo las 12 más recientes', async () => {
+test('las vacantes de una persona se revisan todas (hasta 40), no solo las 10 del resumen', async () => {
   const vacantes = Array.from({ length: 20 }, (_, i) => ({ id: i + 1, id_team_tailor: 900 + i, vacante: `Cliente - Puesto ${i}`, estatus: 'Publicada', creado: `2026-10-${String(i + 1).padStart(2, '0')}T00:00:00Z` }));
   const respuestas = Object.fromEntries(vacantes.flatMap(v => [[`/jobs/${v.id_team_tailor}/stages`, { data: [etapa(`${v.id_team_tailor}0`, 'Inbox', 'Inbox', 0, 1)] }], [`/stages/${v.id_team_tailor}0/job-applications`, sinNuevas]]));
   entorno = crearEntornoConversaciones({ tablas: { vacantes }, respuestasTeamTailor: respuestas });
 
   assert.equal((await listarVacantes(entorno.supabase, { texto: 'cliente' })).vacantes.length, 20);
-  assert.equal((await listarVacantes(entorno.supabase, {})).vacantes.length, 12, 'sin filtros sigue el resumen corto');
+  assert.equal((await listarVacantes(entorno.supabase, {})).vacantes.length, 10, 'sin filtros sigue el resumen corto');
 });
 
 test('"Dollar City" es el cliente registrado "DollarCity": no se avisa de cliente nuevo', async () => {
