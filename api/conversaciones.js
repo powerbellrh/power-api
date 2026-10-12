@@ -49,7 +49,7 @@ export default async function handler(req, res) {
   // procesamiento sigue en segundo plano.
   const supabase = crearSupabase();
   waitUntil(
-    registro.ejecutar(() => procesarConversacion({ supabase, solicitud: lectura.solicitud, log, extractores: crearExtractores(supabase), esperaMs: ESPERA_MENSAJES_SEGUIDOS_MS }))
+    registro.ejecutar(() => procesarConversacion({ supabase, solicitud: lectura.solicitud, log, extractores: crearExtractores(supabase), esperaMs: ESPERA_MENSAJES_SEGUIDOS_MS, reclutadores: { conHorario: true } }))
       .catch(error => log('conversaciones', { estado: 'error', error: error.message }))
       .finally(() => registro.guardar(supabase)),
   );

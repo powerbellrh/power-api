@@ -511,6 +511,35 @@ test('mover candidatos: una etapa que no existe o un nombre que no está se le i
   assert.match(sinPersona.error, /a nadie llamado "Pedro"/);
 });
 
+test('volver a evaluar la bandeja: al confirmar, las evaluaciones terminadas de las personas activas regresan a la cola', async () => {
+  const evaluacion = (postulacion, estado, extra = {}) => ({ postulacion_id: postulacion, id_postulacion: postulacion, tipo: 'AD', estado, intentos: 2, calificacion: 14, ...extra });
+  // 901 terminada, 902 fallida, 903 rechazada en TeamTailor, 904 ya en la cola; 999 es de otra vacante.
+  nuevoEntorno({ tablas: { evaluaciones: [evaluacion(901, 'completada'), evaluacion(902, 'fallida', { intentos: 3 }), evaluacion(903, 'completada'), evaluacion(904, 'pendiente', { intentos: 0 }), evaluacion(999, 'completada')] } });
+  const filas = () => Object.fromEntries(entorno.supabase.tablas.evaluaciones.map(fila => [fila.postulacion_id, [fila.estado, fila.intentos]]));
+
+  entorno.encolarModelo('agente', accion('reevaluar_bandeja'), responder('Voy a volver a evaluar a 2 personas de la bandeja.'));
+  await escribir('cambié el contexto de la 555555, vuelve a evaluar a los de la bandeja');
+  const vista = resultadosDeHerramientas()[0].que_se_va_a_hacer;
+  assert.match(vista, /^Volver a evaluar a 2 personas de la bandeja de entrada \(vacante 555555\)\. .*cerca de 1 minuto\. .*1 persona ya está en la cola/);
+  assert.doesNotMatch(vista, /Ana|Luis|Mar |Ruiz|Soto/);
+  assert.deepEqual(filas()[901], ['completada', 2], 'sin confirmar no cambia nada');
+
+  entorno.encolarModelo('agente', cierre('resolver_accion', { decision: 'confirmar', mensaje: 'Va.' }));
+  await escribir('sí');
+  assert.deepEqual(filas(), { 901: ['pendiente', 0], 902: ['pendiente', 0], 903: ['completada', 2], 904: ['pendiente', 0], 999: ['completada', 2] });
+  assert.equal(entorno.supabase.tablas.evaluaciones.find(fila => fila.postulacion_id === 901).calificacion, 14, 'la calificación anterior se queda hasta que se evalúe de nuevo');
+  assert.match(entorno.mensajes.at(-1), /^Listo, regresaron 2 personas de la vacante 555555 a la cola de evaluación\. Tarda cerca de 1 minuto/);
+  assert.equal(parches(/./).length, 0, 'no toca TeamTailor');
+});
+
+test('volver a evaluar la bandeja: si nadie tiene evaluación terminada, se le dice por qué', async () => {
+  nuevoEntorno({ tablas: { evaluaciones: [{ postulacion_id: 904, id_postulacion: 904, tipo: 'AD', estado: 'en_proceso', intentos: 1 }] } });
+  entorno.encolarModelo('agente', accion('reevaluar_bandeja'), responder('No hay a quién volver a evaluar.'));
+  await escribir('vuelve a evaluar la bandeja de la 555555');
+  assert.match(resultadosDeHerramientas()[0].error, /^No hay a quién volver a evaluar.*1 persona ya está en la cola.*2 personas no tienen evaluación registrada/);
+  assert.equal(conversacion().temporal.reclutador?.accion_pendiente, undefined);
+});
+
 test('si TeamTailor falla al ejecutar la acción, se le dice y no queda pendiente', async () => {
   nuevoEntorno();
   entorno.encolarModelo('agente', accion('cerrar_vacante'), responder('Voy a cerrarla. ¿Confirmas?'));

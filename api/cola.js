@@ -56,6 +56,9 @@ export default async function handler(req, res) {
     .not('id_postulacion', 'is', null)
     .eq('reevaluacion_solicitada', true)
     .is('reevaluacion', null)
+    // Si la evaluación está en la cola (por primera vez o porque se regresó), la reevaluación espera a que termine:
+    // las dos a la vez se pisarían la calificación.
+    .not('estado', 'in', '(pendiente,en_proceso)')
     .limit(TAMANO_LOTE);
 
   if (errorConsultaReevaluacion) {

@@ -62,6 +62,33 @@ test('repetir la evaluación no duplica las respuestas del formulario', async ()
   assert.equal(entorno.supabase.tablas.respuestas.length, 1);
 });
 
+test('una evaluación repetida (la bandeja regresó a la cola) no vuelve a mandar las preguntas y toma en cuenta lo que ya contestó', async () => {
+  entorno = crearEntornoEvaluaciones({ modelo: [RESULTADO_AD, RESULTADO_AD] });
+  await evaluar();
+  assert.equal(rutasManyChat().length, 3);
+
+  // Contestó sus preguntas, se reevaluó, y después el agente reclutador la regresó a la cola.
+  Object.assign(entorno.fila(), { estado: 'en_proceso', intentos: 1, reevaluacion_solicitada: true, reevaluacion: 'completada', respuestas_preguntas_personalizadas: { '¿Manejas SQL?': 'Sí, cinco años' } });
+  await evaluar();
+
+  assert.equal(rutasManyChat().length, 3, 'no se le escribe otra vez');
+  assert.match(entorno.peticionesModelo[1].messages[1].content[1].text, /Respuestas a las preguntas personalizadas[\s\S]*¿Manejas SQL\?\*\*\nSí, cinco años/);
+  assert.match(entorno.fotos().at(-1), /verificado/i, 'la foto sigue siendo la de verificado');
+  assert.deepEqual(entorno.supabase.tablas.registros.filter(r => r.operacion === 'whatsapp').map(r => [r.estado, r.detalle.motivo ?? null]), [['ok', null], ['omitido', 'ya_enviadas']]);
+  assert.equal(entorno.notas().length, 2, 'una nota por evaluación, sin nota de WhatsApp');
+});
+
+test('una evaluación repetida sí manda las preguntas si la primera vez no se mandaron', async () => {
+  entorno = crearEntornoEvaluaciones({ modelo: [RESULTADO_BAJO, RESULTADO_AD] });
+  await evaluar();
+  assert.deepEqual(rutasManyChat(), []);
+
+  Object.assign(entorno.fila(), { estado: 'en_proceso', intentos: 1 });
+  await evaluar();
+  assert.equal(entorno.fila().calificacion, 16);
+  assert.equal(rutasManyChat().at(-1), '/fb/sending/sendFlow');
+});
+
 test('con calificación baja no se mandan las preguntas y queda una nota que lo dice', async () => {
   entorno = crearEntornoEvaluaciones({ modelo: [RESULTADO_BAJO] });
   await evaluar();
