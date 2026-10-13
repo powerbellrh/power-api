@@ -79,41 +79,30 @@ const estado    = () => entorno.supabase.tablas.conversaciones.find(c => c.telef
 const cierre    = (herramienta, argumentos) => ({ herramienta, argumentos });
 const preparar  = (extra = {}) => cierre('preparar_accion', { tipo: 'armar_informes', id: VACANTE, titulo: '', nombre_interno: '', descripcion: '', etapa_origen: '', etapa_destino: '', nombre_candidato: '', de_nuevo: false, ...extra });
 const responder = mensaje => cierre('responder', { mensaje });
-const confirmar = (algoMas = '') => cierre('resolver_accion', { decision: 'confirmar', mensaje: 'Va.', algo_mas: algoMas });
 const corregir  = (porNumero, comentarios = '') => cierre('corregir_informe', { comentarios, por_numero: porNumero });
 const pedidas   = () => informes.pedidos.map(pedido => String(pedido.postulacionId));
 const resultadoDeLaHerramienta = () => entorno.peticionesModelo.at(-1).mensajes.filter(mensaje => mensaje.role === 'tool').at(-1).content;
 
-async function pedirYConfirmar(algoMas) {
-  entorno.encolarModelo('agente', preparar(), responder('Son 3 informes. ¿Confirmas?'));
-  await escribir('arma los informes de la vacante de península residente de obra blanca');
-  entorno.encolarModelo('agente', confirmar(algoMas));
-  return escribir('sí');
+// Pide los informes: el agente prepara el lote y, sin que ella confirme nada, se arman al cerrar ese mismo turno.
+async function pedir(texto = 'arma los informes de la vacante de península residente de obra blanca', extra = {}) {
+  entorno.encolarModelo('agente', preparar(extra), responder('Ya los armo.'));
+  return escribir(texto);
 }
 
 // ── Pedirlo ──────────────────────────────────────────────────────────────
 
-test('pide los informes de una vacante: se prepara con las personas de Entrevistado y no se arma nada hasta que confirma', async () => {
+test('pide los informes de una vacante: se arman sin pedirle confirmación y le llegan numerados en un solo mensaje, sin nombres', async () => {
   nuevoEntorno([[101, '2026-10-03T10:00:00Z'], [102, '2026-10-01T10:00:00Z'], [103, '2026-10-02T10:00:00Z'], [104, '2026-10-01T09:00:00Z', true]]);
-  entorno.encolarModelo('agente', preparar(), responder('Son 3 informes de Entrevistado. ¿Confirmas?'));
-  await escribir('arma los informes de la vacante de península residente de obra blanca');
-
-  assert.equal(informes.pedidos.length, 0);
-  assert.match(resultadoDeLaHerramienta(), /Armar 3 informes de las personas en \\"Entrevistado\\" de \\"Península - Residente de obra blanca\\" \(ID 555555\)\. En esa vacante hay → Entrevistado: 3 personas; Enviado a cliente: 0 personas\. No dijo de qué etapa: quedó preparado el de \\"Entrevistado\\"/);
-  assert.doesNotMatch(resultadoDeLaHerramienta(), /Persona/, 'al agente no le llegan nombres');
-  const pendiente = estado().accion_pendiente;
-  assert.equal(pendiente.tipo, 'armar_informes');
-  assert.deepEqual(pendiente.postulaciones, ['102', '103', '101'], 'primero quien lleva más tiempo en la etapa; la rechazada no cuenta');
-});
-
-test('al confirmar se arman todos y le llegan numerados en un solo mensaje, sin nombres', async () => {
-  nuevoEntorno();
-  const resultado = await pedirYConfirmar();
+  const resultado = await pedir();
 
   assert.equal(resultado.accion, 'ejecutar_accion');
-  assert.deepEqual(pedidas().sort(), ['101', '102', '103']);
+  assert.match(resultadoDeLaHerramienta(), /Armar 3 informes de las personas en \\"Entrevistado\\" de \\"Península - Residente de obra blanca\\" \(ID 555555\)\. En esa vacante hay → Entrevistado: 3 personas; Enviado a cliente: 0 personas\. YA ESTÁN EN MARCHA: NO le pidas confirmar/);
+  assert.doesNotMatch(resultadoDeLaHerramienta(), /Persona/, 'al agente no le llegan nombres');
+  assert.deepEqual(pedidas().sort(), ['101', '102', '103'], 'la rechazada no cuenta');
   assert.ok(informes.pedidos.every(pedido => pedido.vacanteId === '555555' && pedido.canal === 'agente' && !pedido.comentarios));
-  assert.equal(entorno.mensajes.at(-2), mensajeArmandoLote(3));
+
+  // Lo que escribió el agente no se manda: le avisa el sistema, con las cifras de las dos etapas.
+  assert.deepEqual(entorno.mensajes.slice(0, -1), ['En *Península - Residente de obra blanca* hay 3 personas en Entrevistado y 0 personas en Enviado a cliente. Ya estoy armando los 3 informes de Entrevistado. Tarda cerca de un minuto; en cuanto estén te los mando.']);
   assert.equal(entorno.mensajes.at(-1), [
     'Listo, aquí están los 3 informes de *Entrevistado* de *Península - Residente de obra blanca*:',
     '*Informe 1*\nhttps://firmada.test/102/1.pdf',
@@ -121,7 +110,7 @@ test('al confirmar se arman todos y le llegan numerados en un solo mensaje, sin 
     '*Informe 3*\nhttps://firmada.test/101/1.pdf',
     '_Los enlaces valen 24 horas._',
     '¿Quieres cambiarle algo a alguno? Dime el número y qué, por ejemplo: "en el 1 cambia el sueldo; en el 2 quita tal frase".',
-  ].join('\n\n'));
+  ].join('\n\n'), 'primero quien lleva más tiempo en la etapa');
 
   const { lote, accion_pendiente: pendiente, informes_en_curso: enCurso } = estado();
   assert.equal(pendiente, undefined);
@@ -132,45 +121,44 @@ test('al confirmar se arman todos y le llegan numerados en un solo mensaje, sin 
   assert.deepEqual([registro.pedidos, registro.entregados, registro.fallidos], [3, 3, 0]);
 });
 
-test('con más de cinco se arman los cinco que llevan más tiempo, y "los que faltan" sigue con los demás sin repetir', async () => {
+test('con más de tres se arman los tres que llevan más tiempo, y "los que faltan" sigue con los demás sin repetir', async () => {
   const siete = [1, 2, 3, 4, 5, 6, 7].map(n => [200 + n, `2026-10-0${n}T10:00:00Z`]);
   nuevoEntorno(siete);
-  entorno.encolarModelo('agente', preparar(), responder('Hay 7; armo los primeros 5. ¿Confirmas?'));
-  await escribir('arma los informes de la 555555');
-  assert.match(resultadoDeLaHerramienta(), /Entrevistado: 7 personas;.* Se arman máximo 5 por vez/);
-  entorno.encolarModelo('agente', confirmar());
-  await escribir('sí');
-  assert.equal(MAXIMO_POR_LOTE, 5);
-  assert.deepEqual(pedidas().sort(), ['201', '202', '203', '204', '205']);
+  await pedir('arma los informes de la 555555');
+  assert.equal(MAXIMO_POR_LOTE, 3);
+  assert.deepEqual(pedidas().sort(), ['201', '202', '203']);
+  assert.match(entorno.mensajes.at(-2), /hay 7 personas en Entrevistado y 0 personas en Enviado a cliente\. Armo máximo 3 por vez: van los de quienes llevan más tiempo en la etapa; cuando los recibas, pídeme los que faltan\. Ya estoy armando los 3 informes de Entrevistado/);
 
-  entorno.encolarModelo('agente', preparar(), responder('Faltan 2. ¿Confirmas?'));
-  await escribir('ahora los que faltan');
-  assert.match(resultadoDeLaHerramienta(), /Armar 2 informes .* Entrevistado: 7 personas \(2 sin informe todavía\);.* 5 informes de esa etapa ya se le mandaron y no se repiten/);
-  entorno.encolarModelo('agente', confirmar());
-  await escribir('va');
-  assert.deepEqual(pedidas().slice(5).sort(), ['206', '207']);
-  assert.deepEqual(estado().lote.informes.map(informe => [informe.numero, informe.postulacion]), [[1, '206'], [2, '207']], 'el lote nuevo empieza otra vez en 1');
+  await pedir('ahora los que faltan');
+  assert.match(resultadoDeLaHerramienta(), /Armar 3 informes .* Entrevistado: 7 personas \(4 sin informe todavía\);/);
+  assert.match(entorno.mensajes.at(-2), /De Entrevistado ya te mandé 3 informes, que no se repiten\. Armo máximo 3 por vez/);
+  assert.deepEqual(pedidas().slice(3).sort(), ['204', '205', '206']);
+  assert.deepEqual(estado().lote.informes.map(informe => [informe.numero, informe.postulacion]), [[1, '204'], [2, '205'], [3, '206']], 'el lote nuevo empieza otra vez en 1');
+
+  await pedir('y el que falta');
+  assert.deepEqual(pedidas().slice(6), ['207']);
   assert.equal(estado().lote.hechas.length, 7);
 
-  // Ya los tiene todos: no se prepara nada, salvo que pida armarlos de nuevo.
+  // Ya los tiene todos: no se arma nada, salvo que pida armarlos de nuevo.
   entorno.encolarModelo('agente', preparar(), responder('Ya te los mandé todos. ¿Los armo otra vez?'));
   await escribir('arma los informes de la 555555');
   assert.match(resultadoDeLaHerramienta(), /Ya le mandaste los informes de las 7 personas/);
-  assert.equal(estado()?.accion_pendiente, undefined);
-  entorno.encolarModelo('agente', preparar({ de_nuevo: true }), responder('Armo otra vez los primeros 5. ¿Confirmas?'));
-  await escribir('sí, otra vez');
-  assert.equal(estado().accion_pendiente.postulaciones.length, 5);
+  assert.equal(informes.pedidos.length, 7);
+  assert.equal(entorno.mensajes.at(-1), 'Ya te los mandé todos. ¿Los armo otra vez?');
+  await pedir('sí, otra vez', { de_nuevo: true });
+  assert.deepEqual(pedidas().slice(7).sort(), ['201', '202', '203']);
 });
 
-test('sin nadie en ninguna de las dos etapas no se prepara nada y el agente recibe por qué', async () => {
+test('sin nadie en ninguna de las dos etapas no se arma nada y el agente recibe por qué', async () => {
   nuevoEntorno([]);
-  entorno.encolarModelo('agente', preparar(), responder('No hay nadie en Entrevistado.'));
+  entorno.encolarModelo('agente', preparar(), responder('No hay nadie en esas etapas.'));
   await escribir('arma los informes de la 555555');
   assert.match(resultadoDeLaHerramienta(), /No hay personas en ninguna de las dos etapas.*Entrevistado: 0 personas; Enviado a cliente: 0 personas/);
   assert.equal(estado()?.accion_pendiente, undefined);
+  assert.deepEqual(entorno.mensajes, ['No hay nadie en esas etapas.']);
 
   nuevoEntorno([], { etapas: [{ id: '900', attributes: { name: 'Inbox', 'legacy-stage-type-name': 'Inbox' } }] });
-  entorno.encolarModelo('agente', preparar(), responder('Esa vacante no tiene Entrevistado.'));
+  entorno.encolarModelo('agente', preparar(), responder('Esa vacante no tiene esas etapas.'));
   await escribir('arma los informes de la 555555');
   assert.match(resultadoDeLaHerramienta(), /Entrevistado: la vacante no tiene esa etapa; Enviado a cliente: la vacante no tiene esa etapa/);
 });
@@ -178,7 +166,7 @@ test('sin nadie en ninguna de las dos etapas no se prepara nada y el agente reci
 test('si uno falla, los demás se entregan con su número y el que falló se puede pedir de nuevo', async () => {
   nuevoEntorno();
   informes.fallan.add('103');
-  await pedirYConfirmar();
+  await pedir();
   assert.match(entorno.mensajes.at(-1), /^Listo, aquí están los 2 informes de \*Entrevistado\*/);
   assert.match(entorno.mensajes.at(-1), /\*Informe 1\*\nhttps:\/\/firmada\.test\/102\/1\.pdf\n\n\*Informe 3\*\nhttps:\/\/firmada\.test\/101\/1\.pdf/);
   assert.match(entorno.mensajes.at(-1), /No pude armar el informe 2; si me dices "arma el 2 otra vez", lo intento de nuevo\./);
@@ -197,30 +185,27 @@ test('si uno falla, los demás se entregan con su número y el que falló se pue
 test('si no se pudo armar ninguno se le avisa y no queda ningún lote', async () => {
   nuevoEntorno();
   ['101', '102', '103'].forEach(id => informes.fallan.add(id));
-  await pedirYConfirmar('Y de lo otro, mañana lo vemos.');
-  assert.equal(entorno.mensajes.at(-1), [MENSAJE_ERROR_LOTE, 'Y de lo otro, mañana lo vemos.'].join('\n\n'));
+  await pedir();
+  assert.equal(entorno.mensajes.at(-1), MENSAJE_ERROR_LOTE);
   assert.equal(estado().lote, undefined);
   assert.deepEqual(estado().informes_en_curso, {});
 });
 
 // ── Las dos etapas ───────────────────────────────────────────────────────
 
-test('sin decir la etapa se prepara Entrevistado y el agente recibe cuántas personas hay en cada una; si prefiere Enviado a cliente, esa sustituye a la otra', async () => {
+test('con personas en las dos etapas y sin decir cuál, solo se le pregunta de cuál; al contestar se arman sin confirmar', async () => {
   nuevoEntorno(undefined, { enviados: [[301, '2026-10-05T10:00:00Z'], [302, '2026-10-04T10:00:00Z']] });
-  entorno.encolarModelo('agente', preparar(), responder('Hay 3 en Entrevistado y 2 en Enviado a cliente. Armo los 3 de Entrevistado. ¿Confirmas, o prefieres los otros?'));
-  await escribir('arma los informes de la 555555');
-  assert.match(resultadoDeLaHerramienta(), /En esa vacante hay → Entrevistado: 3 personas; Enviado a cliente: 2 personas\./);
-  assert.match(resultadoDeLaHerramienta(), /SIEMPRE dile cuántas personas hay en CADA UNA de las dos etapas/);
-  assert.deepEqual([estado().accion_pendiente.etapa, estado().accion_pendiente.postulaciones.length], ['Entrevistado', 3]);
+  entorno.encolarModelo('agente', preparar(), responder('Hay 3 personas en Entrevistado y 2 en Enviado a cliente. ¿De cuál te armo los informes?'));
+  await escribir('ayúdame con los informes de la 555555');
+  assert.match(resultadoDeLaHerramienta(), /Hay personas en las dos etapas y no dijo de cuál quiere los informes\. En esa vacante hay → Entrevistado: 3 personas; Enviado a cliente: 2 personas\. Pregúntale de cuál/);
+  assert.equal(informes.pedidos.length, 0);
+  assert.equal(estado()?.accion_pendiente, undefined, 'no queda nada por confirmar');
+  assert.deepEqual(entorno.mensajes, ['Hay 3 personas en Entrevistado y 2 en Enviado a cliente. ¿De cuál te armo los informes?']);
 
-  entorno.encolarModelo('agente', preparar({ etapa_origen: 'Enviado a cliente' }), responder('Armo los 2 de Enviado a cliente. ¿Confirmas?'));
-  await escribir('mejor los de enviado a cliente');
-  const pendiente = estado().accion_pendiente;
-  assert.deepEqual([pendiente.tipo, pendiente.etapa, pendiente.postulaciones], ['armar_informes', 'Enviado a cliente', ['302', '301']], 'una sola acción pendiente: la de la etapa que eligió');
-
-  entorno.encolarModelo('agente', confirmar());
-  await escribir('sí');
-  assert.deepEqual(pedidas().sort(), ['301', '302']);
+  const resultado = await pedir('en enviado a cliente', { etapa_origen: 'Enviado a cliente' });
+  assert.equal(resultado.accion, 'ejecutar_accion');
+  assert.deepEqual(pedidas(), ['302', '301']);
+  assert.equal(entorno.mensajes.at(-2), mensajeArmandoLote(2, 'Enviado a cliente', 'En *Península - Residente de obra blanca* hay 3 personas en Entrevistado y 2 personas en Enviado a cliente.'));
   assert.match(entorno.mensajes.at(-1), /^Listo, aquí están los 2 informes de \*Enviado a cliente\* de \*Península - Residente de obra blanca\*:/);
   assert.equal(estado().lote.etapa, 'Enviado a cliente');
 
@@ -229,31 +214,37 @@ test('sin decir la etapa se prepara Entrevistado y el agente recibe cuántas per
   assert.match(entorno.peticionesModelo.at(-1).usuario, /LOTE DE INFORMES[^\n]*: de Enviado a cliente de la vacante 555555/);
 });
 
-test('si en Entrevistado no hay nadie se prepara Enviado a cliente diciéndolo, y otra etapa no se acepta', async () => {
+test('si dice la etapa desde el principio se arman de una vez, aunque haya personas en las dos', async () => {
+  nuevoEntorno(undefined, { enviados: [[301, '2026-10-05T10:00:00Z']] });
+  await pedir('arma los informes de los entrevistados de la 555555', { etapa_origen: 'Entrevistado' });
+  assert.deepEqual(pedidas().sort(), ['101', '102', '103']);
+  assert.match(entorno.mensajes.at(-2), /^En \*Península - Residente de obra blanca\* hay 3 personas en Entrevistado y 1 persona en Enviado a cliente\. Ya estoy armando los 3 informes de Entrevistado/);
+});
+
+test('con personas en una sola etapa se arman los de esa sin preguntar; una etapa vacía o no aceptada no se cambia por otra', async () => {
   nuevoEntorno([], { enviados: [[301, '2026-10-05T10:00:00Z']] });
-  entorno.encolarModelo('agente', preparar(), responder('En Entrevistado no hay nadie; hay 1 en Enviado a cliente. ¿Armo ese?'));
-  await escribir('arma los informes de la 555555');
-  assert.match(resultadoDeLaHerramienta(), /Entrevistado: 0 personas; Enviado a cliente: 1 persona\. No dijo de qué etapa y en \\"Entrevistado\\" no hay a quién armarle informe: quedó preparado el de \\"Enviado a cliente\\"/);
-  assert.equal(estado().accion_pendiente.etapa, 'Enviado a cliente');
+  await pedir('arma los informes de la 555555');
+  assert.deepEqual(pedidas(), ['301']);
+  assert.match(entorno.mensajes.at(-2), /hay 0 personas en Entrevistado y 1 persona en Enviado a cliente\. Ya estoy armando el informe de Enviado a cliente/);
 
   // Pidió expresamente Entrevistado y ahí no hay nadie: no se cambia de etapa por ella.
   nuevoEntorno([], { enviados: [[301, '2026-10-05T10:00:00Z']] });
   entorno.encolarModelo('agente', preparar({ etapa_origen: 'Entrevistado' }), responder('En Entrevistado no hay nadie. ¿Quieres los de Enviado a cliente?'));
   await escribir('arma los informes de los entrevistados de la 555555');
   assert.match(resultadoDeLaHerramienta(), /No hay personas en \\"Entrevistado\\" de esa vacante\..*Enviado a cliente: 1 persona\..*pregúntale si quiere los de \\"Enviado a cliente\\"/);
-  assert.equal(estado()?.accion_pendiente, undefined);
+  assert.equal(informes.pedidos.length, 0);
 
   entorno.encolarModelo('agente', preparar({ etapa_origen: 'Filtrado' }), responder('En lote solo Entrevistado o Enviado a cliente.'));
   await escribir('arma los informes de los de filtrado de la 555555');
   assert.match(resultadoDeLaHerramienta(), /solo se arman de las etapas \\"Entrevistado\\" y \\"Enviado a cliente\\"/);
-  assert.equal(estado()?.accion_pendiente, undefined);
+  assert.equal(informes.pedidos.length, 0);
 });
 
 // ── Correcciones por número ──────────────────────────────────────────────
 
 test('"para el uno tal, para el dos tal": cada cambio va a su informe y regresan con su versión', async () => {
   nuevoEntorno();
-  await pedirYConfirmar();
+  await pedir();
 
   entorno.encolarModelo('agente', corregir([{ numero: 1, comentarios: 'el sueldo deseado es 18 mil' }, { numero: 3, comentarios: 'es casada' }]));
   const resultado = await escribir('para el informe uno el sueldo deseado es 18 mil, para el tercero es casada');
@@ -279,7 +270,7 @@ test('"para el uno tal, para el dos tal": cada cambio va a su informe y regresan
 
 test('un cambio sin número, o con un número que no existe, se le devuelve al agente; si insiste, se le pregunta a ella', async () => {
   nuevoEntorno();
-  await pedirYConfirmar();
+  await pedir();
 
   entorno.encolarModelo('agente', corregir([], 'cámbiale el estado civil'), responder('¿A cuál informe: 1, 2 o 3?'));
   await escribir('cámbiale el estado civil a casada');
@@ -295,7 +286,7 @@ test('un cambio sin número, o con un número que no existe, se le devuelve al a
 
 test('un lote de un solo informe se corrige sin decir el número', async () => {
   nuevoEntorno([[101, '2026-10-03T10:00:00Z']]);
-  await pedirYConfirmar();
+  await pedir();
   assert.match(entorno.mensajes.at(-1), /^Listo, aquí está el informe de la persona en \*Entrevistado\* de \*Península - Residente de obra blanca\*:\n\n\*Informe 1\*/);
 
   entorno.encolarModelo('agente', corregir([], 'es casada'));
@@ -308,7 +299,7 @@ test('un lote de un solo informe se corrige sin decir el número', async () => {
 
 test('pegar el enlace de un candidato da el lote por terminado: sus comentarios ya son para ese informe', async () => {
   nuevoEntorno();
-  await pedirYConfirmar();
+  await pedir();
   await escribir(ENLACE);
 
   assert.equal(estado().informe.postulacion, '987654');
@@ -321,20 +312,8 @@ test('pegar el enlace de un candidato da el lote por terminado: sus comentarios 
 
   // Y al revés: un lote nuevo da por terminado el informe suelto, sin repetir los que ya recibió de esa vacante.
   teamTailor['/stages/901/job-applications'] = enEtapa([[101, '2026-10-03T10:00:00Z'], [102, '2026-10-01T10:00:00Z'], [103, '2026-10-02T10:00:00Z'], [108, '2026-10-08T10:00:00Z']]);
-  entorno.encolarModelo('agente', preparar(), responder('Falta 1. ¿Confirmas?'));
-  await escribir('arma los informes de la 555555');
-  assert.deepEqual(estado().accion_pendiente.postulaciones, ['108']);
-  entorno.encolarModelo('agente', confirmar());
-  await escribir('sí');
+  await pedir('arma los informes de la 555555');
+  assert.equal(String(informes.pedidos.at(-1).postulacionId), '108');
   assert.equal(estado().informe, undefined);
   assert.deepEqual(estado().lote.informes.map(informe => informe.postulacion), ['108']);
-});
-
-test('confirmar dos veces no arma el lote dos veces', async () => {
-  nuevoEntorno();
-  await pedirYConfirmar();
-  entorno.encolarModelo('agente', confirmar(), responder('Ya te los mandé arriba.'));
-  await escribir('sí');
-  assert.equal(informes.pedidos.length, 3);
-  assert.match(entorno.peticionesModelo.at(-1).usuario, /CORRIGE: No hay ninguna ACCIÓN PENDIENTE/);
 });
