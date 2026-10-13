@@ -128,11 +128,10 @@ test('una aclaración que se pasa del límite por una pregunta larga se recorta 
 
 test('después de la despedida: un agradecimiento se contesta una sola vez y una duda la contesta el agente', async () => {
   const conversacion = conversacionNueva();
-  const cierre = { cierre: 1, duda: 0, complemento: 0 };
   const extractores = crearExtractores({
     empleos: [empleo],
     extras:  [[]],
-    clasificarPosterior: [cierre, cierre, { cierre: 0, duda: 1, complemento: 0 }, { cierre: 0.01, duda: 0, complemento: 0.99 }],
+    clasificarPosterior: [{ cierre: 0, duda: 1, complemento: 0 }, { cierre: 0.01, duda: 0, complemento: 0.99 }],
     aclarar: [{ valor: '', mensaje: 'Ese dato te lo confirmará tu reclutadora cuando te contacte.' }],
   });
   const opciones = { extractores };
@@ -141,10 +140,10 @@ test('después de la despedida: un agradecimiento se contesta una sola vez y una
   assert.deepEqual(d.mensajes, [MENSAJE_DESPEDIDA_COMPLETADO]);
 
   d = await escribir(conversacion, 'Gracias', opciones);
-  assert.deepEqual(d.mensajes, [MENSAJE_RECORDATORIO_COMPLETADO]);
+  assert.deepEqual(d.mensajes, ['Para servirte 😊']);
 
   d = await escribir(conversacion, 'Ok buenas noches', opciones);
-  assert.deepEqual(d.mensajes, [], 'ya se le había dicho: no se le vuelve a escribir');
+  assert.deepEqual(d.mensajes, [], 'ya se le había contestado: no se le vuelve a escribir');
 
   d = await escribir(conversacion, 'Disculpa q día son el descanzo', opciones);
   assert.deepEqual(d.mensajes, ['Ese dato te lo confirmará tu reclutadora cuando te contacte.']);
@@ -153,8 +152,7 @@ test('después de la despedida: un agradecimiento se contesta una sola vez y una
   // Su empleo ya estaba completo: lo que agrega después no se guarda ni se le repite lo que ya se le dijo.
   d = await escribir(conversacion, 'Y estibaba tarimas y jaulas', opciones);
   assert.deepEqual(d.mensajes, []);
-  assert.deepEqual(d.efectos, []);
-  assert.equal(conversacion.paso, PASO.COMPLETADA);
+  assert.deepEqual(d.efectos, []);  assert.equal(conversacion.paso, PASO.COMPLETADA);
 });
 
 test('después de la despedida, sin clasificador se le recuerda una sola vez y las dudas se deciden con las reglas', async () => {
@@ -163,7 +161,8 @@ test('después de la despedida, sin clasificador se le recuerda una sola vez y l
   await llegaVacante(conversacion, sinPreguntas, { ...opciones, conocidos });
   await escribir(conversacion, 'Oxxo, encargado, inventario', opciones);
 
-  assert.deepEqual((await escribir(conversacion, 'Gracias', opciones)).mensajes, [MENSAJE_RECORDATORIO_COMPLETADO]);
+  assert.deepEqual((await escribir(conversacion, 'Gracias', opciones)).mensajes, ['Para servirte 😊']);
   assert.deepEqual((await escribir(conversacion, 'Ok', opciones)).mensajes, []);
+  assert.deepEqual((await escribir(conversacion, 'Tambien se manejar montacargas', opciones)).mensajes, [MENSAJE_RECORDATORIO_COMPLETADO]);
   assert.deepEqual((await escribir(conversacion, '¿Cuándo me llaman?', opciones)).mensajes, [MENSAJE_DUDA_POSTERIOR], 'el agente no contestó: no se le deja sin respuesta');
 });

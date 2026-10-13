@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { decidirPaso, MAXIMO_INTENTOS, PASO } from '../lib/chatbot/pasos.js';
 import {
   MENSAJE_AVISO_DATOS_REUTILIZADOS, MENSAJE_DESPEDIDA_COMPLETADO, MENSAJE_DESPEDIDA_INACTIVIDAD, MENSAJE_LIMITE_PREGUNTAS_GENERALES,
-  MENSAJE_PEDIR_NOMBRE, MENSAJE_RECORDATORIO_COMPLETADO, MENSAJE_REDIRIGIR_A_VACANTES, MENSAJE_SALUDO_SIN_VACANTE, MENSAJE_VACANTES_SIN_VACANTE,
+  MENSAJE_PARA_SERVIRTE, MENSAJE_PEDIR_NOMBRE, MENSAJE_REDIRIGIR_A_VACANTES, MENSAJE_SALUDO_SIN_VACANTE, MENSAJE_VACANTES_SIN_VACANTE,
 } from '../lib/chatbot/constantes.js';
 
 import { conversacionNueva, crearExtractores, escribir, llegaVacante, otraVacante, turno, vacante } from './pasos_ayudas.js';
@@ -73,7 +73,7 @@ test('flujo completo: vacante, nombre, edad, domicilio, preguntas, experiencia, 
   assert.equal(Object.keys(conversacion.temporal.datos.extras).length, 5);
 
   d = await escribir(conversacion, 'gracias', opciones);
-  assert.deepEqual(d.mensajes, [MENSAJE_RECORDATORIO_COMPLETADO]);
+  assert.deepEqual(d.mensajes, [MENSAJE_PARA_SERVIRTE]);
 });
 
 test('un sí/no ambiguo se le pregunta a la IA; si la IA responde ambiguo o falla, se repite', async () => {

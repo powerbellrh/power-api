@@ -51,7 +51,7 @@ test('quien pide hablar con una persona o se queja del bot no desiste: se le acl
   assert.equal(conversacion.temporal.desistio, undefined);
 });
 
-test('después de despedirse por desistir, un agradecimiento no se contesta ni repite el adiós; cualquier otra cosa retoma la postulación', async () => {
+test('después de despedirse por desistir, un agradecimiento recibe "Para servirte" una vez y no repite el adiós; cualquier otra cosa retoma la postulación', async () => {
   const conversacion = conversacionNueva();
   const extractores = crearExtractores({ empleos: [[{ empresa: 'Oxxo', puesto: 'Encargado', actividades: 'Inventario' }]] });
   const opciones = { extractores };
@@ -62,9 +62,10 @@ test('después de despedirse por desistir, un agradecimiento no se contesta ni r
   assert.equal(conversacion.temporal.desistio, true);
   assert.equal(conversacion.recordatorios, LIMITE_RECORDATORIOS);
 
-  for (const texto of ['Gracias', 'ok gracias buen día']) {
+  for (const [texto, esperado] of [['Gracias', ['Para servirte 😊']], ['ok gracias buen día', []]]) {
     d = await escribir(conversacion, texto, opciones);
-    assert.deepEqual(d.mensajes, [], texto);
+    assert.deepEqual(d.mensajes, esperado, texto);
+    assert.equal(conversacion.temporal.desistio, true, 'sigue despedido');
   }
   assert.equal(conversacion.recordatorios, LIMITE_RECORDATORIOS, 'sigue sin recordatorios');
 

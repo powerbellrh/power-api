@@ -244,7 +244,7 @@ test('después de la despedida se le recuerda una sola vez que su postulación q
   const extractores = crearExtractores({
     empleos: [{ empleos: [{ empresa: 'Tracsa', puesto: 'Afanador', actividades: 'Limpiaba los talleres' }], mensaje: '' }],
     extras:  [[]],
-    clasificarPosterior: [complemento, complemento, complemento],
+    clasificarPosterior: [complemento, complemento],
   });
   const opciones = { extractores };
   await llegaVacante(conversacion, sinPreguntas, { ...opciones, conocidos });
@@ -252,7 +252,7 @@ test('después de la despedida se le recuerda una sola vez que su postulación q
 
   const respuestas = [];
   for (const texto of ['Ok, gracias', 'Demaciado el tiempo que are de mi casa asta AyA', 'Mi tel 3220000000']) respuestas.push((await escribir(conversacion, texto, opciones)).mensajes);
-  assert.deepEqual(respuestas, [[MENSAJE_RECORDATORIO_COMPLETADO], [], []]);
+  assert.deepEqual(respuestas, [['Para servirte 😊'], [MENSAJE_RECORDATORIO_COMPLETADO], []]);
   assert.equal(extractores.llamadas.empleos, 1, 'lo que escribe después de terminar no se manda al extractor de empleos');
 });
 
