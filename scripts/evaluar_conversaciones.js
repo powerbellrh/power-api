@@ -10,6 +10,10 @@
 // Solo cuenta las conversaciones que /conversaciones ya atendió (le mandó al menos un mensaje); las que se migraron
 // de `chatbot` y nadie ha retomado se reportan aparte. Salvo con --ver, no imprime datos personales.
 //
+// Las conversaciones del agente reclutador viven en la misma tabla pero NO son de candidatos: van en su propia sección,
+// al final, y no cuentan en el embudo ni en los defectos del bot de candidatos (el 12-oct-2026 los tres "mensajes de
+// más de 250 caracteres" y la "frase prohibida" del reporte eran del agente).
+//
 // Secciones: embudo de las conversaciones nuevas, recordatorios por hora, tiempos del bot, calidad de lo que se guardó
 // y defectos en lo que mandó el bot. Los tiempos del bot solo existen en conversaciones posteriores al 8-oct-2026: antes el
 // mensaje del candidato y la respuesta se anotaban con la misma hora.
@@ -65,13 +69,19 @@ const lineas       = conversacion => (conversacion.historial ?? '').split(/\n(?=
 const titulo       = texto => console.log(`\n── ${texto} ──`);
 const mostrar      = objeto => console.log(JSON.stringify(objeto, null, 2));
 
-const todas     = await leerTodas();
+// Del agente reclutador: tienen su estado en `temporal.reclutador` o líneas del actor "reclutador" en el historial.
+const esDelAgente = c => Boolean(c.temporal?.reclutador) || /(^|\n)\[[^\]]+\] reclutador: /.test(c.historial ?? '');
+const todasLasFilas = await leerTodas();
+const delAgente = todasLasFilas.filter(esDelAgente);
+const todas     = todasLasFilas.filter(c => !esDelAgente(c));
 const atendidas = todas.filter(c => c.enviado_en);
 const recientes = atendidas.filter(c => haceMinutos(c.actualizado) <= horas * 60);
 
 titulo('Tabla completa');
 mostrar({
-  total: todas.length,
+  total: todasLasFilas.length,
+  del_agente_reclutador: delAgente.length,
+  de_candidatos: todas.length,
   atendidas_por_conversaciones: atendidas.length,
   migradas_sin_retomar: todas.length - atendidas.length,
   solicitudes_de_baja: todas.filter(c => c.solicitud_eliminacion).length,
@@ -117,11 +127,11 @@ mostrar({
   veces_que_pregunto_si_quiere_continuar_porque_la_vacante_no_le_acomoda: vecesQue(new RegExp(MENSAJE_CONFIRMAR_INTERES.slice(0, 40))),
 });
 
-// Fallos que la API dejó en la tabla `registros` (lib/registro.js): el modelo que falla, los mensajes que rechazan los
-// guardrails, los envíos que no salen.
+// Fallos que la API dejó en la tabla `registros` (lib/registro.js) del chatbot de candidatos: el modelo que falla, los
+// mensajes que rechazan los guardrails, los envíos que no salen. Lo del agente reclutador va en su sección, al final.
 titulo(`Fallos registrados en las últimas ${Number(horas.toFixed(1))} horas`);
 const { data: eventos, error: errorEventos } = await supabase.from('registros')
-  .select('origen, operacion, estado, detalle').in('origen', ['conversaciones', 'reclutador']).gte('creado', new Date(ahora - horas * 60 * MINUTO).toISOString()).limit(5000);
+  .select('origen, operacion, estado, detalle').eq('origen', 'conversaciones').gte('creado', new Date(ahora - horas * 60 * MINUTO).toISOString()).limit(5000);
 if (errorEventos) {
   mostrar({ sin_datos: `no se pudo leer la tabla registros (${errorEventos.message})` });
 } else {
@@ -290,6 +300,32 @@ mostrar({
     return entradas.slice(i + 1).some(e => e.actor === 'usuario');
   }).length,
 });
+
+// ── Agente reclutador ────────────────────────────────────────────────────────
+// Aparte de todo lo anterior. De sus conversaciones solo salen conteos: lo que escribe cada persona no se imprime.
+titulo(`Agente reclutador (últimas ${Number(horas.toFixed(1))} horas)`);
+const lineasDelAgente = delAgente.flatMap(c => entradasDe(c).filter(enLaVentana).map(entrada => ({ ...entrada, id: c.id })));
+const { data: filasAgente, error: errorAgente } = await supabase.from('registros')
+  .select('id_padre, operacion, estado, actor, segundos, costo_usd, detalle').eq('origen', 'reclutador').gte('creado', new Date(ahora - horas * 60 * MINUTO).toISOString()).limit(5000);
+if (errorAgente) {
+  mostrar({ sin_datos: `no se pudo leer la tabla registros (${errorAgente.message})` });
+} else {
+  const turnos = filasAgente.filter(fila => fila.operacion === 'turno');
+  mostrar({
+    conversaciones_con_actividad: new Set(lineasDelAgente.map(linea => linea.id)).size,
+    mensajes_de_reclutadores: lineasDelAgente.filter(linea => linea.actor === 'reclutador').length,
+    mensajes_del_agente: lineasDelAgente.filter(linea => linea.actor === 'agente').length,
+    lineas_de_candidato_en_conversaciones_del_agente: lineasDelAgente.filter(linea => linea.actor === 'usuario').length, // debe ser 0: si no, se cruzaron
+    turnos: turnos.length,
+    turnos_por_persona_id_teamtailor: contarPor(turnos, turno => turno.actor),
+    turnos_por_tipo_de_mensaje: contarPor(turnos, turno => turno.detalle?.descripcion?.categoria ?? 'sin_clasificar'),
+    turnos_por_estado: contarPor(turnos, turno => turno.estado),
+    segundos_por_turno: { mediana: redondear(mediana(turnos.map(turno => Number(turno.segundos)))), p90: redondear(percentil(turnos.map(turno => Number(turno.segundos)), 0.9)) },
+    costo_usd: redondear(turnos.reduce((suma, turno) => suma + Number(turno.costo_usd ?? 0), 0), 3),
+    hechos: contarPor(filasAgente.filter(fila => fila.operacion !== 'turno'), fila => `${fila.operacion} / ${fila.estado}`),
+    herramientas: contarPor(filasAgente.filter(fila => fila.operacion === 'herramienta'), fila => `${fila.detalle?.herramienta ?? '?'} (${fila.estado})`),
+  });
+}
 
 if (detalle) {
   titulo('Ids para revisar con --ver=<id>');

@@ -81,7 +81,7 @@ const resultadosDeHerramientas = () => entorno.peticionesModelo.at(-1).mensajes.
 
 test('un reclutador se reconoce por su teléfono en usuarios, con o sin lada de país', async () => {
   nuevoEntorno();
-  const laura = { id: 'u1', nombre: 'Laura', rol: 'gerente', idTeamTailor: null, tipoDeVacantes: null };
+  const laura = { id: 'u1', nombre: 'Laura', rol: 'gerente', idTeamTailor: null, tipoDeVacantes: null, memoria: '' };
   assert.deepEqual(await buscarReclutador(entorno.supabase, '5213312345678'), laura);
   assert.deepEqual(await buscarReclutador(entorno.supabase, '3312345678'), laura);
   assert.equal(await buscarReclutador(entorno.supabase, '5213387654321'), null, 'el rol de reclutador no tiene agente');
