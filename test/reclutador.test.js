@@ -329,13 +329,13 @@ test('quien no está en usuarios, o está con rol de reclutador, es un candidato
 
 // ── Horario de atención ──────────────────────────────────────────────────────
 
-test('el horario del asistente: de lunes a sábado, de 8:00 a 19:00 de Ciudad de México', async () => {
+test('el horario del asistente: de lunes a sábado, de 8:00 a 20:00 de Ciudad de México', async () => {
   const { enHorarioDeAtencion } = await import('../lib/chatbot/reclutador/sesion.js');
   const cdmx = texto => Date.parse(`${texto}-06:00`);
   assert.equal(enHorarioDeAtencion(cdmx('2026-10-12T07:59:59')), false, 'lunes antes de las 8');
   assert.equal(enHorarioDeAtencion(cdmx('2026-10-12T08:00:00')), true);
-  assert.equal(enHorarioDeAtencion(cdmx('2026-10-12T18:59:59')), true);
-  assert.equal(enHorarioDeAtencion(cdmx('2026-10-12T19:00:00')), false, 'a las 19:00 ya no');
+  assert.equal(enHorarioDeAtencion(cdmx('2026-10-12T19:59:59')), true);
+  assert.equal(enHorarioDeAtencion(cdmx('2026-10-12T20:00:00')), false, 'a las 20:00 ya no');
   assert.equal(enHorarioDeAtencion(cdmx('2026-10-17T10:00:00')), true, 'sábado');
   assert.equal(enHorarioDeAtencion(cdmx('2026-10-18T10:00:00')), false, 'domingo');
 });
@@ -346,7 +346,7 @@ test('fuera de horario solo contesta el aviso: no llama al agente; en horario at
   const resultado = await escribir('¿cómo va la 555555?', { reclutadores: { conHorario: true, ahora: () => Date.parse('2026-10-12T21:30:00-06:00') } });
   assert.deepEqual(resultado, { reclutador: true, fueraDeHorario: true });
   assert.deepEqual(entorno.mensajes, [MENSAJE_FUERA_DE_HORARIO]);
-  assert.match(MENSAJE_FUERA_DE_HORARIO, /de lunes a sábado, de 8:00 a 19:00/);
+  assert.match(MENSAJE_FUERA_DE_HORARIO, /de lunes a sábado, de 8:00 a 20:00/);
   assert.equal(entorno.peticionesModelo.length, 0);
   const { historial } = entorno.supabase.tablas.conversaciones.find(c => c.telefono === TELEFONO);
   assert.match(historial, /reclutador: ¿cómo va la 555555\?[\s\S]*agente: Gracias por escribirme/);
