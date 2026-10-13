@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { EVALUACIONES_URL, EVALUACION_MAX_INTENTOS } from '../lib/config.js';
 import { dormir } from '../lib/clientes_api.js';
 import { limpiarError } from '../lib/registro.js';
+import { ligarEvaluacionesSueltas } from '../lib/evaluaciones/sueltas.js';
 
 const TAMANO_LOTE   = 5;
 const RETRASO_MS      = 5000;
@@ -30,6 +31,9 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized' });
 
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+  // Antes de armar la cola: las reevaluaciones que quedaron sin postulación se ligan a la suya (casi nunca hay ninguna).
+  await ligarEvaluacionesSueltas(supabase, { avisar: aviso => console.log(JSON.stringify({ ...aviso, mensaje: limpiarError(aviso.mensaje) ?? undefined })) });
 
   // Recupera: (a) pendientes, o (b) en proceso pero atascadas (la función murió por timeout
   // antes de llegar al catch, así que se quedaron en 'en_proceso' para siempre).

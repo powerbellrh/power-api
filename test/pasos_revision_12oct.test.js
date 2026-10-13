@@ -155,6 +155,17 @@ test('si el bot iba a repetir tal cual lo último que mandó, la pregunta sale c
   assert.equal(conversacion.temporal.datos.respuestas['1'], undefined);
 });
 
+test('al evitar la repetición se conserva lo que el bot pedía, no se cambia por la pregunta general del paso', async () => {
+  const conversacion = conversacionNueva();
+  const pide = '¿Qué puesto tenías ahí y qué actividades realizabas?';
+  const parcial = { empleos: [{ empresa: 'Almacén', puesto: '', actividades: '' }], mensaje: pide, desiste: false };
+  const opciones = { extractores: crearExtractores({ empleos: [parcial, parcial] }) };
+  await llegaVacante(conversacion, sinPreguntas, { ...opciones, conocidos });
+
+  assert.deepEqual((await platicar(conversacion, 'Trabajé en un almacén', opciones)).mensajes, [pide]);
+  assert.deepEqual((await platicar(conversacion, 'Pero he trabajado en edificios', opciones)).mensajes, [`${PREFIJO_PREGUNTA_REPETIDA} ${pide}`]);
+});
+
 test('después de terminar, la misma respuesta a la misma duda no se manda dos veces: la segunda remite a la reclutadora', async () => {
   const conversacion = conversacionNueva();
   const respuesta = 'El salario es de $12,000 libres al mes.';

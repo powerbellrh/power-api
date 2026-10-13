@@ -38,6 +38,7 @@ class Consulta {
   }
   gte(columna, valor)    { this.filtros.push(f => Date.parse(f[columna]) >= Date.parse(valor)); return this; } // solo se usa con fechas
   lte(columna, valor)      { this.filtros.push(f => Date.parse(f[columna]) <= Date.parse(valor)); return this; }
+  lt(columna, valor)       { this.filtros.push(f => (f[columna] ?? 0) < valor); return this; } // solo se usa con números
   order(columna, { ascending = true } = {}) { this.orden = { columna, ascending }; return this; }
   limit(cantidad)          { this.limite = cantidad; return this; }
   range(desde, hasta)      { this.rango = [desde, hasta]; return this; }
