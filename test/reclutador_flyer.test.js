@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  contenidoDelFlyer, escogerEstilo, ESTILOS, generarFlyer, instruccionesDelFlyer, PIE_DEL_FLYER, problemaDelFlyer, problemasDeTexto, textosDelFlyer,
+  contenidoDelFlyer, escogerEstilo, ESTILOS, generarFlyer, instruccionesDelFlyer, instruccionesDelVertical, PIE_DEL_FLYER, problemaDelFlyer, problemasDeTexto, textosDelFlyer,
 } from '../lib/chatbot/reclutador/flyer.js';
 import { crearEjecutor, HERRAMIENTAS } from '../lib/chatbot/reclutador/herramientas.js';
 import { notaGrafica } from '../lib/chatbot/reclutador/sesion.js';
@@ -85,27 +85,50 @@ test('el estilo varía: sale uno distinto del anterior, salvo que se pida uno en
   assert.equal(contenidoDelFlyer({ ...PEDIDO, estilo: 99 }).estilo, 0, 'un estilo que no existe lo escoge el sistema');
 });
 
-test('si el primer flyer sale con faltas se genera otro diciéndole qué estuvo mal; si el segundo sale bien, ese se manda', async () => {
+test('si el primer flyer sale con faltas se genera otro diciéndole qué estuvo mal; si el segundo sale bien, de ese se hace la versión vertical', async () => {
   const pedidos = [];
-  const lecturas = [transcripcionCorrecta.replace('aguinaldo', 'aginaldo'), transcripcionCorrecta];
+  const adaptados = [];
+  const lecturas = [transcripcionCorrecta.replace('aguinaldo', 'aginaldo'), transcripcionCorrecta, transcripcionCorrecta];
   const resultado = await generarFlyer(contenido, {
     logo: Buffer.from('logo'), azar: () => 0,
     generar: async instrucciones => { pedidos.push(instrucciones); return Buffer.from(`flyer ${pedidos.length}`); },
+    adaptar: async (instrucciones, cuadrado, logo) => { adaptados.push({ instrucciones, cuadrado: cuadrado.toString(), logo: logo.toString() }); return Buffer.from(`vertical de ${cuadrado}`); },
     leer: async () => lecturas.shift(),
   });
 
   assert.deepEqual({ imagen: resultado.imagen.toString(), estilo: resultado.estilo, intentos: resultado.intentos }, { imagen: 'flyer 2', estilo: 1, intentos: 2 });
   assert.ok(!pedidos[0].includes('previous attempt'));
   assert.match(pedidos[1], /previous attempt had these mistakes.*aguinaldo/);
+
+  // La vertical sale del cuadrado que ya pasó la revisión, con el logo real y los mismos textos.
+  assert.deepEqual([resultado.vertical.toString(), resultado.intentosVertical, adaptados.length], ['vertical de flyer 2', 1, 1]);
+  assert.deepEqual([adaptados[0].cuadrado, adaptados[0].logo], ['flyer 2', 'logo']);
+  assert.match(adaptados[0].instrucciones, /vertical 9:16 format/);
+  assert.match(adaptados[0].instrucciones, /making the most of ALL the available space/);
+  assert.match(adaptados[0].instrucciones, /Keep the same design: same colors, same typography, same photo/);
+  for (const texto of textosDelFlyer(contenido)) assert.ok(adaptados[0].instrucciones.includes(`"${texto}"`), texto);
+  assert.equal(instruccionesDelVertical(contenido), adaptados[0].instrucciones);
 });
 
 test('si sale con faltas las dos veces no se entrega ningún flyer', async () => {
   let generados = 0;
+  let adaptados = 0;
   await assert.rejects(
-    generarFlyer(contenido, { logo: Buffer.from('logo'), generar: async () => { generados++; return Buffer.from('x'); }, leer: async () => 'PowerBell Conoctar es nuestra misián' }),
-    error => error.esTextoIncorrecto === true,
+    generarFlyer(contenido, { logo: Buffer.from('logo'), generar: async () => { generados++; return Buffer.from('x'); }, adaptar: async () => { adaptados++; return Buffer.from('v'); }, leer: async () => 'PowerBell Conoctar es nuestra misián' }),
+    error => error.esTextoIncorrecto === true && error.enVertical === false,
   );
-  assert.equal(generados, 2);
+  assert.deepEqual([generados, adaptados], [2, 0], 'sin un cuadrado correcto ni se intenta la vertical');
+});
+
+test('el par es inseparable: si la versión vertical sale con faltas las dos veces, tampoco se entrega la cuadrada', async () => {
+  const instrucciones = [];
+  const lecturas = [transcripcionCorrecta, transcripcionCorrecta.replace('WhatsApp', 'WhatsAp'), transcripcionCorrecta.replace('WhatsApp', 'WhatsAp')];
+  await assert.rejects(
+    generarFlyer(contenido, { logo: Buffer.from('logo'), generar: async () => Buffer.from('x'), adaptar: async pedido => { instrucciones.push(pedido); return Buffer.from('v'); }, leer: async () => lecturas.shift() }),
+    error => error.esTextoIncorrecto === true && error.enVertical === true,
+  );
+  assert.equal(instrucciones.length, 2);
+  assert.match(instrucciones[1], /previous attempt had these mistakes.*whatsapp/i);
 });
 
 // ── La herramienta del agente ────────────────────────────────────────────────
@@ -117,7 +140,7 @@ function crearEntorno({ generar } = {}) {
     supabase: null,
     log: (operacion, datos) => avisos.push({ operacion, ...datos }),
     subirGrafica: async buffer => { subidas.push(buffer.toString()); return `ruta-${subidas.length}`; },
-    flyers: { logo: async () => Buffer.from('logo'), generar: generar ?? (async (_contenido, { estiloAnterior }) => ({ imagen: Buffer.from('flyer'), estilo: estiloAnterior === 2 ? 5 : 2, intentos: 1 })) },
+    flyers: { logo: async () => Buffer.from('logo'), generar: generar ?? (async (_contenido, { estiloAnterior }) => ({ imagen: Buffer.from('flyer'), vertical: Buffer.from('vertical'), estilo: estiloAnterior === 2 ? 5 : 2, intentos: 1, intentosVertical: 1 })) },
   });
   return { ejecutor, avisos, subidas };
 }
@@ -128,14 +151,19 @@ test('la herramienta existe y pide el contenido del flyer por partes', () => {
   assert.match(herramienta.function.description, /NO crea ni cambia ninguna vacante/);
 });
 
-test('el flyer se manda antes del mensaje y en el historial queda con qué estilo salió y qué decía, para poder cambiarlo', async () => {
+test('el flyer se manda en sus dos versiones antes del mensaje y en el historial queda con qué estilo salió y qué decía, para poder cambiarlo', async () => {
   const { ejecutor, avisos, subidas } = crearEntorno();
   const resultado = await ejecutor.ejecutar('crear_flyer', PEDIDO);
 
   assert.equal(resultado.enviado, true);
   assert.equal(resultado.estilo, 2);
-  assert.deepEqual(subidas, ['flyer']);
-  assert.deepEqual({ ruta: ejecutor.graficas[0].ruta, titulo: ejecutor.graficas[0].titulo }, { ruta: 'ruta-1', titulo: 'Flyer: Limpieza de departamentos de muestra' });
+  assert.deepEqual(subidas, ['flyer', 'vertical']);
+  assert.deepEqual(ejecutor.graficas.map(grafica => [grafica.ruta, grafica.titulo]), [
+    ['ruta-1', 'Flyer: Limpieza de departamentos de muestra'],
+    ['ruta-2', 'Flyer para historias y reels: Limpieza de departamentos de muestra'],
+  ]);
+  assert.match(resultado.nota, /DOS imágenes/);
+  assert.match(notaGrafica(ejecutor.graficas[1]), /^\[Se envió también la versión vertical \(9:16\)/);
 
   const nota = notaGrafica(ejecutor.graficas[0]);
   assert.match(nota, /^\[Se envió un flyer con el estilo 2\./);
@@ -144,7 +172,7 @@ test('el flyer se manda antes del mensaje y en el historial queda con qué estil
   assert.equal(notaGrafica({ titulo: 'Postulaciones por semana' }), '[Se envió una gráfica: Postulaciones por semana]', 'las gráficas siguen igual');
 
   const fila = avisos.find(aviso => aviso.operacion === 'flyer');
-  assert.deepEqual({ estado: fila.estado, estilo: fila.estilo_numero, intentos: fila.intentos, renglones: fila.renglones }, { estado: 'ok', estilo: 2, intentos: 1, renglones: 5 });
+  assert.deepEqual({ estado: fila.estado, estilo: fila.estilo_numero, intentos: fila.intentos, vertical: fila.intentos_vertical, renglones: fila.renglones }, { estado: 'ok', estilo: 2, intentos: 1, vertical: 1, renglones: 5 });
   assert.ok(!JSON.stringify(avisos).includes('10,000'), 'a los registros no va lo que dice el flyer');
 });
 
@@ -174,10 +202,10 @@ test('si el flyer no sale bien no se manda nada y el agente recibe qué decirle'
   assert.equal(caido.avisos.find(a => a.operacion === 'flyer').motivo, 'generacion');
 });
 
-test('no se mandan más de dos flyers en un turno', async () => {
+test('no se mandan más de dos flyers (cuatro imágenes) en un turno', async () => {
   const { ejecutor } = crearEntorno();
   await ejecutor.ejecutar('crear_flyer', PEDIDO);
   await ejecutor.ejecutar('crear_flyer', { ...PEDIDO, puesto: 'Guardia de seguridad' });
   assert.match((await ejecutor.ejecutar('crear_flyer', { ...PEDIDO, puesto: 'Almacenista' })).error, /Ya van 2 flyers/);
-  assert.equal(ejecutor.graficas.length, 2);
+  assert.equal(ejecutor.graficas.length, 4);
 });
