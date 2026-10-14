@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { describirTexto, limpiarPedido } from '../lib/descripcion_de_texto.js';
 import { cambiosDeLaCorreccion, cumplimientoDeReglas, formaDelInforme, parecido, rondaDe } from '../lib/informes/bitacora.js';
 import { INFORME_TOOL, INFORME_TOOL_OPERATIVO } from '../lib/informes/esquema.js';
+import { SIN_CLASIFICAR, TITULO_SIN_CLASIFICAR, clasificarPreguntasPorIntencion, construirBloqueRespuestasPorIntencion, leerClasificaciones } from '../lib/informes/modelo.js';
+import { MODELOS } from '../lib/modelos.js';
 import { filtrarDetalle } from '../lib/registro.js';
 
 // Lo que queda de un informe en `registros`: su forma y si cumple las reglas, nunca su contenido.
@@ -115,4 +117,63 @@ test('si el modelo falla o inventa una categoría, la descripción no tumba nada
   assert.equal(await describirTexto({ texto: '   ', categorias: CATEGORIAS, contexto: '' }), null);
   const rara = await describirTexto({ texto: 'x', categorias: CATEGORIAS, contexto: '', llamar: respuestaDelModelo({ categoria: 'inventada', para_sistemas: true, pedido: 'Algo' }) });
   assert.deepEqual(rara, { categoria: null, para_sistemas: true, pedido: 'Algo' });
+});
+
+// ── Clasificación de las respuestas ──────────────────────────────────────────
+// El 13-oct-2026 un proveedor entregó tres veces la clasificación cortada y tres informes salieron sin los datos del
+// candidato: la respuesta no se podía leer y se tiraban todas las respuestas, sin avisar.
+
+const CATALOGO = { DOMICILIO: 'Dónde vive', ESCOLARIDAD: 'Estudios', SUELDO_DESEADO: 'Cuánto quiere ganar' };
+const PARES = [
+  { pregunta: '¿Dónde vives?', respuesta: 'En Zapopan' },
+  { pregunta: '¿Qué estudiaste?', respuesta: 'Ingeniería industrial' },
+  { pregunta: '¿Cuánto quieres ganar?', respuesta: '20 mil' },
+  { pregunta: '¿Algo más?', respuesta: 'No' },
+];
+const COMPLETA = '{"clasificaciones":[{"indice":0,"intencion":"DOMICILIO"},{"indice":1,"intencion":"ESCOLARIDAD"},{"indice":2,"intencion":"SUELDO_DESEADO"},{"indice":3,"intencion":"NINGUNA"}]}';
+const CORTADA  = COMPLETA.slice(0, -45); // se corta a media entrada del índice 2
+const clasificacionDelModelo = argumentos => ({ choices: [{ message: { tool_calls: [{ function: { name: 'clasificar_preguntas', arguments: argumentos } }] } }] });
+
+test('una clasificación que llega cortada no se tira: se rescatan las entradas que llegaron enteras', () => {
+  assert.deepEqual(leerClasificaciones(COMPLETA), { clasificaciones: JSON.parse(COMPLETA).clasificaciones, cortada: false });
+  assert.deepEqual(leerClasificaciones(CORTADA), { clasificaciones: [{ indice: 0, intencion: 'DOMICILIO' }, { indice: 1, intencion: 'ESCOLARIDAD' }], cortada: true });
+  assert.deepEqual(leerClasificaciones(JSON.parse(COMPLETA)).clasificaciones.length, 4, 'también cuando ya viene como objeto');
+  assert.deepEqual(leerClasificaciones(undefined), { clasificaciones: [], cortada: true });
+});
+
+test('si la clasificación llega cortada se reintenta una vez; con la segunda completa no queda nada sin clasificar', async () => {
+  const respuestas = [clasificacionDelModelo(CORTADA), clasificacionDelModelo(COMPLETA)];
+  const peticiones = [];
+  const porIndice = await clasificarPreguntasPorIntencion(PARES, CATALOGO, [], { llamar: async (_llamadas, _actividad, peticion, detalle) => { peticiones.push({ modelo: peticion.model, herramienta: peticion.tool_choice, intento: detalle.intento }); return respuestas.shift(); } });
+  assert.deepEqual(porIndice, { 0: 'DOMICILIO', 1: 'ESCOLARIDAD', 2: 'SUELDO_DESEADO' }, 'la que el modelo marcó NINGUNA se deja fuera');
+  assert.deepEqual(peticiones, [{ modelo: MODELOS.informeClasificacion, herramienta: 'required', intento: 1 }, { modelo: MODELOS.informeClasificacion, herramienta: 'required', intento: 2 }]);
+  assert.equal(MODELOS.informeClasificacion, 'anthropic/claude-haiku-5.5');
+});
+
+test('una clasificación completa no se repite', async () => {
+  let llamadas = 0;
+  await clasificarPreguntasPorIntencion(PARES, CATALOGO, [], { llamar: async () => { llamadas++; return clasificacionDelModelo(COMPLETA); } });
+  assert.equal(llamadas, 1);
+});
+
+test('lo que no se alcanzó a clasificar va al informe de todos modos, con su pregunta; el informe nunca se queda sin respuestas', async () => {
+  // Cortada las dos veces: se usa lo rescatado y el resto queda sin clasificar.
+  const cortadas = await clasificarPreguntasPorIntencion(PARES, CATALOGO, [], { llamar: async () => clasificacionDelModelo(CORTADA) });
+  assert.deepEqual(cortadas, { 0: 'DOMICILIO', 1: 'ESCOLARIDAD', 2: SIN_CLASIFICAR, 3: SIN_CLASIFICAR });
+  assert.equal(construirBloqueRespuestasPorIntencion(PARES, cortadas, CATALOGO), [
+    '### DOMICILIO\nEn Zapopan',
+    '### ESCOLARIDAD\nIngeniería industrial',
+    `### ${TITULO_SIN_CLASIFICAR}\nPregunta: ¿Cuánto quieres ganar?\nRespuesta: 20 mil\n\nPregunta: ¿Algo más?\nRespuesta: No`,
+  ].join('\n\n'));
+
+  // El modelo no contesta ninguna de las dos veces: van todas, sin clasificar. No lanza.
+  let intentos = 0;
+  const caido = await clasificarPreguntasPorIntencion(PARES, CATALOGO, [], { llamar: async () => { intentos++; throw new Error('OpenRouter 503'); } });
+  assert.equal(intentos, 2);
+  assert.deepEqual(Object.values(caido), [SIN_CLASIFICAR, SIN_CLASIFICAR, SIN_CLASIFICAR, SIN_CLASIFICAR]);
+  assert.match(construirBloqueRespuestasPorIntencion(PARES, caido, CATALOGO), /^### RESPUESTAS_SIN_CLASIFICAR\nPregunta: ¿Dónde vives\?\nRespuesta: En Zapopan/);
+
+  // Un índice que no existe o una intención inventada no cuentan.
+  const raras = await clasificarPreguntasPorIntencion(PARES.slice(0, 2), CATALOGO, [], { llamar: async () => clasificacionDelModelo('{"clasificaciones":[{"indice":0,"intencion":"DOMICILIO"},{"indice":7,"intencion":"ESCOLARIDAD"},{"indice":1,"intencion":"INVENTADA"}]}') });
+  assert.deepEqual(raras, { 0: 'DOMICILIO', 1: SIN_CLASIFICAR });
 });
