@@ -108,7 +108,7 @@ filtro que la tabla**. Ahí tampoco va nada de un candidato ni lo que escribió 
 | `reclutador` | `turno` | Abierta por cada mensaje de una reclutadora al agente | contacto | id de la reclutadora (o `reclutador`) | `mensaje_largo`, `vueltas`, `herramientas`, `accion`, `graficas`, `descripcion{}`, `llamadas_al_modelo`, `proveedores{}`, `cortes_de_tiempo` |
 | `reclutador` | `herramienta` | Hija, una por herramienta usada | (hereda) | (hereda) | `herramienta`, `reutilizada`, `sin_resultado` y solo estos argumentos: `id`, `filtro`, `tipo`, `recurso`, `periodo`, `agrupar_por`, `con_etapas`, `solo_mias`, `incluir_rechazados` |
 | `reclutador` | `imagen_vacante` | Hija: cada imagen generada para un anuncio, con sus `segundos` y su `costo_usd` | (hereda) | (hereda) | `pedida` (la pidió ella o fue la primera) |
-| `reclutador` | `flyer` | Hija: un flyer generado, en sus dos versiones (cuadrada y vertical 9:16), o que no se pudo generar. **Nunca lo que dice el flyer** | (hereda) | (hereda) | `estilo_numero`, `intentos` (2 si el primero salió con faltas), `intentos_vertical` (los de su versión 9:16), `renglones`; si falló, `en_vertical` dice si fue la versión vertical; si falló: `motivo` (`texto_incorrecto`: salió con faltas dos veces y no se mandó; `generacion`) |
+| `reclutador` | `flyer` | Hija: un flyer generado, en sus dos versiones (cuadrada y vertical 9:16), o que no se pudo generar. **Nunca lo que dice el flyer** | (hereda) | (hereda) | `estilo_numero`, `intentos` (2 si el primero salió con faltas), `intentos_vertical` (los de su versión 9:16), `renglones`, `recurso` (el nombre del archivo: el par está en `recursos/flyers/post/` y `recursos/flyers/reel/` con ese nombre); si falló, `en_vertical` dice si fue la versión vertical; si falló: `motivo` (`texto_incorrecto`: salió con faltas dos veces y no se mandó; `generacion`) |
 | `reclutador` | `revision_vacante` | Hija, `reintento`: la revisión del anuncio encontró problemas y se le pidió al modelo corregirlos | (hereda) | (hereda) | `cantidad` |
 | `reclutador` | `vacante_creada` | Hija | (hereda) | (hereda) | `vacante_id`, `tipo`, `cliente` |
 | `reclutador` | `accion` | Hija: editar, cerrar, mover candidatos, volver a evaluar la bandeja (`reevaluar_bandeja`) o armar los informes de una etapa (`armar_informes`) | (hereda) | (hereda) | `tipo`, `id`, `personas`, `acciones` |
@@ -118,19 +118,28 @@ filtro que la tabla**. Ahí tampoco va nada de un candidato ni lo que escribió 
 | `reclutador` | `contexto_reiniciado`, `contexto_compactado` | Hijas | (hereda) | (hereda) | Solo cifras (líneas, caracteres, probabilidad) y, en el reinicio, `motivo`: `inactividad` (más de 2 h sin escribir, con `minutos_sin_escribir`) u `operacion_nueva` |
 | `reclutador` | `memoria_de_usuario` | Fila suelta, después del turno: se actualizó lo que el agente recuerda de esa persona (`usuarios.memoria`). **Nunca la memoria** | contacto | id de la reclutadora (o `reclutador`) | `mensajes` (los suyos que se tomaron en cuenta), `caracteres`, `cambio` |
 | `reclutador` | `ubicacion_del_cliente` | Hija: faltaba la ciudad y se usó la única donde el cliente tiene vacantes, sin preguntarla | (hereda) | (hereda) | — |
-| `conversaciones` | `modelo`, `guardrail` y otros | Chatbot de candidatos: **solo fallos**, no una fila por mensaje | contacto | `manychat` | `herramienta`, `paso`, `reglas`, `clave` |
+| `conversaciones` | `modelo`, `guardrail` y otros | Chatbot de candidatos: **solo fallos**, no una fila por mensaje | contacto | `manychat` | `herramienta`, `paso`, `reglas`, `clave`; en `modelo`, ver la fila suelta `modelo` abajo |
 | `historial` | `cambio_de_etapa` | Solo las etapas que se atienden (o fallan) | postulación | `teamtailor` | `etapa`, `vacante_id`, `codigo` |
 | `notificaciones` | `envio_de_agenda` | Solo cuando mandó algo o falló | `notificaciones` / `proceso` | `cron` | `encontradas`, `enviadas`, `fallidas`, `codigo` |
 | `experiencia` | `experiencia` | Una por archivo que manda un candidato | candidato | `manychat` | `codigo` |
 | `emparejamiento` | `emparejamiento` | Una por consulta | vacante (si viene) | `manychat` | `vacante_id`, `coincidencias`, `uso_ia`, `codigo` |
 | `estudios` | `estudio` | Abierta al empezar | `estudios` / `proceso` | `herramientas` | `fuente`, `muestra`, `codigo` |
-| `sincronizar_vacantes` | `sincronizacion` | Una por corrida (cada hora) | `sincronizar_vacantes` / `proceso` | `cron` | Las cifras del resumen (`revisadas`, `nuevas`, `actualizadas`, `cerradas`, `errores`...) |
+| `sincronizar_vacantes` | `sincronizacion` | Una por corrida (cada hora) | `sincronizar_vacantes` / `proceso` | `cron` | Las cifras del resumen (`revisadas`, `nuevas`, `actualizadas`, `cerradas`, `errores`...) y de la limpieza de imágenes de más de 3 días: `imagenes_borradas` (en `recursos`), `imagenes_borradas_anteriores` (en el bucket `banners` de antes), `limpieza_fallida` |
 | `privacidad` | `eliminacion` | Solo cuando de verdad se borraron datos (o falló) | `privacidad` / `proceso`. **Nunca el id del candidato** | `teamtailor` | `eliminados{}`: cuántas filas de cada tabla |
 
 Además, cualquier módulo puede dejar un fallo suelto (`error`, `reintento`, `rechazado`) con el nombre del paso
 que falló como `operacion` (`manychat_envio`, `respuesta_teamtailor`, `imagen_vacante`, `agente_reclutador`,
 `validacion`, `teamtailor`...). Queda como hija si hay una operación abierta; si no, como fila propia con la misma
 referencia. Por eso una solicitud que falla puede dejar dos filas: la del paso que falló y la de la operación.
+
+**`modelo` (desde el 14-oct-2026), en cualquier origen:** toda llamada a un GLM (flash o el grande) que falla, se
+corta por tiempo o llega incompleta (JSON cortado, sin la herramienta, texto vacío) se repite una vez con Haiku
+(`lib/openrouter.js`) y deja un `reintento` con `motivo: 'respaldo'`, el `modelo` GLM, la `herramienta` si la había,
+el `proveedor` si contestó (en un corte de tiempo no se sabe) y el error en `error`. Si Haiku también falla, un
+`error` con `modelo` de Haiku. Un documento que no se puede leer ("Failed to parse") no se repite. En el chatbot,
+además, un `error` con `herramienta` cuando la respuesta tampoco sirvió, y `motivo: 'sin_preguntas'` si las
+preguntas extra llegaron vacías. En las evaluaciones y los informes, el `modelo` de la corrida o de la llamada es el
+que contestó (Haiku si GLM falló).
 
 ## Privacidad: qué se borra
 

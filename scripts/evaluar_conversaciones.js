@@ -26,6 +26,7 @@ import { PASO } from '../lib/chatbot/pasos.js';
 import { tratoDeUsted, validarMensajeAgente } from '../lib/chatbot/guardrails.js';
 import { esRelleno, extraerEdad } from '../lib/chatbot/interpretacion.js';
 import { horaCdmx } from '../lib/chatbot/utilidades.js';
+import { MODELOS } from '../lib/modelos.js';
 
 const banderas = process.argv.slice(2);
 const valorDe  = nombre => banderas.find(b => b.startsWith(`--${nombre}=`))?.slice(nombre.length + 3);
@@ -141,6 +142,23 @@ if (errorEventos) {
     por_origen_y_operacion: contarPor(eventos, evento => `${evento.origen} / ${evento.operacion} / ${evento.estado}`),
     modelo_por_herramienta: contarPor(eventos.filter(evento => evento.operacion === 'modelo'), evento => `${detalleDe(evento)} (${evento.estado})`),
     guardrails_por_regla: contarPor(eventos.filter(evento => evento.operacion === 'guardrail'), detalleDe),
+  });
+}
+
+// Cada vez que un GLM falló y se repitió con Haiku (lib/openrouter.js), en toda la API: con qué proveedor falló sirve
+// para saber si hay que bloquearlo (PROVEEDORES_EXCLUIDOS_DEFAULT). "sin respuesta" es un corte de tiempo o un error.
+titulo(`GLM que se repitió con Haiku en las últimas ${Number(horas.toFixed(1))} horas (toda la API)`);
+const { data: respaldos, error: errorRespaldos } = await supabase.from('registros')
+  .select('origen, estado, detalle').eq('operacion', 'modelo').gte('creado', new Date(ahora - horas * 60 * MINUTO).toISOString()).limit(5000);
+if (errorRespaldos) {
+  mostrar({ sin_datos: `no se pudo leer la tabla registros (${errorRespaldos.message})` });
+} else {
+  const alHaiku = respaldos.filter(fila => fila.detalle?.motivo === 'respaldo');
+  mostrar({
+    veces: alHaiku.length,
+    por_origen: contarPor(alHaiku, fila => fila.origen),
+    por_proveedor_que_fallo: contarPor(alHaiku, fila => fila.detalle?.proveedor ?? 'sin respuesta'),
+    tambien_fallo_haiku: respaldos.filter(fila => fila.estado === 'error' && fila.detalle?.modelo === MODELOS.respaldoGlm).length,
   });
 }
 

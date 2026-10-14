@@ -56,7 +56,9 @@ export function crearEntornoConversaciones({ tablas = {}, vacantesTeamTailor = {
 
     if (url.startsWith('https://openrouter.ai/api/v1/chat/completions')) {
       // Agente con varias herramientas (tool_choice "required"): cada respuesta simulada dice cuál llama, { herramienta, argumentos }.
-      if (typeof cuerpo.tool_choice === 'string') {
+      // Una sola herramienta con respuestas simuladas propias es un extractor con Haiku (ver extractores.js), no el agente.
+      const extractorConHaiku = cuerpo.tools?.length === 1 && colasModelo[cuerpo.tools[0].function?.name]?.length;
+      if (typeof cuerpo.tool_choice === 'string' && !extractorConHaiku) {
         peticionesModeloCrudas.push(cuerpo);
         peticionesModelo.push({ herramienta: 'agente', sistema: cuerpo.messages[0].content, usuario: cuerpo.messages[1].content, mensajes: cuerpo.messages });
         const llamada = (colasModelo.agente ?? []).shift();
@@ -64,7 +66,8 @@ export function crearEntornoConversaciones({ tablas = {}, vacantesTeamTailor = {
         return respuestaHttp({ choices: [{ message: { role: 'assistant', tool_calls: [{ id: `llamada_${peticionesModelo.length}`, type: 'function', function: { name: llamada.herramienta, arguments: JSON.stringify(llamada.argumentos) } }] } }] });
       }
 
-      const herramienta = cuerpo.tool_choice?.function?.name ?? 'texto';
+      // Los modelos de Anthropic piden la herramienta con `tool_choice: 'required'` (ver extractores.js).
+      const herramienta = cuerpo.tool_choice?.function?.name ?? (cuerpo.tool_choice === 'required' ? cuerpo.tools?.[0]?.function?.name : null) ?? 'texto';
       // La descripción de lo que escribió una reclutadora (para `registros`) va aparte: no cuenta como petición del
       // chatbot, y sin respuesta simulada falla, que es como se queda sin descripción.
       if (herramienta === 'describir_texto') {
@@ -73,12 +76,16 @@ export function crearEntornoConversaciones({ tablas = {}, vacantesTeamTailor = {
         if (!descripcion) return respuestaHttp({ error: 'sin descripción simulada' }, 500);
         return respuestaHttp({ choices: [{ message: { tool_calls: [{ function: { name: herramienta, arguments: JSON.stringify(descripcion) } }] } }], usage: { cost: 0.0002 } });
       }
-      peticionesModelo.push({ herramienta, sistema: cuerpo.messages[0].content, usuario: cuerpo.messages[1].content });
+      peticionesModelo.push({ herramienta, modelo: cuerpo.model, sistema: cuerpo.messages[0].content, usuario: cuerpo.messages[1].content });
       const cola = colasModelo[herramienta] ?? [];
       if (cola.length === 0) return respuestaHttp({ error: `sin respuesta simulada para ${herramienta}` }, 500);
 
       const siguiente = cola.shift();
       if (siguiente instanceof Error) return respuestaHttp({ error: siguiente.message }, 500); // un fallo pasajero del proveedor
+      // Una respuesta que llega tal cual (por ejemplo, el JSON cortado que entregaba un proveedor), con quién la dio.
+      if (siguiente?.argumentosCrudos !== undefined) {
+        return respuestaHttp({ provider: siguiente.proveedor, choices: [{ message: { tool_calls: [{ function: { name: herramienta, arguments: siguiente.argumentosCrudos } }] } }] });
+      }
       return respuestaHttp({ choices: [{ message: { tool_calls: [{ function: { name: herramienta, arguments: JSON.stringify(siguiente) } }] } }] });
     }
 

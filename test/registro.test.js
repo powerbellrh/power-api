@@ -1,6 +1,10 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { crearExtractores } from '../lib/chatbot/extractores.js';
+import { MODELO_LLM } from '../lib/chatbot/constantes.js';
+import { MODELOS } from '../lib/modelos.js';
+
+const MODELO_RESPALDO = MODELOS.respaldoGlm;
+import { crearExtractores, generarPreguntasEnriquecimiento } from '../lib/chatbot/extractores.js';
 import { FLUJOS } from '../lib/chatbot/manychat.js';
 import { procesarConversacion } from '../lib/chatbot/orquestador.js';
 import { anotarCosto, avisar, crearRegistro, filtrarDetalle, limpiarError, registrar } from '../lib/registro.js';
@@ -239,6 +243,63 @@ test('si el modelo falla las dos veces se registra el error y la conversación s
   assert.equal(conversacion().temporal.datos.nombre, 'Ana López', 'lo resolvieron las reglas');
   const estados = registro.pendientes.filter(evento => evento.operacion === 'modelo' && evento.detalle.herramienta === 'extraer_nombre').map(evento => evento.estado);
   assert.deepEqual(estados, ['reintento', 'error']);
+});
+
+test('un JSON cortado queda registrado con el proveedor que lo entregó', async () => {
+  entorno = crearEntornoConversaciones({ tablas: semilla() });
+  const { registro } = registroDePrueba();
+  await enviarMensaje(registro, 'Me interesa la vacante #555555', FLUJOS.RECEPCION.flow_ns);
+
+  entorno.encolarModelo('extraer_nombre', { argumentosCrudos: '{"nombre":"Ana Ló', proveedor: 'Makora' }, { nombre: 'Ana López', genero: 'Mujer' });
+  await enviarMensaje(registro, 'Me llamo Ana López');
+
+  const [fallo] = registro.pendientes.filter(evento => evento.operacion === 'modelo');
+  assert.deepEqual([fallo.estado, fallo.detalle.herramienta, fallo.detalle.proveedor], ['reintento', 'extraer_nombre', 'Makora']);
+});
+
+test('un campo que el modelo llena con comillas vacías cuenta como vacío y su mensaje se usa', async () => {
+  entorno = crearEntornoConversaciones({ tablas: semilla() });
+  const { registro } = registroDePrueba();
+  const extractores = crearExtractores(entorno.supabase);
+  entorno.encolarModelo('extraer_domicilio', { calle: '""', colonia: '""', municipio: 'null', mensaje: '¿Me compartes tu calle, colonia y municipio?', desiste: false });
+
+  const resultado = await registro.ejecutar(() => extractores.domicilio('Años', {}, {}));
+  assert.deepEqual({ calle: resultado.calle, colonia: resultado.colonia, municipio: resultado.municipio }, { calle: '', colonia: '', municipio: '' });
+  assert.equal(resultado.mensaje, '¿Me compartes tu calle, colonia y municipio?');
+});
+
+const PREGUNTAS_EXTRA = ['¿Cuánto tiempo estuviste ahí?', '¿Qué turno tenías?', '¿Usabas montacargas?', '¿Cómo llegarías?', '¿Qué hacías al cerrar?'];
+const pedirPreguntasExtra = registro => registro.ejecutar(() => generarPreguntasEnriquecimiento('Vacante: Almacenista'));
+
+test('preguntas extra: si el modelo de siempre falla se le piden a Haiku y el cambio queda registrado', async () => {
+  entorno = crearEntornoConversaciones({ tablas: semilla() });
+  const { registro } = registroDePrueba();
+  entorno.encolarModelo('generar_preguntas', { argumentosCrudos: '{"preguntas":["¿Cuánto tiempo', proveedor: 'Makora' }, { preguntas: PREGUNTAS_EXTRA });
+
+  assert.deepEqual(await pedirPreguntasExtra(registro), PREGUNTAS_EXTRA);
+  assert.deepEqual(entorno.peticionesModelo.map(p => p.modelo), [MODELO_LLM, MODELO_RESPALDO]);
+  assert.deepEqual(registro.pendientes.map(e => [e.operacion, e.estado, e.intento, e.detalle]), [
+    ['modelo', 'reintento', 1, { herramienta: 'generar_preguntas', modelo: MODELO_LLM, proveedor: 'Makora', motivo: 'respaldo' }],
+  ]);
+});
+
+test('preguntas extra: si Haiku también falla queda el error y la postulación sigue sin ellas', async () => {
+  entorno = crearEntornoConversaciones({ tablas: semilla() });
+  const { registro } = registroDePrueba();
+  entorno.encolarModelo('generar_preguntas', new Error('proveedor caído'), new Error('proveedor caído'));
+
+  await assert.rejects(pedirPreguntasExtra(registro), /proveedor caído/);
+  assert.deepEqual(registro.pendientes.map(e => [e.estado, e.detalle.modelo]), [['reintento', MODELO_LLM], ['error', MODELO_RESPALDO]]);
+});
+
+test('preguntas extra: si el modelo de siempre contesta bien no se llama a Haiku ni se registra nada', async () => {
+  entorno = crearEntornoConversaciones({ tablas: semilla() });
+  const { registro } = registroDePrueba();
+  entorno.encolarModelo('generar_preguntas', { preguntas: PREGUNTAS_EXTRA });
+
+  assert.deepEqual(await pedirPreguntasExtra(registro), PREGUNTAS_EXTRA);
+  assert.deepEqual(entorno.peticionesModelo.map(p => p.modelo), [MODELO_LLM]);
+  assert.deepEqual(registro.pendientes, []);
 });
 
 test('un mensaje del modelo que rechazan los guardrails queda registrado con la regla que incumplió', async () => {

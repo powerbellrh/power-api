@@ -1,10 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  contenidoDelFlyer, escogerEstilo, ESTILOS, generarFlyer, instruccionesDelFlyer, instruccionesDelVertical, PIE_DEL_FLYER, problemaDelFlyer, problemasDeTexto, textosDelFlyer,
+  contenidoDelFlyer, escogerEstilo, ESTILOS, generarFlyer, guardarFlyer, instruccionesDelFlyer, instruccionesDelVertical, nombreDelFlyer, PIE_DEL_FLYER, problemaDelFlyer, problemasDeTexto, textosDelFlyer,
 } from '../lib/chatbot/reclutador/flyer.js';
 import { crearEjecutor, HERRAMIENTAS } from '../lib/chatbot/reclutador/herramientas.js';
+import { bucketDe } from '../lib/chatbot/reclutador/imagen.js';
 import { notaGrafica } from '../lib/chatbot/reclutador/sesion.js';
+
+test('las rutas nuevas están en `recursos` por carpeta; las de antes (por teléfono), en `banners`', () => {
+  assert.deepEqual(['banners/vacante-1.png', 'graficas/grafica-1.png', 'flyers/reel/x.png', 'logos/powerbell-color.png', '3312345678/vacante-1.png'].map(bucketDe), ['recursos', 'recursos', 'recursos', 'recursos', 'banners']);
+});
 
 // Flyers de vacantes en el agente reclutador (13-oct-2026). La imagen la arma el modelo; aquí se prueba lo que hace
 // el código: qué se le pide, cómo se revisa lo que quedó escrito y qué recibe la reclutadora.
@@ -29,10 +34,45 @@ test('el flyer lleva el pie fijo, cada texto entre comillas y la orden de no agr
   assert.equal(textosDelFlyer(contenido).at(-1), PIE_DEL_FLYER);
   const instrucciones = instruccionesDelFlyer(contenido, 3);
   for (const texto of textosDelFlyer(contenido)) assert.ok(instrucciones.includes(`"${texto}"`), texto);
-  assert.ok(instrucciones.includes(ESTILOS[2]));
-  assert.match(instrucciones, /Do not add ANY other text/);
-  assert.match(instrucciones, /attached PowerBell logo EXACTLY/);
+  assert.ok(instrucciones.includes(ESTILOS[2].descripcion));
+  assert.match(instrucciones, /Do not add ANY other text: no slogans, no phone numbers, no websites, no company names, no captions/);
+  assert.match(instrucciones, /FIRST attached image is the PowerBell logo\. Place it EXACTLY/);
+  assert.ok(!instrucciones.includes('Style reference'), 'sin muestra no se menciona');
   assert.ok(!instrucciones.includes('Península'), 'el nombre del cliente no viaja al modelo de imagen');
+  assert.match(instructionsConMuestra(), /SECOND attached image is an example of this style[\s\S]*Do NOT copy anything else from it: none of its texts, numbers, logos, brand names, people or photo; if anything in it is misspelled or hard to read, do not reproduce that/);
+});
+const instructionsConMuestra = () => instruccionesDelFlyer(contenido, 3, { conReferencia: true });
+
+test('cada estilo tiene su muestra en recursos/flyers/referencias; el de DollarCity solo sale para DollarCity', () => {
+  assert.deepEqual(ESTILOS.map(estilo => estilo.referencia), ['suave.png', 'papel.png', 'crema.png', 'tarjeta.png', null], 'el de DollarCity va sin muestra: el modelo copiaba sus textos');
+  for (let i = 0; i < 60; i++) assert.notEqual(escogerEstilo(0, 0), 5, 'al azar nunca sale el de DollarCity');
+  assert.notEqual(escogerEstilo(5, 0), 5, 'ni pidiéndolo, si no es de DollarCity');
+  assert.equal(escogerEstilo(2, 0, Math.random, { dollarCity: true }), 5, 'el de DollarCity siempre con su estilo');
+
+  const deDollarCity = contenidoDelFlyer({ ...PEDIDO, encabezado: 'DollarCity busca:', cliente: 'Dollar City' });
+  assert.equal(deDollarCity.dollarCity, true);
+  assert.equal(problemaDelFlyer(deDollarCity, { cliente: 'Dollar City' }), null, 'es el único cliente que permite su marca');
+  const instrucciones = instruccionesDelFlyer(deDollarCity, 5);
+  assert.match(instrucciones, /DollarCity retail style/);
+  // Su marca y sus etiquetas van entre los textos que se piden y se revisan; ninguna otra etiqueta.
+  assert.deepEqual(textosDelFlyer(deDollarCity).slice(0, 4), ['DollarCity', 'Salario:', 'Horario:', 'Ofrecemos:']);
+  assert.match(instrucciones, /Brand name, large, in the top green band: "DollarCity"/);
+  assert.match(instrucciones, /Do not add any other label such as "Puesto:" or "Empresa:"/);
+  assert.ok(!textosDelFlyer(contenido).includes('DollarCity'), 'los demás no llevan marca ni etiquetas');
+  assert.match(instrucciones, /no company names other than DollarCity where it is written above/);
+  assert.ok(!instrucciones.includes('#1E293D'), 'con sus colores, no los de PowerBell');
+});
+
+test('la muestra del estilo se adjunta después del logo', async () => {
+  const llamadas = [];
+  await generarFlyer(contenido, {
+    logo: Buffer.from('logo'), azar: () => 0, referencia: async numero => Buffer.from(`muestra ${numero}`),
+    generar: async (instrucciones, logo, muestra) => { llamadas.push({ instrucciones, logo: logo.toString(), muestra: muestra?.toString() }); return Buffer.from('flyer'); },
+    adaptar: async () => Buffer.from('vertical'),
+    leer: async () => transcripcionCorrecta,
+  });
+  assert.deepEqual([llamadas[0].logo, llamadas[0].muestra], ['logo', 'muestra 1']);
+  assert.match(llamadas[0].instrucciones, /SECOND attached image is an example of this style/);
 });
 
 test('lo que no cabe o no debe ir en un flyer se le regresa al agente para que lo corrija', () => {
@@ -81,7 +121,7 @@ test('el estilo varía: sale uno distinto del anterior, salvo que se pida uno en
   for (let i = 0; i < 40; i++) assert.notEqual(escogerEstilo(0, 4), 4);
   assert.equal(escogerEstilo(4, 4), 4, 'pidió conservar el estilo');
   assert.equal(escogerEstilo(0, 0, () => 0), 1);
-  assert.equal(escogerEstilo(0, 0, () => 0.999), ESTILOS.length);
+  assert.equal(escogerEstilo(0, 0, () => 0.999), ESTILOS.length - 1, 'el último es el de DollarCity, que no sale al azar');
   assert.equal(contenidoDelFlyer({ ...PEDIDO, estilo: 99 }).estilo, 0, 'un estilo que no existe lo escoge el sistema');
 });
 
@@ -131,6 +171,20 @@ test('el par es inseparable: si la versión vertical sale con faltas las dos vec
   assert.match(instrucciones[1], /previous attempt had these mistakes.*whatsapp/i);
 });
 
+// ── Dónde se guarda ──────────────────────────────────────────────────────────
+
+test('el par se guarda en recursos/flyers/post y /reel con el mismo nombre (fecha de México, puesto y estilo)', async () => {
+  const subidas = [];
+  const supabase = { storage: { from: bucket => ({ upload: async (ruta, archivo, opciones) => { subidas.push([bucket, ruta, archivo.toString(), opciones.contentType]); return { error: null }; } }) } };
+  const contenido = contenidoDelFlyer({ puesto: 'Guardia de Seguridad / Vigilante', puntos: ['x'], escena: 'x' });
+  const guardado = await guardarFlyer(supabase, { imagen: Buffer.from('cuadrada'), vertical: Buffer.from('vertical'), contenido, estilo: 6 }, { fecha: new Date('2026-10-14T19:19:07Z') });
+
+  const nombre = '2026-10-14_131907_guardia-de-seguridad-vigilante_estilo-6.png';
+  assert.deepEqual(guardado, { nombre, post: `flyers/post/${nombre}`, reel: `flyers/reel/${nombre}` });
+  assert.deepEqual(subidas, [['recursos', `flyers/post/${nombre}`, 'cuadrada', 'image/png'], ['recursos', `flyers/reel/${nombre}`, 'vertical', 'image/png']]);
+  assert.equal(nombreDelFlyer(contenidoDelFlyer({ puesto: 'Técnico en Refrigeración' }), 2, new Date('2026-10-14T05:00:00Z')), '2026-10-13_230000_tecnico-en-refrigeracion_estilo-2.png');
+});
+
 // ── La herramienta del agente ────────────────────────────────────────────────
 
 function crearEntorno({ generar } = {}) {
@@ -140,7 +194,15 @@ function crearEntorno({ generar } = {}) {
     supabase: null,
     log: (operacion, datos) => avisos.push({ operacion, ...datos }),
     subirGrafica: async buffer => { subidas.push(buffer.toString()); return `ruta-${subidas.length}`; },
-    flyers: { logo: async () => Buffer.from('logo'), generar: generar ?? (async (_contenido, { estiloAnterior }) => ({ imagen: Buffer.from('flyer'), vertical: Buffer.from('vertical'), estilo: estiloAnterior === 2 ? 5 : 2, intentos: 1, intentosVertical: 1 })) },
+    flyers: {
+      logo: async () => Buffer.from('logo'),
+      generar: generar ?? (async (_contenido, { estiloAnterior }) => ({ imagen: Buffer.from('flyer'), vertical: Buffer.from('vertical'), estilo: estiloAnterior === 2 ? 5 : 2, intentos: 1, intentosVertical: 1 })),
+      guardar: async (_supabase, { imagen, vertical, contenido, estilo }) => {
+        subidas.push(imagen.toString(), vertical.toString());
+        const nombre = nombreDelFlyer(contenido, estilo, new Date('2026-10-14T19:19:07Z'));
+        return { nombre, post: `flyers/post/${nombre}`, reel: `flyers/reel/${nombre}` };
+      },
+    },
   });
   return { ejecutor, avisos, subidas };
 }
@@ -158,9 +220,11 @@ test('el flyer se manda en sus dos versiones antes del mensaje y en el historial
   assert.equal(resultado.enviado, true);
   assert.equal(resultado.estilo, 2);
   assert.deepEqual(subidas, ['flyer', 'vertical']);
-  assert.deepEqual(ejecutor.graficas.map(grafica => [grafica.ruta, grafica.titulo]), [
-    ['ruta-1', 'Flyer: Limpieza de departamentos de muestra'],
-    ['ruta-2', 'Flyer para historias y reels: Limpieza de departamentos de muestra'],
+  // Las dos en `recursos`, en flyers/post y flyers/reel, con el mismo nombre; de ahí se mandan.
+  const nombre = '2026-10-14_131907_limpieza-de-departamentos-de-muestra_estilo-2.png';
+  assert.deepEqual(ejecutor.graficas.map(grafica => [bucketDe(grafica.ruta), grafica.ruta, grafica.titulo]), [
+    ['recursos', `flyers/post/${nombre}`, 'Flyer: Limpieza de departamentos de muestra'],
+    ['recursos', `flyers/reel/${nombre}`, 'Flyer para historias y reels: Limpieza de departamentos de muestra'],
   ]);
   assert.match(resultado.nota, /DOS imágenes/);
   assert.match(notaGrafica(ejecutor.graficas[1]), /^\[Se envió también la versión vertical \(9:16\)/);
@@ -172,7 +236,7 @@ test('el flyer se manda en sus dos versiones antes del mensaje y en el historial
   assert.equal(notaGrafica({ titulo: 'Postulaciones por semana' }), '[Se envió una gráfica: Postulaciones por semana]', 'las gráficas siguen igual');
 
   const fila = avisos.find(aviso => aviso.operacion === 'flyer');
-  assert.deepEqual({ estado: fila.estado, estilo: fila.estilo_numero, intentos: fila.intentos, vertical: fila.intentos_vertical, renglones: fila.renglones }, { estado: 'ok', estilo: 2, intentos: 1, vertical: 1, renglones: 5 });
+  assert.deepEqual({ estado: fila.estado, estilo: fila.estilo_numero, intentos: fila.intentos, vertical: fila.intentos_vertical, renglones: fila.renglones, recurso: fila.recurso }, { estado: 'ok', estilo: 2, intentos: 1, vertical: 1, renglones: 5, recurso: nombre });
   assert.ok(!JSON.stringify(avisos).includes('10,000'), 'a los registros no va lo que dice el flyer');
 });
 

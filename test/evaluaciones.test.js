@@ -1,6 +1,7 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { procesarEvaluacion, procesarReevaluacion } from '../lib/evaluaciones/proceso.js';
+import { MODELOS } from '../lib/modelos.js';
 import { CANDIDATO, ID_POSTULACION, POSTULACION, RESULTADO_AD, RESULTADO_BAJO, RESULTADO_OP, crearEntornoEvaluaciones, filaPendiente } from './entorno_evaluaciones.js';
 
 // Lo que hace /evaluaciones con una postulación: qué guarda en `evaluaciones` (solo estado y calificación) y en
@@ -163,13 +164,16 @@ test('si ManyChat falla al mandar el flujo, queda en una nota', async () => {
 });
 
 test('si el modelo falla, la postulación queda pendiente para reintentarse y la nota dice el intento', async () => {
-  entorno = crearEntornoEvaluaciones({ modelo: [new Error('proveedor caído'), new Error('proveedor caído')] });
+  entorno = crearEntornoEvaluaciones({ modelo: Array.from({ length: 4 }, () => new Error('proveedor caído')) });
   await evaluar();
 
   const fila = entorno.fila();
   assert.deepEqual({ estado: fila.estado, intentos: fila.intentos, calificacion: fila.calificacion }, { estado: 'pendiente', intentos: 1, calificacion: undefined });
-  assert.equal(entorno.peticionesModelo.length, 2, 'con PDF se prueba un segundo motor antes de rendirse');
-  assert.deepEqual(entorno.peticionesModelo.map(p => p.plugins[0].pdf.engine), ['mistral-ocr', 'cloudflare-ai']);
+  // Con PDF se prueba un segundo motor antes de rendirse, y con cada motor, si GLM falla, Haiku (lib/openrouter.js).
+  assert.deepEqual(entorno.peticionesModelo.map(p => [p.plugins[0].pdf.engine, p.model]), [
+    ['mistral-ocr', MODELOS.evaluacionAdministrativa], ['mistral-ocr', MODELOS.respaldoGlm],
+    ['cloudflare-ai', MODELOS.evaluacionAdministrativa], ['cloudflare-ai', MODELOS.respaldoGlm],
+  ]);
   assert.match(entorno.notas()[0].nota, /^❌ Error en evaluación automática \[modelo_ia\] \(intento 1\/3, se reintentará\): OpenRouter 500/);
 });
 
@@ -231,6 +235,16 @@ test('reevaluación que falla: vuelve a la cola y la nota dice en qué etapa', a
   assert.deepEqual(entorno.notas().map(n => [n.usuario, n.nota.slice(0, 55)]), [[27789, '❌ Error en reevaluación automática [modelo_ia]: OpenRou']]);
 });
 
+test('reevaluación sin calificación en el texto del modelo: conserva la anterior y vuelve a la cola', async () => {
+  entorno = crearEntornoEvaluaciones({ fila: filaEvaluada(), modelo: ['Reevaluación sin la línea de la calificación global.'] });
+  await reevaluar();
+
+  const fila = entorno.fila();
+  assert.deepEqual({ reevaluacion: fila.reevaluacion, calificacion: fila.calificacion }, { reevaluacion: null, calificacion: 12 });
+  assert.deepEqual(entorno.fotos(), [], 'la foto no cambia');
+  assert.deepEqual(entorno.notas().map(n => n.nota), ['❌ Error en reevaluación automática [extraccion_resultados]: el modelo no dio una calificación']);
+});
+
 test('reevaluación con un CV que no se puede leer: queda fallida', async () => {
   entorno = crearEntornoEvaluaciones({ fila: filaEvaluada(), modelo: [new Error('Failed to parse document'), new Error('Failed to parse document')] });
   await reevaluar();
@@ -275,7 +289,8 @@ test('una administrativa sin CV queda como corrida omitida', async () => {
 });
 
 test('un fallo queda en `registros` con la etapa, el motor que falló y si se va a reintentar', async () => {
-  entorno = crearEntornoEvaluaciones({ fila: filaPendiente({ intentos: 2 }), modelo: [new Error('rate limited'), RESULTADO_AD] });
+  // El lector de PDF saturado no es culpa del modelo: no se repite con Haiku, se prueba el otro motor.
+  entorno = crearEntornoEvaluaciones({ fila: filaPendiente({ intentos: 2 }), modelo: [new Error('Failed to parse the file: The document parsing engine is currently rate limited'), RESULTADO_AD] });
   await evaluar();
   // El segundo motor de PDF sí contestó: la evaluación termina bien y el tropiezo queda como hija.
   assert.deepEqual(registros().map(r => [r.operacion, r.estado, r.detalle.motor]), [['evaluacion', 'ok', 'cloudflare-ai'], ['motor_pdf', 'reintento', 'mistral-ocr'], ['whatsapp', 'ok', undefined]]);

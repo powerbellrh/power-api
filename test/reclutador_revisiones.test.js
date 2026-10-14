@@ -309,13 +309,13 @@ test('gráfica: se dibuja en código (PNG cuadrado de 1024), se manda antes del 
   nuevoEntorno();
   const subidas = [];
   entorno.encolarModelo('agente', cierre('enviar_grafica', { titulo: 'Activos por estrellas', tipo: 'barras', etiquetas: ['5', '4', '3'], valores: [2, 0, 1] }), responder('Ahí va la gráfica: 2 con 5 estrellas.'));
-  await escribir('hazme una gráfica', { subir: async (_, __, buffer) => { subidas.push(buffer); return 'banners/grafica.png'; } });
+  await escribir('hazme una gráfica', { subir: async (_, buffer, carpeta) => { subidas.push(buffer); return `${carpeta}/grafica.png`; } });
 
   assert.deepEqual(resultadosDeHerramientas()[0].enviada, true);
   assert.equal(subidas.length, 1);
   assert.equal(subidas[0].subarray(1, 4).toString(), 'PNG');
   assert.deepEqual([subidas[0].readUInt32BE(16), subidas[0].readUInt32BE(20)], [1024, 1024]);
-  assert.deepEqual(imagenes.enviadas, [{ url: 'https://firmada.test/banners/grafica.png', texto: 'Activos por estrellas' }]);
+  assert.deepEqual(imagenes.enviadas, [{ url: 'https://firmada.test/graficas/grafica.png', texto: 'Activos por estrellas' }], 'las gráficas van a recursos/graficas');
   assert.equal(entorno.mensajes.at(-1), 'Ahí va la gráfica: 2 con 5 estrellas.');
   assert.match(conversacion().historial, /agente: \[Se envió una gráfica: Activos por estrellas\]\n.*agente: Ahí va la gráfica/s);
 
