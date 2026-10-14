@@ -124,7 +124,7 @@ filtro que la tabla**. Ahí tampoco va nada de un candidato ni lo que escribió 
 | `experiencia` | `experiencia` | Una por archivo que manda un candidato | candidato | `manychat` | `codigo` |
 | `emparejamiento` | `emparejamiento` | Una por consulta | vacante (si viene) | `manychat` | `vacante_id`, `coincidencias`, `uso_ia`, `codigo` |
 | `estudios` | `estudio` | Abierta al empezar | `estudios` / `proceso` | `herramientas` | `fuente`, `muestra`, `codigo` |
-| `sincronizar_vacantes` | `sincronizacion` | Una por corrida (cada hora) | `sincronizar_vacantes` / `proceso` | `cron` | Las cifras del resumen (`revisadas`, `nuevas`, `actualizadas`, `cerradas`, `errores`...) y de la limpieza de imágenes de más de 3 días: `imagenes_borradas` (en `recursos`), `imagenes_borradas_anteriores` (en el bucket `banners` de antes), `limpieza_fallida` |
+| `sincronizar_vacantes` | `sincronizacion` | Una por corrida (cada hora) | `sincronizar_vacantes` / `proceso` | `cron` | Las cifras del resumen (`revisadas`, `nuevas`, `actualizadas`, `cerradas`, `errores`...) y de la limpieza de lo generado de más de 3 días en `recursos` (imágenes, PowerID, felicitaciones e informes en PDF): `imagenes_borradas`, `limpieza_fallida` |
 | `privacidad` | `eliminacion` | Solo cuando de verdad se borraron datos (o falló) | `privacidad` / `proceso`. **Nunca el id del candidato** | `teamtailor` | `eliminados{}`: cuántas filas de cada tabla |
 
 Además, cualquier módulo puede dejar un fallo suelto (`error`, `reintento`, `rechazado`) con el nombre del paso

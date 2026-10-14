@@ -5,7 +5,8 @@ import { limpiarTelefono, normalizarTelefonoMx } from '../lib/telefono.js';
 import { MANYCHAT_TAG_ID_BAJA, TEAMTAILOR_TAG_BAJA, AGENDA_MANYCHAT_FIELD_CANDIDATO_TEAMTAILOR_ID } from '../lib/config.js';
 import { avisar } from '../lib/registro.js';
 
-const BUCKETS_CANDIDATO = ['powerID', 'felicitaciones', 'informes'];
+const BUCKET_RECURSOS    = 'recursos';
+const CARPETAS_CANDIDATO = ['powerid', 'felicitaciones', 'informes'];
 
 // Webhook de TeamTailor (candidato actualizado o eliminado). No se confía en el cuerpo: solo se
 // toma el id del candidato y se verifica contra la API de TeamTailor que realmente tenga el tag
@@ -55,17 +56,25 @@ async function eliminarRegistros(supabase, tipoReferencia, referencias) {
   return count ?? 0;
 }
 
-// Los archivos del candidato viven en `<id_teamtailor>/...` dentro de cada bucket.
+// Los archivos del candidato viven en las carpetas de `recursos` con su id en el nombre (`candidato-<id>-...`). Como
+// todo se borra a los 3 días, cada carpeta tiene pocos archivos y se puede recorrer completa.
 async function eliminarArchivos(supabase, idTT) {
+  const storage = supabase.storage.from(BUCKET_RECURSOS);
+  const delCandidato = new RegExp(`^candidato-${idTT}-`);
   let total = 0;
-  for (const bucket of BUCKETS_CANDIDATO) {
-    const { data: archivos, error } = await supabase.storage.from(bucket).list(idTT, { limit: 1000 });
-    if (error) throw new Error(`storage ${bucket}: ${error.message}`);
-    if (!archivos?.length) continue;
+  for (const carpeta of CARPETAS_CANDIDATO) {
+    const rutas = [];
+    for (let desde = 0; ; desde += 1000) {
+      const { data: archivos, error } = await storage.list(carpeta, { limit: 1000, offset: desde });
+      if (error) throw new Error(`storage ${carpeta}: ${error.message}`);
+      rutas.push(...(archivos ?? []).filter(a => delCandidato.test(a.name)).map(a => `${carpeta}/${a.name}`));
+      if ((archivos ?? []).length < 1000) break;
+    }
+    if (!rutas.length) continue;
 
-    const { error: errorBorrado } = await supabase.storage.from(bucket).remove(archivos.map(a => `${idTT}/${a.name}`));
-    if (errorBorrado) throw new Error(`storage ${bucket}: ${errorBorrado.message}`);
-    total += archivos.length;
+    const { error: errorBorrado } = await storage.remove(rutas);
+    if (errorBorrado) throw new Error(`storage ${carpeta}: ${errorBorrado.message}`);
+    total += rutas.length;
   }
   return total;
 }

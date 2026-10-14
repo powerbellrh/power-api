@@ -9,7 +9,7 @@ import { crearToken, enlaceDeDescarga, leerToken } from '../lib/informes/enlace.
 
 before(() => { process.env.SUPABASE_SERVICE_ROLE_KEY ??= 'clave-de-prueba'; });
 
-const ARCHIVO = { ruta: '313131/987654-1.pdf', nombre: 'Peninsula - Informe Ana López Pérez. Almacenista. Oct26.pdf', postulacion: '987654' };
+const ARCHIVO = { ruta: 'informes/candidato-313131-postulacion-987654-1.pdf', nombre: 'Peninsula - Informe Ana López Pérez. Almacenista. Oct26.pdf', postulacion: '987654' };
 const PDF = Buffer.from('%PDF-1.7 contenido del informe');
 
 function respuestaFalsa() {
@@ -63,7 +63,7 @@ test('la descarga entrega el PDF del bucket privado con su nombre, sin que se ve
     buscar: async url => { pedidas.push(url); return new Response(PDF, { headers: { 'content-length': String(PDF.length) } }); },
   });
 
-  assert.deepEqual(supabase.firmadas, [{ bucket: 'informes', ruta: '313131/987654-1.pdf', segundos: 60 }], 'la firma de Supabase es de un minuto y no sale de aquí');
+  assert.deepEqual(supabase.firmadas, [{ bucket: 'recursos', ruta: 'informes/candidato-313131-postulacion-987654-1.pdf', segundos: 60 }], 'la firma de Supabase es de un minuto y no sale de aquí');
   assert.equal(pedidas.length, 1);
   assert.equal(res.codigo, 200);
   assert.equal(res.encabezados['Content-Type'], 'application/pdf');

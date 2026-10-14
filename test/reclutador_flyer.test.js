@@ -4,12 +4,7 @@ import {
   contenidoDelFlyer, escogerEstilo, ESTILOS, generarFlyer, guardarFlyer, instruccionesDelFlyer, instruccionesDelVertical, nombreDelFlyer, PIE_DEL_FLYER, problemaDelFlyer, problemasDeTexto, textosDelFlyer,
 } from '../lib/chatbot/reclutador/flyer.js';
 import { crearEjecutor, HERRAMIENTAS } from '../lib/chatbot/reclutador/herramientas.js';
-import { bucketDe } from '../lib/chatbot/reclutador/imagen.js';
 import { notaGrafica } from '../lib/chatbot/reclutador/sesion.js';
-
-test('las rutas nuevas están en `recursos` por carpeta; las de antes (por teléfono), en `banners`', () => {
-  assert.deepEqual(['banners/vacante-1.png', 'graficas/grafica-1.png', 'flyers/reel/x.png', 'logos/powerbell-color.png', '3312345678/vacante-1.png'].map(bucketDe), ['recursos', 'recursos', 'recursos', 'recursos', 'banners']);
-});
 
 // Flyers de vacantes en el agente reclutador (13-oct-2026). La imagen la arma el modelo; aquí se prueba lo que hace
 // el código: qué se le pide, cómo se revisa lo que quedó escrito y qué recibe la reclutadora.
@@ -222,9 +217,9 @@ test('el flyer se manda en sus dos versiones antes del mensaje y en el historial
   assert.deepEqual(subidas, ['flyer', 'vertical']);
   // Las dos en `recursos`, en flyers/post y flyers/reel, con el mismo nombre; de ahí se mandan.
   const nombre = '2026-10-14_131907_limpieza-de-departamentos-de-muestra_estilo-2.png';
-  assert.deepEqual(ejecutor.graficas.map(grafica => [bucketDe(grafica.ruta), grafica.ruta, grafica.titulo]), [
-    ['recursos', `flyers/post/${nombre}`, 'Flyer: Limpieza de departamentos de muestra'],
-    ['recursos', `flyers/reel/${nombre}`, 'Flyer para historias y reels: Limpieza de departamentos de muestra'],
+  assert.deepEqual(ejecutor.graficas.map(grafica => [grafica.ruta, grafica.titulo]), [
+    [`flyers/post/${nombre}`, 'Flyer: Limpieza de departamentos de muestra'],
+    [`flyers/reel/${nombre}`, 'Flyer para historias y reels: Limpieza de departamentos de muestra'],
   ]);
   assert.match(resultado.nota, /DOS imágenes/);
   assert.match(notaGrafica(ejecutor.graficas[1]), /^\[Se envió también la versión vertical \(9:16\)/);

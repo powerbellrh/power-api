@@ -52,3 +52,23 @@ test('una conversación sin candidato en Supabase se encuentra por teléfono', a
   await eliminarDatosCandidato(entorno.supabase, '4321', null);
   assert.equal(entorno.supabase.tablas.conversaciones.length, 0);
 });
+
+test('sus archivos de `recursos` (PowerID, felicitación e informes) se borran; los de otros candidatos no', async () => {
+  entorno = crearEntornoConversaciones({ tablas: { candidatos: [{ id: 1, nombre: 'Ana', telefono: '5213312345678', id_team_tailor: '4321' }] } });
+  const archivos = {
+    powerid:        ['candidato-4321-1.png', 'candidato-43210-1.png', 'candidato-14321-1.png'],
+    felicitaciones: ['candidato-4321-2.png'],
+    informes:       ['candidato-4321-postulacion-9000-3.pdf', 'candidato-777-postulacion-4321-3.pdf'],
+    banners:        ['candidato-4321-1.png'], // no es carpeta de candidatos
+  };
+  const borrados = [];
+  entorno.supabase.storage = { from: bucket => ({
+    list:   async carpeta => ({ data: (archivos[carpeta] ?? []).map(name => ({ id: name, name })), error: null }),
+    remove: async rutas => { borrados.push(...rutas.map(ruta => `${bucket}/${ruta}`)); return { error: null }; },
+  }) };
+
+  const eliminados = await eliminarDatosCandidato(entorno.supabase, '4321', null);
+
+  assert.deepEqual(borrados, ['recursos/powerid/candidato-4321-1.png', 'recursos/felicitaciones/candidato-4321-2.png', 'recursos/informes/candidato-4321-postulacion-9000-3.pdf']);
+  assert.equal(eliminados.archivos, 3);
+});

@@ -41,7 +41,7 @@ test('evaluación administrativa: guarda la calificación, pone foto y nota en T
   assert.equal(peticion.messages[0].content.includes('{{fecha_actual}}'), false);
   assert.ok(peticion.messages[0].content.length > 1000);
 
-  assert.deepEqual(entorno.fotos(), ['https://nihtmbtirvhgumfbavvc.supabase.co/storage/v1/object/public/iconos/Altamente%20compatible.png']);
+  assert.deepEqual(entorno.fotos(), ['https://supabase.test/sign/recursos/iconos/Altamente compatible.png?token=x']);
   const [nota, ...otras] = entorno.notas();
   assert.equal(otras.length, 0);
   assert.deepEqual({ estrellas: nota.estrellas, usuario: nota.usuario }, { estrellas: 4, usuario: 43720 });
@@ -221,7 +221,7 @@ test('reevaluación: usa lo guardado en Supabase y las respuestas extra, y deja 
 
   const fila = entorno.fila();
   assert.deepEqual({ calificacion: fila.calificacion, reevaluacion: fila.reevaluacion, inicial: fila.calificacion_inicial }, { calificacion: 16, reevaluacion: 'completada', inicial: 12 });
-  assert.deepEqual(entorno.fotos(), ['https://nihtmbtirvhgumfbavvc.supabase.co/storage/v1/object/public/iconos/Altamente%20compatible%20-%20Verificado.png']);
+  assert.deepEqual(entorno.fotos(), ['https://supabase.test/sign/recursos/iconos/Altamente compatible - Verificado.png?token=x']);
   assert.deepEqual(entorno.notas(), [{ nota: RESULTADO_AD, estrellas: 4, usuario: 27789 }]);
   assert.deepEqual(rutasManyChat(), []);
 });

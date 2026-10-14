@@ -15,7 +15,7 @@ async function handler(req, res) {
 
   try {
     const resumen = await sincronizarVacantes(supabase, { log });
-    // De paso se borran las imágenes generadas de más de 3 días (lib/limpieza_de_imagenes.js); si falla, la
+    // De paso se borra lo generado de más de 3 días en `recursos` (lib/limpieza_de_imagenes.js); si falla, la
     // sincronización ya quedó y se intenta otra vez en la siguiente hora.
     let limpieza;
     try {

@@ -146,7 +146,11 @@ export function crearSupabaseFalso({ tablas = {}, unicos = {}, defaults = {}, au
 
   const proxy = {
     base,
-    storage: { from: () => ({ list: async () => ({ data: [], error: null }), remove: async () => ({ error: null }) }) },
+    storage: { from: bucket => ({
+      list:            async ()    => ({ data: [], error: null }),
+      remove:          async ()    => ({ error: null }),
+      createSignedUrl: async ruta  => ({ data: { signedUrl: `https://supabase.test/sign/${bucket}/${ruta}?token=x` }, error: null }),
+    }) },
     tablas: new Proxy({}, { get: (_, nombre) => base.tabla(nombre) }),
     set fallar(funcion) { base.fallar = funcion; },
     from: nombre => {
