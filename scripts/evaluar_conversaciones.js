@@ -325,10 +325,16 @@ titulo(`Agente reclutador (últimas ${Number(horas.toFixed(1))} horas)`);
 const lineasDelAgente = delAgente.flatMap(c => entradasDe(c).filter(enLaVentana).map(entrada => ({ ...entrada, id: c.id })));
 const { data: filasAgente, error: errorAgente } = await supabase.from('registros')
   .select('id_padre, operacion, estado, actor, segundos, costo_usd, detalle').eq('origen', 'reclutador').gte('creado', new Date(ahora - horas * 60 * MINUTO).toISOString()).limit(5000);
+// Los informes que pide por el chat dejan su propia fila (origen 'informes', canal 'agente') con el costo de Opus: el
+// turno que los entrega marca 0. Sin sumarlos, el costo de Jarvis salía bajo (el 14-oct-2026: 0.93 en vez de 1.59 USD).
+const { data: informesDelAgente } = await supabase.from('registros')
+  .select('operacion, costo_usd').eq('origen', 'informes').is('id_padre', null).eq('detalle->>canal', 'agente')
+  .gte('creado', new Date(ahora - horas * 60 * MINUTO).toISOString()).limit(5000);
 if (errorAgente) {
   mostrar({ sin_datos: `no se pudo leer la tabla registros (${errorAgente.message})` });
 } else {
   const turnos = filasAgente.filter(fila => fila.operacion === 'turno');
+  const costoInformes = (informesDelAgente ?? []).reduce((suma, fila) => suma + Number(fila.costo_usd ?? 0), 0);
   mostrar({
     conversaciones_con_actividad: new Set(lineasDelAgente.map(linea => linea.id)).size,
     mensajes_de_reclutadores: lineasDelAgente.filter(linea => linea.actor === 'reclutador').length,
@@ -339,7 +345,12 @@ if (errorAgente) {
     turnos_por_tipo_de_mensaje: contarPor(turnos, turno => turno.detalle?.descripcion?.categoria ?? 'sin_clasificar'),
     turnos_por_estado: contarPor(turnos, turno => turno.estado),
     segundos_por_turno: { mediana: redondear(mediana(turnos.map(turno => Number(turno.segundos)))), p90: redondear(percentil(turnos.map(turno => Number(turno.segundos)), 0.9)) },
-    costo_usd: redondear(turnos.reduce((suma, turno) => suma + Number(turno.costo_usd ?? 0), 0), 3),
+    costo_usd: {
+      turnos:   redondear(turnos.reduce((suma, turno) => suma + Number(turno.costo_usd ?? 0), 0), 3),
+      informes: redondear(costoInformes, 3), // informes y correcciones pedidos por el chat
+      total:    redondear(turnos.reduce((suma, turno) => suma + Number(turno.costo_usd ?? 0), 0) + costoInformes, 3),
+    },
+    informes_y_correcciones: contarPor(informesDelAgente ?? [], fila => fila.operacion),
     hechos: contarPor(filasAgente.filter(fila => fila.operacion !== 'turno'), fila => `${fila.operacion} / ${fila.estado}`),
     herramientas: contarPor(filasAgente.filter(fila => fila.operacion === 'herramienta'), fila => `${fila.detalle?.herramienta ?? '?'} (${fila.estado})`),
   });
