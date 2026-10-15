@@ -55,7 +55,7 @@ test('una vacante que no está en Supabase se trae de TeamTailor y se guarda com
       usuarios:  [{ id: 'u1', id_rol: 1 }, { id: 'u2', id_rol: 2 }, { id: 'u3', id_rol: 3 }],
       preguntas: [{ id: 1, leyenda: '¿Cuentas con licencia?', tipo: 'Booleano', id_teamtailor: 200001 }], // ya existía en el catálogo
     },
-    vacantesTeamTailor:  { 777777: vacanteTeamTailor({ titulo: 'Cajero', reclutador: '42381', contexto: 'Busca cajeros para tienda' }) },
+    vacantesTeamTailor:  { 777777: vacanteTeamTailor({ titulo: 'Cajero', reclutador: '46582', grupo: 'Reclutamiento Operativo', contexto: 'Busca cajeros para tienda' }) },
     preguntasTeamTailor: { 777777: [
       preguntaTeamTailor(200001, '¿Cuentas con licencia?', 'Boolean'),
       preguntaTeamTailor(200050, 'Experiencia en caja', 'Text'),
@@ -77,7 +77,7 @@ test('una vacante que no está en Supabase se trae de TeamTailor y se guarda com
   assert.equal(fila.id_team_tailor, 777777);
   assert.equal(fila.vacante, 'Cliente - Cajero');
   assert.equal(fila.estatus, 'Publicada');
-  assert.equal(fila.tipo, 'Operativa', 'el reclutador 42381 es de operativa');
+  assert.equal(fila.tipo, 'Operativa', 'el tipo sale del grupo, aunque su responsable sea de administrativas');
   assert.equal(fila.contexto, 'Busca cajeros para tienda');
   assert.equal(fila.salario_min, 8000);
 

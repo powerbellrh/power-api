@@ -81,7 +81,8 @@ test('postulaciones de un periodo: se cuentan todas las de TeamTailor, también 
     relationships: { job: { data: { id: String(vacante) } }, stage: { data: { id: String(etapa) } } } });
   const incluidos = [
     { type: 'jobs', id: '555555', attributes: { 'internal-name': 'Otro nombre' }, relationships: { user: { data: { id: '1' } } } },
-    { type: 'jobs', id: '716375', attributes: { 'internal-name': 'La Nogalera - Supervisor' }, relationships: { user: { data: { id: '42381' } } } }, // reclutador de operativas
+    { type: 'jobs', id: '716375', attributes: { 'internal-name': 'La Nogalera - Supervisor' }, relationships: { team: { data: { id: '615' } } } },
+    { type: 'teams', id: '615', attributes: { name: 'Reclutamiento Operativo' } },
     { type: 'stages', id: '50', attributes: { name: 'Inbox', 'legacy-stage-type-name': 'Inbox' } },
     { type: 'stages', id: '53', attributes: { name: 'Hired', 'legacy-stage-type-name': 'Hired' } },
   ];
@@ -101,7 +102,8 @@ test('postulaciones de un periodo: se cuentan todas las de TeamTailor, también 
   assert.equal(hoy.vacantes_con_postulaciones, 2);
 
   const operativas = await estadisticasPostulaciones(supabase, { desde: '2026-10-09', hasta: '2026-10-09', agrupar_por: 'ninguna', tipo: 'operativa' }, { consultar, pausaMs: 0 });
-  assert.equal(operativas.total, 3, 'el tipo de una vacante fuera del catálogo sale de su reclutador en TeamTailor');
+  assert.equal(operativas.total, 3, 'el tipo de una vacante fuera del catálogo sale de su grupo en TeamTailor');
+  assert.match(rutas[0], /include=job\.team/, 'sin include=team TeamTailor no manda el grupo');
 });
 
 test('la ficha del cliente trae lo que publica en sus otras vacantes', async () => {

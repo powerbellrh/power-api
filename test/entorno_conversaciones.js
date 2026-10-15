@@ -60,7 +60,7 @@ export function crearEntornoConversaciones({ tablas = {}, vacantesTeamTailor = {
       const extractorConHaiku = cuerpo.tools?.length === 1 && colasModelo[cuerpo.tools[0].function?.name]?.length;
       if (typeof cuerpo.tool_choice === 'string' && !extractorConHaiku) {
         peticionesModeloCrudas.push(cuerpo);
-        peticionesModelo.push({ herramienta: 'agente', sistema: cuerpo.messages[0].content, usuario: cuerpo.messages[1].content, mensajes: cuerpo.messages });
+        peticionesModelo.push({ herramienta: 'agente', sistema: cuerpo.messages[0].content, usuario: cuerpo.messages[1].content, mensajes: cuerpo.messages, herramientas: cuerpo.tools });
         const llamada = (colasModelo.agente ?? []).shift();
         if (!llamada) return respuestaHttp({ error: 'sin respuesta simulada para el agente' }, 500);
         return respuestaHttp({ choices: [{ message: { role: 'assistant', tool_calls: [{ id: `llamada_${peticionesModelo.length}`, type: 'function', function: { name: llamada.herramienta, arguments: JSON.stringify(llamada.argumentos) } }] } }] });
@@ -129,7 +129,7 @@ export function crearEntornoConversaciones({ tablas = {}, vacantesTeamTailor = {
       const trabajo = ruta.match(/^\/jobs\/(\d+)(?:\?.*)?$/);
       if (metodo === 'GET' && trabajo) {
         const vacante = vacantesTeamTailor[trabajo[1]];
-        return vacante ? respuestaHttp({ data: { id: trabajo[1], attributes: vacante.attributes }, included: vacante.included ?? [] }) : respuestaHttp('Record not found', 404);
+        return vacante ? respuestaHttp({ data: { id: trabajo[1], attributes: vacante.attributes, relationships: vacante.relationships ?? {} }, included: vacante.included ?? [] }) : respuestaHttp('Record not found', 404);
       }
       const preguntas = ruta.match(/^\/jobs\/(\d+)\/questions/);
       if (metodo === 'GET' && preguntas) return respuestaHttp({ data: preguntasTeamTailor[preguntas[1]] ?? [] });
@@ -179,10 +179,13 @@ export function crearEntornoConversaciones({ tablas = {}, vacantesTeamTailor = {
 }
 
 // Vacante de TeamTailor tal como la devuelve `/jobs/{id}?include=...`.
-export const vacanteTeamTailor = ({ titulo = 'Almacenista', cuerpo = '<p><strong>Vacante:</strong> Almacenista</p>', reclutador = '1', contexto = null } = {}) => ({
+// `grupo`: el nombre de su grupo en TeamTailor ("Reclutamiento Operativo"), del que sale el tipo; null si no tiene.
+export const vacanteTeamTailor = ({ titulo = 'Almacenista', cuerpo = '<p><strong>Vacante:</strong> Almacenista</p>', reclutador = '1', grupo = null, contexto = null } = {}) => ({
   attributes: { title: titulo, 'internal-name': `Cliente - ${titulo}`, body: cuerpo, 'min-salary': 8000, 'max-salary': 9000, 'created-at': '2026-10-01T00:00:00Z' },
+  relationships: { user: { data: { id: reclutador, type: 'users' } }, team: { data: grupo ? { id: '615', type: 'teams' } : null } },
   included: [
     { type: 'users', id: reclutador, attributes: {} },
+    ...(grupo ? [{ type: 'teams', id: '615', attributes: { name: grupo } }] : []),
     ...(contexto ? [{ type: 'custom-fields', id: '8036', attributes: {} }, { type: 'custom-field-values', id: '1', attributes: { value: contexto } }] : []),
   ],
 });

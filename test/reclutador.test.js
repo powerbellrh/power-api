@@ -81,12 +81,31 @@ const resultadosDeHerramientas = () => entorno.peticionesModelo.at(-1).mensajes.
 
 test('un reclutador se reconoce por su teléfono en usuarios, con o sin lada de país', async () => {
   nuevoEntorno();
-  const laura = { id: 'u1', nombre: 'Laura', rol: 'gerente', idTeamTailor: null, tipoDeVacantes: null, memoria: '' };
+  const laura = { id: 'u1', nombre: 'Laura', rol: 'gerente', departamento: null, idTeamTailor: null, tipoDeVacantes: null, memoria: '' };
   assert.deepEqual(await buscarReclutador(entorno.supabase, '5213312345678'), laura);
   assert.deepEqual(await buscarReclutador(entorno.supabase, '3312345678'), laura);
-  assert.equal(await buscarReclutador(entorno.supabase, '5213387654321'), null, 'el rol de reclutador no tiene agente');
+  assert.equal(await buscarReclutador(entorno.supabase, '5213387654321'), null, 'un reclutador sin departamento sigue como candidato');
   assert.equal(await buscarReclutador(entorno.supabase, '5213399999999'), null);
   assert.equal(await buscarReclutador(entorno.supabase, ''), null);
+});
+
+test('Jarvis atiende a un reclutador si en usuarios tiene departamento; sin él, o con un rol que no existe, sigue como candidato', async () => {
+  nuevoEntorno();
+  const usuarios = entorno.supabase.tablas.usuarios;
+  usuarios.push(
+    { id: 'u4', nombre: 'Maritza', id_rol: 3, telefono: 3311112222, departamento: 'Operativo', id_team_tailor: '45147' },
+    { id: 'u5', nombre: 'Sin departamento', id_rol: 3, telefono: 3311113333, departamento: null },
+    { id: 'u6', nombre: 'Rol desconocido', id_rol: 9, telefono: 3311114444, departamento: 'Operativo' },
+  );
+
+  const maritza = await buscarReclutador(entorno.supabase, '5213311112222');
+  assert.deepEqual({ rol: maritza.rol, tipoDeVacantes: maritza.tipoDeVacantes }, { rol: 'reclutador', tipoDeVacantes: 'operativa' });
+  assert.equal(await buscarReclutador(entorno.supabase, '5213311113333'), null, 'sin departamento no entra');
+  assert.equal(await buscarReclutador(entorno.supabase, '5213311114444'), null, 'un rol que no existe no entra');
+
+  // Dos usuarios con el mismo teléfono: no se adivina quién es.
+  usuarios.push({ id: 'u7', nombre: 'Copia', id_rol: 2, telefono: 3311112222 });
+  assert.equal(await buscarReclutador(entorno.supabase, '5213311112222'), null);
 });
 
 test('el reclutador pregunta por la bandeja: el agente consulta TeamTailor y contesta con los dos números', async () => {

@@ -11,18 +11,27 @@ const atributos = (id, extra = {}) => ({
   'internal-name': `Cliente - Puesto ${id}`, title: `Puesto ${id}`, body: '<p>Hola</p>', 'min-salary': null, 'max-salary': null, status: 'open', ...extra,
 });
 
-// TeamTailor falso: el listado devuelve las abiertas/ocultas y el detalle cualquier vacante.
-function teamtailorFalso(vacantes) {
+// TeamTailor falso: el listado devuelve las abiertas/ocultas y el detalle cualquier vacante. `grupos` (id → nombre del
+// grupo) imita a TeamTailor: el grupo solo viene si se pidió con include=team.
+const GRUPOS = { 'Reclutamiento Operativo': '615', 'Reclutamiento Administrativo': '616' };
+function teamtailorFalso(vacantes, grupos = {}) {
   const llamadas = [];
+  const conGrupo = (ruta, id, attributes) => {
+    const pidioGrupo = /include=[^&]*team/.test(ruta);
+    const grupo = pidioGrupo && grupos[id] ? { id: GRUPOS[grupos[id]], type: 'teams' } : null;
+    return { vacante: { id, attributes, relationships: { team: { data: grupo } } }, incluido: grupo ? [{ type: 'teams', id: grupo.id, attributes: { name: grupos[id] } }] : [] };
+  };
   const obtener = async ruta => {
     llamadas.push(ruta);
     if (ruta.startsWith('/jobs?')) {
       const estado = ruta.match(/filter\[status\]=(\w+)/)?.[1] ?? 'open';
-      return { data: Object.entries(vacantes).filter(([, a]) => a.status === estado).map(([id, attributes]) => ({ id, attributes })), links: {} };
+      const listadas = Object.entries(vacantes).filter(([, a]) => a.status === estado).map(([id, attributes]) => conGrupo(ruta, id, attributes));
+      return { data: listadas.map(l => l.vacante), included: listadas.flatMap(l => l.incluido), links: {} };
     }
     const id = ruta.match(/\/jobs\/(\d+)/)[1];
     if (!vacantes[id]) throw new Error(`TeamTailor GET ${ruta} → 404: no existe`);
-    return { data: { id, attributes: vacantes[id] }, included: [] };
+    const { vacante, incluido } = conGrupo(ruta, id, vacantes[id]);
+    return { data: vacante, included: incluido };
   };
   return { obtener, llamadas };
 }
@@ -78,6 +87,25 @@ test('una vacante que ya no existe en TeamTailor se deja igual y un error no fre
   assert.equal(supabase.tablas.vacantes[0].estatus, 'Publicada');
 });
 
+test('el tipo sigue al grupo de TeamTailor: lo corrige si cambió y lo deja si la vacante no tiene grupo', async () => {
+  const supabase = crearSupabaseFalso({ tablas: { vacantes: [
+    copia(1, { tipo: 'Operativa' }),       // le cambiaron el grupo a administrativo
+    copia(2, { tipo: 'Administrativa' }),  // sin grupo: se queda como estaba
+    copia(3, { tipo: 'Operativa' }),       // oculta y fuera del listado: se consulta sola, también con su grupo
+  ] } });
+  const { obtener, llamadas } = teamtailorFalso(
+    { 10: atributos(1), 20: atributos(2), 30: atributos(3, { status: 'unlisted' }) },
+    { 10: 'Reclutamiento Administrativo', 30: 'Reclutamiento Administrativo' },
+  );
+  const sinOcultas = async ruta => (ruta.includes('unlisted') ? { data: [], links: {} } : obtener(ruta));
+
+  const resumen = await sincronizarVacantes(supabase, { obtener: sinOcultas, crear: null, detectores: null });
+
+  assert.deepEqual(supabase.tablas.vacantes.map(fila => fila.tipo), ['Administrativa', 'Administrativa', 'Administrativa']);
+  assert.equal(resumen.actualizadas, 2);
+  assert.ok(llamadas.includes('/jobs/30?include=team'));
+});
+
 test('diferencias ignora lo igual y trata null y ausente como lo mismo', () => {
   assert.deepEqual(diferencias(copia(1), atributos(1)), {});
   assert.deepEqual(diferencias(copia(1), atributos(1, { 'internal-name': '', title: 'Puesto 1' })), { vacante: 'Puesto 1' });
@@ -93,12 +121,7 @@ test('agrega las vacantes de TeamTailor que faltan y completa cliente, periodo, 
     10: atributos(1, { 'internal-name': 'Península - Puesto 1', 'salary-time-unit': 'monthly' }),
     20: atributos(2, { 'internal-name': 'Convert - Puesto 2' }),
   };
-  const { obtener: base } = teamtailorFalso(vacantes);
-  const obtener = async ruta => {
-    const respuesta = await base(ruta);
-    if (ruta.startsWith('/jobs?')) respuesta.data = respuesta.data.map(vacante => ({ ...vacante, relationships: { user: { data: { id: '42381' } }, locations: { data: [] } } }));
-    return respuesta;
-  };
+  const { obtener } = teamtailorFalso(vacantes, { 10: 'Reclutamiento Operativo', 20: 'Reclutamiento Operativo' });
   const creadas = [];
   const crear = async (_, id) => { creadas.push(id); supabase.tablas.vacantes.push(copia(2, { id_team_tailor: id, vacante: 'Convert - Puesto 2', tipo: 'Operativa', creado: '2026-10-02T00:00:00Z' })); return true; };
   const detectores = { habilidad: async () => 'Almacén', ubicacion: async () => 55 };

@@ -695,8 +695,9 @@ test('"mis vacantes": se listan solo las vacantes de las que es responsable en T
 });
 
 test('una vacante operativa se crea con la plantilla operativa y una administrativa con la suya; la responsable es quien la pidió', async () => {
+  const DEPARTAMENTOS = { 45147: 'Operativo', 900: 'Administrativo' };
   const publicar = async (tipo, idTeamTailor, pedido = 'Oxxo cajero en Guadalajara') => {
-    const usuarios = [{ id: 'u1', nombre: 'Laura', id_rol: 2, telefono: 3312345678, ...(idTeamTailor ? { id_team_tailor: idTeamTailor } : {}) }];
+    const usuarios = [{ id: 'u1', nombre: 'Laura', id_rol: 2, telefono: 3312345678, ...(idTeamTailor ? { id_team_tailor: idTeamTailor, departamento: DEPARTAMENTOS[idTeamTailor] } : {}) }];
     nuevoEntorno({ tablas: { usuarios }, vacantes: { 777001: vacanteTeamTailor({ titulo: 'Cajero' }) } });
     entorno.encolarModelo('agente', vacanteNueva({ tipo }), vacanteNueva({ tipo, confirmado: true, descripcion_modificada: false, contexto_modificado: false }));
     await escribir(pedido);
@@ -705,7 +706,7 @@ test('una vacante operativa se crea con la plantilla operativa y una administrat
     return { plantilla: creada.attributes['template-id'], responsable: creada.relationships.user.data.id };
   };
 
-  // Regla general: quien está en la lista de operativas crea operativas, y los demás administrativas, diga lo que diga el modelo.
+  // Regla general: quien es del departamento operativo crea operativas, y el administrativo administrativas, diga lo que diga el modelo.
   assert.deepEqual(await publicar('administrativa', '45147'), { plantilla: '126960', responsable: '45147' });
   assert.match(entorno.peticionesModelo[0].usuario, /Tipo de vacantes que crea esta persona: operativa/);
   assert.deepEqual(await publicar('operativa', '900'), { plantilla: '129919', responsable: '900' });
