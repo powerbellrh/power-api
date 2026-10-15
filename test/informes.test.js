@@ -25,8 +25,11 @@ const RESPUESTAS = '### EDAD\n31 años, nací el 30 de septiembre de 1994\n### S
 test('el informe operativo es el administrativo sin apego ni competencias', () => {
   assert.deepEqual(Object.keys(INFORME_TOOL.function.parameters.properties), ['nombre', 'cliente', 'vacante', 'datos_personales', 'trayectoria', 'apego_vacante', 'competencias', 'comentarios']);
   assert.deepEqual(Object.keys(INFORME_TOOL_OPERATIVO.function.parameters.properties), ['nombre', 'cliente', 'vacante', 'datos_personales', 'trayectoria', 'comentarios']);
-  assert.equal(INFORME_TOOL_OPERATIVO.function.parameters.properties.trayectoria, INFORME_TOOL.function.parameters.properties.trayectoria);
-  assert.match(INFORME_TOOL_OPERATIVO.function.parameters.properties.comentarios.description, /movilidad del candidato/);
+  const trayectoriaOperativa = INFORME_TOOL_OPERATIVO.function.parameters.properties.trayectoria;
+  assert.equal(trayectoriaOperativa.items, INFORME_TOOL.function.parameters.properties.trayectoria.items, 'mismos campos por empleo');
+  assert.equal(trayectoriaOperativa.maxItems, 3, 'el operativo no lleva apego ni competencias: le caben 3 empleos');
+  assert.equal(INFORME_TOOL.function.parameters.properties.trayectoria.maxItems, 2);
+  assert.match(INFORME_TOOL_OPERATIVO.function.parameters.properties.comentarios.description, /90 a 130 palabras.*movilidad/);
 });
 
 test('la forma del informe dice qué viene lleno y de qué tamaño, sin el contenido', () => {
@@ -38,8 +41,8 @@ test('la forma del informe dice qué viene lleno y de qué tamaño, sin el conte
 
 test('cumplimiento de reglas: un informe bien hecho las cumple todas', () => {
   assert.deepEqual(cumplimientoDeReglas(INFORME, { tipo: 'administrativo', bloqueCrudo: RESPUESTAS }), {
-    periodos_con_anio: true, sueldos_mensuales: true, edad_con_formato: true, comentarios_palabras: 23, comentarios_dentro_de_70: true,
-    cierra_con_recomendacion: true, frases_prohibidas: 0, cifras_sin_respaldo: 0,
+    periodos_con_anio: true, sueldos_mensuales: true, edad_con_formato: true, comentarios_palabras: 23, comentarios_dentro_del_limite: true,
+    cierra_con_recomendacion: true, frases_prohibidas: 0, datos_de_salud: 0, cifras_sin_respaldo: 0,
   });
 });
 
@@ -52,7 +55,7 @@ test('cumplimiento de reglas: detecta periodos sin año, opiniones del entrevist
   };
   const cumplimiento = cumplimientoDeReglas(malo, { tipo: 'administrativo', bloqueCrudo: RESPUESTAS });
   assert.deepEqual(
-    { periodos: cumplimiento.periodos_con_anio, sueldos: cumplimiento.sueldos_mensuales, edad: cumplimiento.edad_con_formato, dentro: cumplimiento.comentarios_dentro_de_70, cierre: cumplimiento.cierra_con_recomendacion, frases: cumplimiento.frases_prohibidas, cifras: cumplimiento.cifras_sin_respaldo },
+    { periodos: cumplimiento.periodos_con_anio, sueldos: cumplimiento.sueldos_mensuales, edad: cumplimiento.edad_con_formato, dentro: cumplimiento.comentarios_dentro_del_limite, cierre: cumplimiento.cierra_con_recomendacion, frases: cumplimiento.frases_prohibidas, cifras: cumplimiento.cifras_sin_respaldo },
     { periodos: false, sueldos: false, edad: false, dentro: false, cierre: false, frases: 2, cifras: 1 },
   );
   assert.equal(cumplimientoDeReglas(malo, { tipo: 'operativo', bloqueCrudo: RESPUESTAS }).sueldos_mensuales, undefined, 'el sueldo mensual solo se pide en administrativos');
@@ -161,8 +164,8 @@ test('lo que no se alcanzó a clasificar va al informe de todos modos, con su pr
   const cortadas = await clasificarPreguntasPorIntencion(PARES, CATALOGO, [], { llamar: async () => clasificacionDelModelo(CORTADA) });
   assert.deepEqual(cortadas, { 0: 'DOMICILIO', 1: 'ESCOLARIDAD', 2: SIN_CLASIFICAR, 3: SIN_CLASIFICAR });
   assert.equal(construirBloqueRespuestasPorIntencion(PARES, cortadas, CATALOGO), [
-    '### DOMICILIO\nEn Zapopan',
-    '### ESCOLARIDAD\nIngeniería industrial',
+    '### DOMICILIO\nPregunta: ¿Dónde vives?\nRespuesta: En Zapopan',
+    '### ESCOLARIDAD\nPregunta: ¿Qué estudiaste?\nRespuesta: Ingeniería industrial',
     `### ${TITULO_SIN_CLASIFICAR}\nPregunta: ¿Cuánto quieres ganar?\nRespuesta: 20 mil\n\nPregunta: ¿Algo más?\nRespuesta: No`,
   ].join('\n\n'));
 

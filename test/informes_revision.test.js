@@ -43,8 +43,44 @@ test('comentarios largos: se pide acortarlos y el arreglo se acepta', async () =
 test('periodo sin año y sueldo no mensual: una instrucción por empleo, con sus datos', () => {
   const { reglas, instrucciones } = instruccionesDeRevision(informe({ trayectoria: [{ compania: 'Acme', periodo: 'Enero a marzo', puesto: 'Auxiliar', sueldo: '$5,000 semanales', salida: '-' }] }), { ...OPCIONES, bloqueCrudo: `${BLOQUE} 5,000 semanales` });
   assert.deepEqual(reglas, ['periodos_sin_anio', 'sueldos_no_mensuales']);
-  assert.match(instrucciones[0], /empleo en "Acme", el periodo "Enero a marzo" no tiene año/);
+  assert.match(instrucciones[0], /empleo 1 \("Acme"\), el periodo "Enero a marzo" no tiene año/);
   assert.match(instrucciones[1], /el sueldo "\$5,000 semanales" debe ir como monto mensual/);
+});
+
+test('operativo: la duración del empleo es un periodo válido; dos empleos con la misma empresa se distinguen por número', () => {
+  const operativo = { ...OPCIONES, tipo: 'operativo' };
+  const conDuracion = informe({ trayectoria: [
+    { compania: 'Casa habitación', periodo: '1 año', puesto: 'Jardinero', sueldo: '-', salida: '-' },
+    { compania: 'Casa habitación', periodo: '1 año y 6 meses', puesto: 'Jardinero', sueldo: '-', salida: '-' },
+  ] });
+  assert.deepEqual(instruccionesDeRevision(conDuracion, operativo).reglas, []);
+  assert.deepEqual(instruccionesDeRevision(conDuracion, OPCIONES).reglas, ['periodos_sin_anio'], 'en el administrativo la duración sigue sin bastar');
+  const sinAnio = informe({ trayectoria: [
+    { compania: 'Casa habitación', periodo: 'Marzo a mayo', puesto: 'Jardinero', sueldo: '-', salida: '-' },
+    { compania: 'Casa habitación', periodo: 'Enero', puesto: 'Jardinero', sueldo: '-', salida: '-' },
+  ] });
+  const { instrucciones } = instruccionesDeRevision(sinAnio, operativo);
+  assert.match(instrucciones[0], /empleo 1 \("Casa habitación"\)/);
+  assert.match(instrucciones[1], /empleo 2 \("Casa habitación"\)/);
+});
+
+test('el límite de palabras de los comentarios es 70 en el administrativo y 130 en el operativo', () => {
+  const cien = `${'Manejó patín hidráulico y controló entradas de mercancía. '.repeat(14)}Se recomienda avanzar a la siguiente etapa del proceso.`;
+  assert.deepEqual(instruccionesDeRevision(informe({ comentarios: cien }), { ...OPCIONES, tipo: 'operativo' }).reglas, []);
+  const { reglas, instrucciones } = instruccionesDeRevision(informe({ comentarios: cien }), OPCIONES);
+  assert.deepEqual(reglas, ['comentarios_largos']);
+  assert.match(instrucciones[0], /el máximo es 70/);
+  assert.match(instruccionesDeRevision(informe({ comentarios: `${cien} ${cien}` }), { ...OPCIONES, tipo: 'operativo' }).instrucciones[0], /el máximo es 130/);
+});
+
+test('datos de salud y opiniones del consultor en los comentarios: se piden quitar', () => {
+  const comentarios = 'Jardinero con dos años de experiencia. Refiere buen estado de salud, sin enfermedades ni lesiones. El consultor lo percibe responsable. Se recomienda avanzar a la siguiente etapa del proceso.';
+  const { reglas, instrucciones } = instruccionesDeRevision(informe({ comentarios }), OPCIONES);
+  assert.deepEqual(reglas, ['frases_prohibidas', 'datos_de_salud']);
+  assert.match(instrucciones.join(' '), /"El consultor lo percibe"/);
+  assert.match(instrucciones.join(' '), /salud del candidato \("estado de salud", "enfermedades", "lesiones"\)/);
+  const sectorSalud = 'Trabajó tres años en el sector salud como recepcionista. Se recomienda avanzar a la siguiente etapa del proceso.';
+  assert.deepEqual(instruccionesDeRevision(informe({ comentarios: sectorSalud }), OPCIONES).reglas, [], 'la experiencia en el sector salud no es un dato de salud');
 });
 
 test('una cifra sin respaldo se nombra y, si el arreglo la quita, se acepta', async () => {
