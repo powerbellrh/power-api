@@ -161,6 +161,19 @@ test('sus comentarios corrigen el último informe: las rondas se acumulan y cada
   assert.equal(estado().informe.version, 3);
 });
 
+test('una corrección que quedó igual después de dos intentos no se presenta como aplicada', async () => {
+  nuevoEntorno();
+  await escribir(ENLACE);
+  informes.generar = async pedido => { informes.pedidos.push(pedido); return { estado: 'ok', candidato: '313131', sinCambios: true, informe: INFORME }; };
+
+  entorno.encolarModelo('agente', corregir('en motivos de salida ponle: Mal ambiente laboral, compañeras hostiles'));
+  await escribir('en motivos de salida ponle: Mal ambiente laboral, compañeras hostiles');
+  assert.match(entorno.mensajes.at(-1), /^Una disculpa, lo intenté dos veces y el informe quedó igual\. Te dejo la versión 2/);
+  assert.match(entorno.mensajes.at(-1), /¿Me dices otra vez qué parte cambiar y el texto exacto que quieres\?$/);
+  assert.doesNotMatch(entorno.mensajes.at(-1), /apliqué tus cambios/);
+  assert.equal(estado().informe.version, 2, 'la versión se guarda igual: la siguiente corrección parte de ella');
+});
+
 test('corregir_informe sin un informe reciente se le devuelve al agente para que conteste', async () => {
   nuevoEntorno();
   entorno.encolarModelo('agente', corregir('cambia el sueldo'), { herramienta: 'responder', argumentos: { mensaje: 'Pégame el enlace del candidato y lo armo.' } });
