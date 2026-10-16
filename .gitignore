@@ -1,5 +1,24 @@
-.vercel
-.env
+# Dependencias y despliegue
 node_modules
-memoria/
+.vercel
+
+# Secretos: variables de entorno, llaves y certificados
 .env*
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Material interno (reportes, presentaciones, plantillas): no se sube
+interno/
+memoria/
+
+# Claude Code: ajustes locales y worktrees (nunca se ha subido nada de aquí)
+.claude/
+
+# Bitácoras y basura del sistema y de Office
+*.log
+Thumbs.db
+desktop.ini
+.DS_Store
+~$*
