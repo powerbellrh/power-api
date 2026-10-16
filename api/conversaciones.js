@@ -1,4 +1,5 @@
 import { waitUntil } from '@vercel/functions';
+import { sumarCostoConversacion } from '../lib/chatbot/conversacion.js';
 import { crearExtractores } from '../lib/chatbot/extractores.js';
 import { nombreDeFlujo } from '../lib/chatbot/manychat.js';
 import { procesarConversacion } from '../lib/chatbot/orquestador.js';
@@ -51,6 +52,9 @@ export default async function handler(req, res) {
   waitUntil(
     registro.ejecutar(() => procesarConversacion({ supabase, solicitud: lectura.solicitud, log, extractores: crearExtractores(supabase), esperaMs: ESPERA_MENSAJES_SEGUIDOS_MS, reclutadores: { conHorario: true } }))
       .catch(error => log('conversaciones', { estado: 'error', error: error.message }))
+      // Lo que cobraron los modelos va a la conversación del candidato; el agente de reclutadores (origen
+      // 'reclutador') ya guarda su costo en el turno.
+      .then(() => registro.origen === 'conversaciones' && sumarCostoConversacion(supabase, idContacto, registro.costoUsd, log))
       .finally(() => registro.guardar(supabase)),
   );
 
