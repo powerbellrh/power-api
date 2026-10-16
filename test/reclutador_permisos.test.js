@@ -63,7 +63,7 @@ test('un reclutador no recibe las herramientas que no puede usar, y el agente sa
   assert.equal(nombresDeHerramientas(deMaritza).includes('crear_flyer'), false);
   assert.equal(nombresDeHerramientas(deMaritza).includes('guardar_ficha_cliente'), false);
   assert.equal(accionesDe(deMaritza).includes('reevaluar_bandeja'), false);
-  assert.ok(accionesDe(deMaritza).includes('armar_informes'), 'los informes en lote son para todos');
+  assert.ok(accionesDe(deMaritza).includes('armar_informes'), 'los informes en lote son para todos (en vacantes administrativas)');
   assert.match(deMaritza.usuario, /PERMISOS DE ESTA PERSONA \(es reclutadora del equipo operativo\)/);
 
   assert.ok(nombresDeHerramientas(deLaura).includes('crear_flyer'));
@@ -131,6 +131,21 @@ test('un reclutador no reevalúa bandejas ni edita, cierra o mueve en vacantes d
   assert.match(reevaluar.error, /solo lo hacen gerentes/);
   assert.notEqual(informes.sin_permiso, true, 'los informes son para cualquier vacante');
   assert.equal(conversacionDe(MARITZA).temporal.reclutador?.accion_pendiente?.tipo ?? null, informes.preparada ? 'armar_informes' : null, 'nada de lo negado quedó pendiente');
+});
+
+test('en las vacantes operativas no hay informes en lote, ni para la gerente (16-oct-2026)', async () => {
+  nuevoEntorno();
+  const lote = id => cierre('preparar_accion', { tipo: 'armar_informes', id, titulo: '', nombre_interno: '', descripcion: '', etapa_origen: 'Enviado a cliente', etapa_destino: '', nombre_candidato: '', de_nuevo: false });
+  entorno.encolarModelo('agente', lote(555555), responder('Pégame el enlace de cada candidato.'), lote(555555), responder('Pégame el enlace de cada candidato.'));
+  await escribir('ármame los informes de los enviados de la 555555');
+  const [deMaritza] = resultados();
+  await escribir('ármame los informes de los enviados de la 555555', LAURA);
+  const [deLaura] = resultados();
+
+  for (const negado of [deMaritza, deLaura]) assert.match(negado.error, /operativas no se arman informes en lote/);
+  assert.equal(entorno.llamadasTT.length, 0, 'ni se consultan las etapas');
+  assert.equal(conversacionDe(MARITZA).temporal.reclutador?.accion_pendiente ?? null, null);
+  assert.equal(conversacionDe(LAURA).temporal.reclutador?.accion_pendiente ?? null, null);
 });
 
 test('un reclutador no hace flyers ni guarda fichas aunque el modelo lo intente', async () => {
