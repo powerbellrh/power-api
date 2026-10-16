@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { EVALUACIONES_URL, EVALUACION_MAX_INTENTOS } from '../lib/config.js';
 import { dormir } from '../lib/clientes_api.js';
+import { rechazarCron } from '../lib/http.js';
 import { limpiarError } from '../lib/registro.js';
 import { ligarEvaluacionesSueltas } from '../lib/evaluaciones/sueltas.js';
 
@@ -26,9 +27,7 @@ async function registrarCorrida(supabase, estado, { error = null, inicio, ...det
 
 export default async function handler(req, res) {
   const inicio = Date.now(); // solo para el registro
-  const encabezadoAuth = req.headers['authorization'];
-  if (encabezadoAuth !== `Bearer ${process.env.CRON_SECRET}`)
-    return res.status(401).json({ error: 'Unauthorized' });
+  if (rechazarCron(req, res)) return;
 
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
